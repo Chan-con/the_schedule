@@ -418,10 +418,15 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
     return selectedDate.toISOString().slice(0, 10) === dateStr;
   };
   
-  // 今日の日付かチェック
+  // 今日の日付かチェック（OSの現在時刻を使用）
   const isToday = dateStr => {
     const today = new Date();
-    return today.toISOString().slice(0, 10) === dateStr;
+    // OSの現在日付を取得（タイムゾーンを考慮）
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
+    return todayStr === dateStr;
   };
   
   // 現在の月の日付かチェック  
@@ -477,7 +482,12 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         className="grid grid-cols-7 grid-rows-6 gap-1 flex-1"
       >
         {calendarDays.map((date, index) => {
-          const dateStr = date.toISOString().slice(0, 10);
+          // ローカル時間で日付文字列を生成
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          const dateStr = `${year}-${month}-${day}`;
+          
           const daySchedules = getSchedulesForDate(dateStr);
           const selected = isSelected(dateStr);
           const today = isToday(dateStr);
@@ -496,19 +506,24 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                 }
               }}
               className={`
-                p-1 border border-gray-200 hover:bg-gray-50 transition-colors duration-200 relative flex flex-col
-                ${selected ? 'bg-indigo-100 border-indigo-300' : 'bg-white'}
-                ${today && !selected ? 'bg-blue-50 border-blue-300' : ''}
+                p-1 border relative flex flex-col bg-white
+                focus:outline-none
+                ${dragOverDate === dateStr ? 
+                  'bg-green-100 border-green-300 hover:border-green-300' : 
+                  selected ? 
+                    'border-indigo-300 hover:border-indigo-300' : 
+                  today ? 
+                    'bg-orange-50 border-orange-300 hover:border-orange-300' : 
+                    'border-gray-200 hover:border-gray-200'}
                 ${!currentMonth ? 'opacity-30' : ''}
-                ${dragOverDate === dateStr ? 'bg-green-100 border-green-300' : ''}
               `}
             >
               {/* 日付部分 - 固定の高さ */}
               <div className="flex-shrink-0 mb-0.5">
                 <span className={`
                   text-xs font-medium
-                  ${selected ? 'text-indigo-700' : today ? 'text-blue-700 font-bold' : 
-                    date.getDay() === 0 ? 'text-red-500' : date.getDay() === 6 ? 'text-blue-500' : 'text-gray-700'}
+                  ${date.getDay() === 0 ? 'text-red-500' : date.getDay() === 6 ? 'text-blue-500' : 'text-gray-700'}
+                  ${today ? 'font-bold' : ''}
                   ${!currentMonth ? 'text-gray-400' : ''}
                 `}>
                   {date.getDate()}
