@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const ScheduleForm = ({ schedule, onSave, onClose, onDelete }) => {
   const [formData, setFormData] = useState({
@@ -10,6 +10,9 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete }) => {
     allDay: false
   });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  
+  // 予定名フィールドへの参照
+  const nameInputRef = useRef(null);
 
   // 初期データを設定（新規作成時は空、編集時は既存データ）
   useEffect(() => {
@@ -28,6 +31,19 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete }) => {
       });
     }
   }, [schedule]);
+
+  // フォーム表示時に予定名フィールドにフォーカスを当てる
+  useEffect(() => {
+    if (nameInputRef.current) {
+      // 少し遅延を入れてフォーカスを当てる（モーダルのアニメーション完了後）
+      const timer = setTimeout(() => {
+        nameInputRef.current.focus();
+        console.log('🎯 Focus set to schedule name input');
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [schedule]); // scheduleが変更されたときにフォーカスを再設定
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -97,6 +113,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete }) => {
         <div>
           <label className="block text-gray-700 font-medium mb-2">予定名</label>
           <input
+            ref={nameInputRef}
             type="text"
             name="name"
             value={formData.name}
