@@ -97,8 +97,16 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
         </div>
         
         <button
-          onClick={onAdd}
-          className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full shadow-lg hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl transition-all duration-200 transform hover:scale-105 border-2 border-white font-bold text-sm"
+          onClick={(e) => {
+            console.log('➕ Timeline add button clicked');
+            console.log('➕ onAdd function exists:', typeof onAdd === 'function');
+            if (onAdd) {
+              onAdd();
+            } else {
+              console.error('❌ onAdd function is not available');
+            }
+          }}
+          className="text-gray-300 hover:text-gray-500 transition-colors duration-200 cursor-pointer font-bold text-lg p-1 bg-transparent border-none outline-none"
           title="予定を追加"
         >
           +
