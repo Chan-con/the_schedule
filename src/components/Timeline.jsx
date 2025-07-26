@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 
-const Timeline = ({ schedules, selectedDate, onEdit, onAdd }) => {
+const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) => {
+  const [draggedAllDayId, setDraggedAllDayId] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
+
   // 終日予定と時間指定予定を分ける
   const allDaySchedules = schedules.filter(s => s.allDay);
   const timeSchedules = schedules.filter(s => !s.allDay);
@@ -11,6 +14,72 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd }) => {
     if (!b.time) return -1;
     return a.time.localeCompare(b.time);
   });
+
+  // 終日予定の並び替え処理
+  const handleAllDayDragStart = (e, schedule) => {
+    setDraggedAllDayId(schedule.id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', e.target.outerHTML);
+    e.target.style.opacity = '0.5';
+  };
+
+  const handleAllDayDragEnd = (e) => {
+    e.target.style.opacity = '1';
+    setDraggedAllDayId(null);
+    setDragOverIndex(null);
+  };
+
+  const handleAllDayDragOver = (e, index) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  };
+
+  const handleAllDayDragLeave = (e) => {
+    // 子要素から出た場合は無視
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      setDragOverIndex(null);
+    }
+  };
+
+  const handleAllDayDrop = (e, dropIndex) => {
+    e.preventDefault();
+    setDragOverIndex(null);
+    
+    if (!draggedAllDayId || draggedAllDayId === null) return;
+    
+    const draggedSchedule = allDaySchedules.find(s => s.id === draggedAllDayId);
+    if (!draggedSchedule) return;
+    
+    const currentIndex = allDaySchedules.findIndex(s => s.id === draggedAllDayId);
+    if (currentIndex === dropIndex) return;
+    
+    // 新しい順序で配列を再構築
+    const newAllDaySchedules = [...allDaySchedules];
+    newAllDaySchedules.splice(currentIndex, 1);
+    newAllDaySchedules.splice(dropIndex, 0, draggedSchedule);
+    
+    // orderプロパティを更新
+    const updatedSchedules = newAllDaySchedules.map((schedule, index) => ({
+      ...schedule,
+      allDayOrder: index
+    }));
+    
+    // 親コンポーネントに更新を通知
+    if (onScheduleUpdate) {
+      updatedSchedules.forEach(schedule => {
+        onScheduleUpdate(schedule);
+      });
+    }
+    
+    console.log('📋 All-day schedules reordered:', {
+      from: currentIndex,
+      to: dropIndex,
+      scheduleId: draggedAllDayId
+    });
+    
+    setDraggedAllDayId(null);
+  };
 
   // 選択日付のフォーマット
   const formattedDate = selectedDate 
@@ -36,20 +105,40 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd }) => {
         </button>
       </div>
       
-      {/* 終日予定エリア（控えめに表示） */}
+      {/* 終日予定エリア（並び替え可能） */}
       {allDaySchedules.length > 0 && (
         <div className="mb-4">
-          <div className="text-xs font-medium text-gray-500 mb-2 px-2">終日</div>
+          <div className="text-xs font-medium text-gray-500 mb-2 px-2 flex items-center gap-2">
+            <span>終日</span>
+            <span className="text-xs text-gray-400">（ドラッグで並び替え可能）</span>
+          </div>
           <div className="space-y-2">
-            {allDaySchedules.map(s => (
+            {allDaySchedules
+              .sort((a, b) => (a.allDayOrder || 0) - (b.allDayOrder || 0))
+              .map((s, index) => (
               <div 
-                key={s.id} 
-                className="bg-amber-50 border-l-3 border-amber-400 px-3 py-2 rounded-r cursor-pointer hover:bg-amber-100 transition"
+                key={s.id}
+                draggable={true}
+                onDragStart={(e) => handleAllDayDragStart(e, s)}
+                onDragEnd={handleAllDayDragEnd}
+                onDragOver={(e) => handleAllDayDragOver(e, index)}
+                onDragLeave={handleAllDayDragLeave}
+                onDrop={(e) => handleAllDayDrop(e, index)}
+                className={`
+                  bg-amber-50 border-l-3 border-amber-400 px-3 py-2 rounded-r cursor-grab hover:bg-amber-100 transition-all duration-200
+                  ${draggedAllDayId === s.id ? 'opacity-50 transform scale-95' : ''}
+                  ${dragOverIndex === index && draggedAllDayId !== s.id ? 'transform translate-y-1 shadow-lg bg-amber-200' : ''}
+                `}
                 onClick={() => onEdit(s)}
               >
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium text-amber-600 px-2 py-0.5 rounded bg-amber-200">終日</span>
                   <span className="font-medium text-gray-800">{s.name}</span>
+                  <div className="ml-auto opacity-40 hover:opacity-80 transition-opacity">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                    </svg>
+                  </div>
                 </div>
                 {s.memo && (
                   <div className="text-sm text-gray-600 mt-1 pl-8">

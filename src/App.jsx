@@ -14,7 +14,7 @@ const getTodayDateStr = () => {
 
 const initialSchedules = [
   { id: 1, date: getTodayDateStr(), time: '09:00', name: '打ち合わせ', memo: 'ZoomリンクはSlack参照', allDay: false },
-  { id: 2, date: getTodayDateStr(), time: '', name: '終日イベント', memo: '終日エリアに表示', allDay: true },
+  { id: 2, date: getTodayDateStr(), time: '', name: '終日イベント', memo: '終日エリアに表示', allDay: true, allDayOrder: 0 },
 ];
 
 function App() {
@@ -194,6 +194,15 @@ function App() {
     setSchedules(schedules.filter(s => s.id !== id));
   };
 
+  // 予定更新ハンドラー（並び替え用）
+  const handleScheduleUpdate = (updatedSchedule) => {
+    setSchedules(prevSchedules => 
+      prevSchedules.map(s => 
+        s.id === updatedSchedule.id ? updatedSchedule : s
+      )
+    );
+  };
+
   // 予定追加ハンドラー
   const handleAdd = () => {
     setEditingSchedule({
@@ -209,9 +218,21 @@ function App() {
   // 予定保存ハンドラー
   const handleSave = (schedule) => {
     if (schedule.id) {
+      // 既存の予定を更新
       setSchedules(schedules.map(s => s.id === schedule.id ? schedule : s));
     } else {
-      setSchedules([...schedules, { ...schedule, id: Date.now() }]);
+      // 新しい予定を追加
+      const newSchedule = { ...schedule, id: Date.now() };
+      
+      // 終日予定の場合、allDayOrderを自動設定
+      if (newSchedule.allDay) {
+        const sameDateAllDaySchedules = schedules.filter(s => 
+          s.date === newSchedule.date && s.allDay
+        );
+        newSchedule.allDayOrder = sameDateAllDaySchedules.length;
+      }
+      
+      setSchedules([...schedules, newSchedule]);
     }
     setShowForm(false);
   };
@@ -248,6 +269,7 @@ function App() {
                 selectedDate={selectedDate}
                 onScheduleCopy={handleScheduleCopy}
                 onScheduleDelete={handleScheduleDelete}
+                onScheduleUpdate={handleScheduleUpdate}
                 isMobile={isMobile}
               />
             </div>
@@ -283,6 +305,7 @@ function App() {
                         selectedDate={selectedDate} 
                         onEdit={handleEdit}
                         onAdd={handleAdd}
+                        onScheduleUpdate={handleScheduleUpdate}
                       />
                     </div>
                   </div>
@@ -304,6 +327,7 @@ function App() {
                 selectedDate={selectedDate}
                 onScheduleCopy={handleScheduleCopy}
                 onScheduleDelete={handleScheduleDelete}
+                onScheduleUpdate={handleScheduleUpdate}
                 isMobile={isMobile}
               />
             </div>
@@ -334,6 +358,7 @@ function App() {
                 selectedDate={selectedDate} 
                 onEdit={handleEdit}
                 onAdd={handleAdd}
+                onScheduleUpdate={handleScheduleUpdate}
               />
             </div>
           </>

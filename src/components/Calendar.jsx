@@ -10,7 +10,7 @@ const getMonthDays = (year, month) => {
   return days;
 };
 
-const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, isMobile }) => {
+const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onScheduleUpdate, isMobile }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [isAltPressed, setIsAltPressed] = useState(false);
@@ -19,6 +19,11 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
   const [isCustomDragging, setIsCustomDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  
+  // 終日予定の並び替え用
+  const [draggedAllDaySchedule, setDraggedAllDaySchedule] = useState(null);
+  const [dropTargetAllDaySchedule, setDropTargetAllDaySchedule] = useState(null);
+  
   const calendarRef = useRef(null);
 
   const year = currentDate.getFullYear();
@@ -45,6 +50,84 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       year: today.getFullYear(),
       month: today.getMonth() + 1
     });
+  };
+
+  // 終日予定の並び替えハンドラー
+  const handleAllDayDragStart = (e, schedule) => {
+    // 終日予定のみ並び替え可能
+    if (!schedule.allDay) return;
+    
+    e.stopPropagation(); // カスタムドラッグイベントとの競合を防ぐ
+    setDraggedAllDaySchedule(schedule);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('application/json', JSON.stringify(schedule));
+    console.log('🏷️ All-day schedule drag started:', schedule.name);
+  };
+
+  const handleAllDayDragEnd = () => {
+    setDraggedAllDaySchedule(null);
+    setDropTargetAllDaySchedule(null);
+  };
+
+  const handleAllDayDragOver = (e, targetSchedule) => {
+    // 終日予定のみドロップ対象
+    if (!targetSchedule.allDay || !draggedAllDaySchedule) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // 同じ日付の終日予定のみ並び替え可能
+    if (draggedAllDaySchedule.date === targetSchedule.date) {
+      e.dataTransfer.dropEffect = 'move';
+      setDropTargetAllDaySchedule(targetSchedule);
+    }
+  };
+
+  const handleAllDayDrop = (e, targetSchedule) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedAllDaySchedule || !targetSchedule.allDay) return;
+    if (draggedAllDaySchedule.id === targetSchedule.id) return;
+    if (draggedAllDaySchedule.date !== targetSchedule.date) return;
+
+    // 同じ日付の終日予定を取得
+    const sameDateAllDaySchedules = schedules.filter(s => 
+      s.date === draggedAllDaySchedule.date && s.allDay
+    ).sort((a, b) => (a.allDayOrder || 0) - (b.allDayOrder || 0));
+
+    const draggedIndex = sameDateAllDaySchedules.findIndex(s => s.id === draggedAllDaySchedule.id);
+    const targetIndex = sameDateAllDaySchedules.findIndex(s => s.id === targetSchedule.id);
+
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    // 新しい順序で配列を再構築
+    const newSchedules = [...sameDateAllDaySchedules];
+    newSchedules.splice(draggedIndex, 1);
+    newSchedules.splice(targetIndex, 0, draggedAllDaySchedule);
+
+    // allDayOrderを更新
+    const updatedSchedules = newSchedules.map((schedule, index) => ({
+      ...schedule,
+      allDayOrder: index
+    }));
+
+    // 親コンポーネントに更新を通知
+    if (onScheduleUpdate) {
+      updatedSchedules.forEach(schedule => {
+        onScheduleUpdate(schedule);
+      });
+    }
+
+    console.log('🔄 All-day schedules reordered in calendar:', {
+      from: draggedIndex,
+      to: targetIndex,
+      draggedId: draggedAllDaySchedule.id,
+      targetId: targetSchedule.id
+    });
+
+    setDraggedAllDaySchedule(null);
+    setDropTargetAllDaySchedule(null);
   };  // キーボードイベントの監視
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -307,9 +390,26 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
     setCurrentDate(new Date());
   }, []);
 
-  // 日付ごとの予定を取得
+  // 日付ごとの予定を取得（終日予定はallDayOrderでソート）
   const getSchedulesForDate = dateStr => {
-    return schedules.filter(s => s.date === dateStr);
+    const daySchedules = schedules.filter(s => s.date === dateStr);
+    
+    // 終日予定と時間指定予定を分ける
+    const allDaySchedules = daySchedules.filter(s => s.allDay);
+    const timeSchedules = daySchedules.filter(s => !s.allDay);
+    
+    // 終日予定をallDayOrder順でソート（タイムラインと同じ順序）
+    const sortedAllDaySchedules = allDaySchedules.sort((a, b) => (a.allDayOrder || 0) - (b.allDayOrder || 0));
+    
+    // 時間指定予定を時間順でソート
+    const sortedTimeSchedules = timeSchedules.sort((a, b) => {
+      if (!a.time) return 1;
+      if (!b.time) return -1;
+      return a.time.localeCompare(b.time);
+    });
+    
+    // 終日予定を先に、その後に時間指定予定を配置
+    return [...sortedAllDaySchedules, ...sortedTimeSchedules];
   };
   
   // 日付が選択されているかチェック
@@ -419,15 +519,37 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                   return (
                     <div 
                       key={i}
+                      draggable={schedule.allDay} // 終日予定のみドラッグ可能
+                      onDragStart={(e) => {
+                        if (schedule.allDay) {
+                          handleAllDayDragStart(e, schedule);
+                        }
+                      }}
+                      onDragEnd={handleAllDayDragEnd}
+                      onDragOver={(e) => {
+                        if (schedule.allDay) {
+                          handleAllDayDragOver(e, schedule);
+                        }
+                      }}
+                      onDrop={(e) => {
+                        if (schedule.allDay) {
+                          handleAllDayDrop(e, schedule);
+                        }
+                      }}
                       className={`
-                        text-xs px-1 py-0.5 rounded truncate w-full leading-tight cursor-pointer select-none
-                        ${schedule.allDay ? 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300' : 'bg-blue-200 text-blue-800 hover:bg-blue-300'}
+                        text-xs px-1 py-0.5 rounded truncate w-full leading-tight select-none
+                        ${schedule.allDay ? 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300 cursor-grab' : 'bg-blue-200 text-blue-800 hover:bg-blue-300 cursor-pointer'}
                         ${draggedSchedule?.id === schedule.id ? 'opacity-50' : ''}
                         ${isCustomDragging && draggedSchedule?.id === schedule.id ? 'opacity-30 transform scale-95' : ''}
+                        ${draggedAllDaySchedule?.id === schedule.id ? 'opacity-60 transform scale-95' : ''}
+                        ${dropTargetAllDaySchedule?.id === schedule.id ? 'bg-green-300 border-2 border-green-500' : ''}
                         transition-all duration-150
                       `}
                       title={displayText}
                       onMouseDown={(e) => {
+                        // 時間指定予定のみカスタムドラッグ対象
+                        if (schedule.allDay) return;
+                        
                         e.preventDefault();
                         e.stopPropagation();
                         
