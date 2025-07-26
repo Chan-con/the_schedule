@@ -174,7 +174,19 @@ function App() {
 
   // 予定コピー/移動ハンドラー
   const handleScheduleCopy = (schedule) => {
-    setSchedules([...schedules, schedule]);
+    const existingScheduleIndex = schedules.findIndex(s => s.id === schedule.id);
+    
+    if (existingScheduleIndex !== -1) {
+      // 既存のスケジュールが見つかった場合（移動）
+      const updatedSchedules = [...schedules];
+      updatedSchedules[existingScheduleIndex] = schedule;
+      setSchedules(updatedSchedules);
+      console.log('📝 Schedule updated (moved):', { id: schedule.id, newDate: schedule.date });
+    } else {
+      // 新しいスケジュール（コピー）
+      setSchedules([...schedules, schedule]);
+      console.log('➕ Schedule added (copied):', { id: schedule.id, date: schedule.date });
+    }
   };
 
   // 予定削除ハンドラー（ドラッグ&ドロップやAlt+右クリック用）
