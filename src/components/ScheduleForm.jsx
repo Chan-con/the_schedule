@@ -55,6 +55,27 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete }) => {
     }
   };
 
+  // 開始時刻のダブルクリック処理
+  const handleTimeDoubleClick = () => {
+    if (formData.time === '') {
+      // 空の場合：現在時刻を設定
+      const now = new Date();
+      const currentTime = now.toTimeString().slice(0, 5); // HH:MM形式
+      setFormData({
+        ...formData,
+        time: currentTime,
+        allDay: false
+      });
+    } else {
+      // 入力されている場合：クリア
+      setFormData({
+        ...formData,
+        time: '',
+        allDay: true
+      });
+    }
+  };
+
   return (
     <div className="p-6 w-full max-w-md">
       <div className="flex justify-between items-center mb-6">
@@ -110,11 +131,14 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete }) => {
             name="time"
             value={formData.time}
             onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+            onDoubleClick={handleTimeDoubleClick}
+            className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition cursor-pointer"
             placeholder="空欄の場合は終日になります"
+            title="ダブルクリック: 空欄→現在時刻入力 / 入力済み→クリア"
           />
           <div className="text-xs text-gray-500 mt-1">
-            時間を入力しない場合は、自動的に終日予定になります
+            時間を入力しない場合は、自動的に終日予定になります<br/>
+            <span className="text-blue-600">💡 ダブルクリックで現在時刻入力/クリア</span>
           </div>
         </div>
         
