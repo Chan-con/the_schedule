@@ -189,7 +189,7 @@ function App() {
       time: '',
       name: '',
       memo: '',
-      allDay: false
+      allDay: true  // 新規作成時は開始時間が空欄なので終日に設定
     });
     setShowForm(true);
   };
