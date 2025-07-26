@@ -33,6 +33,30 @@ function App() {
     return savedRatio ? parseFloat(savedRatio) : 50;
   });
   const [isDragging, setIsDragging] = useState(false);
+  
+  // モバイル表示の状態管理
+  const [isMobile, setIsMobile] = useState(false);
+  const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
+  const [mouseStart, setMouseStart] = useState(null);
+  const [mouseEnd, setMouseEnd] = useState(null);
+  const [isMouseDown, setIsMouseDown] = useState(false);
+  
+  // 画面サイズの監視
+  useEffect(() => {
+    const checkScreenSize = () => {
+      const mobile = window.innerWidth < 768; // 768px未満をモバイルとする
+      setIsMobile(mobile);
+      if (!mobile) {
+        setIsTimelineOpen(false); // デスクトップ表示時はタイムラインを閉じる
+      }
+    };
+    
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
 
   // 予定が変更されたらローカルストレージに保存
   useEffect(() => {
@@ -68,7 +92,61 @@ function App() {
     setIsDragging(true);
   };
   
-  // グローバルマウスイベントの設定
+  // タイムライン開閉ハンドラー
+  const closeTimeline = () => {
+    setIsTimelineOpen(false);
+  };
+
+  // スワイプジェスチャーのハンドラー
+  const handleTouchStart = (e) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchMove = (e) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isRightSwipe = distance < -50;
+    
+    // 左から右へのスワイプでタイムラインを閉じる
+    if (isRightSwipe) {
+      closeTimeline();
+    }
+  };
+
+  // マウスドラッグのハンドラー（PC用）
+  const handleMouseDownOnTimeline = (e) => {
+    setIsMouseDown(true);
+    setMouseEnd(null);
+    setMouseStart(e.clientX);
+  };
+
+  const handleMouseMoveOnTimeline = (e) => {
+    if (!isMouseDown) return;
+    setMouseEnd(e.clientX);
+  };
+
+  const handleMouseUpOnTimeline = () => {
+    if (!isMouseDown || !mouseStart || !mouseEnd) {
+      setIsMouseDown(false);
+      return;
+    }
+    
+    const distance = mouseStart - mouseEnd;
+    const isRightDrag = distance < -50;
+    
+    // 左から右へのドラッグでタイムラインを閉じる
+    if (isRightDrag) {
+      closeTimeline();
+    }
+    
+    setIsMouseDown(false);
+  };  // グローバルマウスイベントの設定
   useEffect(() => {
     if (isDragging) {
       document.addEventListener('mousemove', handleMouseMove);
@@ -80,12 +158,15 @@ function App() {
     }
   }, [isDragging]);
 
-  // 日付選択ハンドラー
+  // 日付クリック時の処理
   const handleDateClick = (date) => {
     setSelectedDate(date);
-  };
-
-  // 予定編集ハンドラー
+    
+    // モバイル時は日付クリックでタイムラインを開く
+    if (isMobile) {
+      setIsTimelineOpen(true);
+    }
+  };  // 予定編集ハンドラー
   const handleEdit = (schedule) => {
     setEditingSchedule(schedule);
     setShowForm(true);
@@ -144,48 +225,107 @@ function App() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
       >
-        {/* カレンダー部分 */}
-        <div 
-          className="flex flex-col overflow-hidden pr-1"
-          style={{ width: `${splitRatio}%` }}
-        >
-          <Calendar 
-            schedules={schedules} 
-            onDateClick={handleDateClick} 
-            selectedDate={selectedDate}
-            onScheduleCopy={handleScheduleCopy}
-            onScheduleDelete={handleScheduleDelete}
-          />
-        </div>
-        
-        {/* 分割バー */}
-        <div 
-          className={`
-            w-2 cursor-col-resize transition-colors duration-200 flex-shrink-0 mx-1 bg-transparent hover:bg-transparent
-            ${isDragging ? '' : ''}
-          `}
-          onMouseDown={handleMouseDown}
-        >
-          <div className="w-full h-full flex items-center justify-center">
-            <div className={`
-              w-1 h-12 rounded-full transition-colors duration-200
-              ${isDragging ? 'bg-indigo-500' : 'bg-gray-400 hover:bg-indigo-400'}
-            `}></div>
-          </div>
-        </div>
-        
-        {/* タイムライン部分 */}
-        <div 
-          className="flex flex-col overflow-hidden pl-1"
-          style={{ width: `${100 - splitRatio}%` }}
-        >
-          <Timeline 
-            schedules={filteredSchedules} 
-            selectedDate={selectedDate} 
-            onEdit={handleEdit}
-            onAdd={handleAdd}
-          />
-        </div>
+        {/* モバイル表示 */}
+        {isMobile ? (
+          <>
+            {/* カレンダー部分（モバイル） */}
+            <div className="flex flex-col w-full overflow-hidden">
+              <Calendar 
+                schedules={schedules} 
+                onDateClick={handleDateClick} 
+                selectedDate={selectedDate}
+                onScheduleCopy={handleScheduleCopy}
+                onScheduleDelete={handleScheduleDelete}
+                isMobile={isMobile}
+              />
+            </div>
+            
+            {/* タイムラインオーバーレイ（モバイル） */}
+            {isTimelineOpen && (
+              <>
+                {/* 背景オーバーレイ */}
+                <div 
+                  className="fixed inset-0 bg-black bg-opacity-50 z-40"
+                  onClick={closeTimeline}
+                />
+                
+                {/* タイムラインパネル */}
+                <div 
+                  className={`
+                    fixed top-0 right-0 h-full w-80 bg-white z-50 slide-transition
+                    ${isTimelineOpen ? 'translate-x-0' : 'translate-x-full'}
+                  `}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                  onMouseDown={handleMouseDownOnTimeline}
+                  onMouseMove={handleMouseMoveOnTimeline}
+                  onMouseUp={handleMouseUpOnTimeline}
+                  onMouseLeave={handleMouseUpOnTimeline}
+                >
+                  <div className="h-full flex flex-col">
+                    {/* タイムラインコンテンツ */}
+                    <div className="flex-1 overflow-hidden">
+                      <Timeline 
+                        schedules={filteredSchedules} 
+                        selectedDate={selectedDate} 
+                        onEdit={handleEdit}
+                        onAdd={handleAdd}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          /* デスクトップ表示 */
+          <>
+            {/* カレンダー部分 */}
+            <div 
+              className="flex flex-col overflow-hidden pr-1"
+              style={{ width: `${splitRatio}%` }}
+            >
+              <Calendar 
+                schedules={schedules} 
+                onDateClick={handleDateClick} 
+                selectedDate={selectedDate}
+                onScheduleCopy={handleScheduleCopy}
+                onScheduleDelete={handleScheduleDelete}
+                isMobile={isMobile}
+              />
+            </div>
+            
+            {/* 分割バー */}
+            <div 
+              className={`
+                w-2 cursor-col-resize transition-colors duration-200 flex-shrink-0 mx-1 bg-transparent hover:bg-transparent
+                ${isDragging ? '' : ''}
+              `}
+              onMouseDown={handleMouseDown}
+            >
+              <div className="w-full h-full flex items-center justify-center">
+                <div className={`
+                  w-1 h-12 rounded-full transition-colors duration-200
+                  ${isDragging ? 'bg-indigo-500' : 'bg-gray-400 hover:bg-indigo-400'}
+                `}></div>
+              </div>
+            </div>
+            
+            {/* タイムライン部分 */}
+            <div 
+              className="flex flex-col overflow-hidden pl-1"
+              style={{ width: `${100 - splitRatio}%` }}
+            >
+              <Timeline 
+                schedules={filteredSchedules} 
+                selectedDate={selectedDate} 
+                onEdit={handleEdit}
+                onAdd={handleAdd}
+              />
+            </div>
+          </>
+        )}
       </main>
       
       {showForm && (

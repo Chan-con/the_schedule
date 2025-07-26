@@ -7,8 +7,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    minWidth: 800,
-    minHeight: 600,
+    minWidth: 320,  // スマホサイズまで縮小可能
+    minHeight: 480, // スマホサイズまで縮小可能
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: true,
