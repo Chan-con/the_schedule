@@ -35,6 +35,16 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
     const newDate = new Date(currentDate);
     newDate.setMonth(newDate.getMonth() + 1);
     setCurrentDate(newDate);
+  };
+
+  // 今月に戻る関数
+  const goToCurrentMonth = () => {
+    const today = new Date();
+    setCurrentDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+    console.log('📅 Jumped to current month:', {
+      year: today.getFullYear(),
+      month: today.getMonth() + 1
+    });
   };  // キーボードイベントの監視
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -334,7 +344,13 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
           </svg>
         </button>
         
-        <h2 className="text-base font-bold text-gray-800">{year}年{month + 1}月</h2>
+        <h2 
+          className="text-base font-bold text-gray-800 cursor-pointer hover:text-indigo-600 transition-colors duration-200 select-none" 
+          onDoubleClick={goToCurrentMonth}
+          title="ダブルクリックで今月に戻る"
+        >
+          {year}年{month + 1}月
+        </h2>
         
         <button 
           onClick={nextMonth}
