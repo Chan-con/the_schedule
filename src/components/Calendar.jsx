@@ -10,7 +10,7 @@ const getMonthDays = (year, month) => {
   return days;
 };
 
-const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onScheduleUpdate, isMobile }) => {
+const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onScheduleUpdate, onAdd, isMobile }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [isAltPressed, setIsAltPressed] = useState(false);
@@ -488,6 +488,13 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
               key={index}
               data-date={dateStr}
               onClick={() => onDateClick(new Date(dateStr))}
+              onDoubleClick={() => {
+                if (onAdd) {
+                  // ダブルクリックされた日付で新規予定作成
+                  onAdd(new Date(dateStr));
+                  console.log('📅 Double-clicked to create new schedule:', dateStr);
+                }
+              }}
               className={`
                 p-1 border border-gray-200 hover:bg-gray-50 transition-colors duration-200 relative flex flex-col
                 ${selected ? 'bg-indigo-100 border-indigo-300' : 'bg-white'}

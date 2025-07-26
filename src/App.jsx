@@ -204,15 +204,24 @@ function App() {
   };
 
   // 予定追加ハンドラー
-  const handleAdd = () => {
+  const handleAdd = (targetDate = null) => {
+    // ターゲット日付が指定されていればその日付を使用、なければ選択中の日付を使用
+    const dateToUse = targetDate || selectedDate;
+    const dateStr = dateToUse.toISOString().split('T')[0];
+    
     setEditingSchedule({
-      date: selectedDate.toISOString().split('T')[0],
+      date: dateStr,
       time: '',
       name: '',
       memo: '',
       allDay: true  // 新規作成時は開始時間が空欄なので終日に設定
     });
     setShowForm(true);
+    
+    // ダブルクリックで作成された場合は、その日付を選択状態にする
+    if (targetDate) {
+      setSelectedDate(targetDate);
+    }
   };
 
   // 予定保存ハンドラー
@@ -270,6 +279,7 @@ function App() {
                 onScheduleCopy={handleScheduleCopy}
                 onScheduleDelete={handleScheduleDelete}
                 onScheduleUpdate={handleScheduleUpdate}
+                onAdd={handleAdd}
                 isMobile={isMobile}
               />
             </div>
@@ -328,6 +338,7 @@ function App() {
                 onScheduleCopy={handleScheduleCopy}
                 onScheduleDelete={handleScheduleDelete}
                 onScheduleUpdate={handleScheduleUpdate}
+                onAdd={handleAdd}
                 isMobile={isMobile}
               />
             </div>
