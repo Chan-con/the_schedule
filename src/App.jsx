@@ -91,6 +91,16 @@ function App() {
     setShowForm(true);
   };
 
+  // 予定コピー/移動ハンドラー
+  const handleScheduleCopy = (schedule) => {
+    setSchedules([...schedules, schedule]);
+  };
+
+  // 予定削除ハンドラー（ドラッグ&ドロップやAlt+右クリック用）
+  const handleScheduleDelete = (id) => {
+    setSchedules(schedules.filter(s => s.id !== id));
+  };
+
   // 予定追加ハンドラー
   const handleAdd = () => {
     setEditingSchedule({
@@ -143,6 +153,8 @@ function App() {
             schedules={schedules} 
             onDateClick={handleDateClick} 
             selectedDate={selectedDate}
+            onScheduleCopy={handleScheduleCopy}
+            onScheduleDelete={handleScheduleDelete}
           />
         </div>
         

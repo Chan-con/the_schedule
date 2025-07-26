@@ -10,10 +10,37 @@ const getMonthDays = (year, month) => {
   return days;
 };
 
-const Calendar = ({ schedules, onDateClick, selectedDate }) => {
+const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [draggedSchedule, setDraggedSchedule] = useState(null);
+  const [isAltPressed, setIsAltPressed] = useState(false);
+  const [dragOverDate, setDragOverDate] = useState(null);
+  
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+  
+  // キーボードイベントの監視
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.altKey) {
+        setIsAltPressed(true);
+      }
+    };
+    
+    const handleKeyUp = (e) => {
+      if (!e.altKey) {
+        setIsAltPressed(false);
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
   
   // カレンダーグリッドを6週間分（42日）で構築
   const getCalendarDays = () => {
@@ -120,11 +147,44 @@ const Calendar = ({ schedules, onDateClick, selectedDate }) => {
             <button
               key={index}
               onClick={() => onDateClick(new Date(dateStr))}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOverDate(dateStr);
+              }}
+              onDragLeave={(e) => {
+                // 子要素に移動した場合はdragLeaveを無視
+                if (!e.currentTarget.contains(e.relatedTarget)) {
+                  setDragOverDate(null);
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOverDate(null);
+                
+                if (draggedSchedule && dateStr !== draggedSchedule.date) {
+                  const newSchedule = {
+                    ...draggedSchedule,
+                    date: dateStr,
+                    id: isAltPressed ? Date.now() : draggedSchedule.id // コピーの場合は新しいID
+                  };
+                  
+                  if (isAltPressed && onScheduleCopy) {
+                    // コピー
+                    onScheduleCopy(newSchedule);
+                  } else if (onScheduleCopy) {
+                    // 移動（既存の予定を削除して新しい日付で作成）
+                    onScheduleDelete(draggedSchedule.id);
+                    onScheduleCopy(newSchedule);
+                  }
+                }
+                setDraggedSchedule(null);
+              }}
               className={`
                 p-1 border border-gray-200 hover:bg-gray-50 transition-colors duration-200 relative flex flex-col
                 ${selected ? 'bg-indigo-100 border-indigo-300' : 'bg-white'}
                 ${today && !selected ? 'bg-blue-50 border-blue-300' : ''}
                 ${!currentMonth ? 'opacity-30' : ''}
+                ${dragOverDate === dateStr ? 'bg-green-100 border-green-300' : ''}
               `}
             >
               {/* 日付部分 - 固定の高さ */}
@@ -150,19 +210,44 @@ const Calendar = ({ schedules, onDateClick, selectedDate }) => {
                   return (
                     <div 
                       key={i}
+                      draggable={true}
                       className={`
                         text-xs px-1 py-0.5 rounded truncate w-full leading-tight cursor-pointer
                         ${schedule.allDay ? 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300' : 'bg-blue-200 text-blue-800 hover:bg-blue-300'}
+                        ${draggedSchedule?.id === schedule.id ? 'opacity-50' : ''}
                         transition-colors duration-150
                       `}
                       title={displayText}
+                      onDragStart={(e) => {
+                        setDraggedSchedule(schedule);
+                        e.dataTransfer.effectAllowed = isAltPressed ? 'copy' : 'move';
+                        e.dataTransfer.setData('text/plain', JSON.stringify(schedule));
+                      }}
+                      onDragEnd={() => {
+                        setDraggedSchedule(null);
+                        setDragOverDate(null);
+                      }}
                       onClick={(e) => {
                         // 日付選択を実行（タイムライン更新のため）
                         onDateClick(new Date(dateStr));
-                        // 予定編集などの追加アクションがあれば、ここに追加可能
+                      }}
+                      onContextMenu={(e) => {
+                        if (isAltPressed) {
+                          e.preventDefault();
+                          if (onScheduleDelete) {
+                            onScheduleDelete(schedule.id);
+                          }
+                        }
                       }}
                     >
-                      {displayText}
+                      <div className="flex items-center">
+                        {isAltPressed && (
+                          <span className="mr-1 text-xs opacity-70">
+                            {draggedSchedule?.id === schedule.id ? '📋' : '⚡'}
+                          </span>
+                        )}
+                        <span className="truncate">{displayText}</span>
+                      </div>
                     </div>
                   );
                 })}
