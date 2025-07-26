@@ -168,8 +168,12 @@ function App() {
     }
   };  // 予定編集ハンドラー
   const handleEdit = (schedule) => {
+    console.log('🔧 handleEdit called with:', schedule);
+    console.log('🔧 Current showForm state:', showForm);
+    console.log('🔧 Current editingSchedule state:', editingSchedule);
     setEditingSchedule(schedule);
     setShowForm(true);
+    console.log('🔧 Edit form should now be visible');
   };
 
   // 予定コピー/移動ハンドラー
@@ -280,6 +284,7 @@ function App() {
                 onScheduleDelete={handleScheduleDelete}
                 onScheduleUpdate={handleScheduleUpdate}
                 onAdd={handleAdd}
+                onEdit={handleEdit}
                 isMobile={isMobile}
               />
             </div>
@@ -339,6 +344,7 @@ function App() {
                 onScheduleDelete={handleScheduleDelete}
                 onScheduleUpdate={handleScheduleUpdate}
                 onAdd={handleAdd}
+                onEdit={handleEdit}
                 isMobile={isMobile}
               />
             </div>

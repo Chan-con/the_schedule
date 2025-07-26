@@ -129,7 +129,16 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                   ${draggedAllDayId === s.id ? 'opacity-50 transform scale-95' : ''}
                   ${dragOverIndex === index && draggedAllDayId !== s.id ? 'transform translate-y-1 shadow-lg bg-amber-200' : ''}
                 `}
-                onClick={() => onEdit(s)}
+                onClick={() => {
+                  console.log('👆 All-day schedule clicked:', s.name);
+                  onEdit(s);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  console.log('📝 All-day schedule double-clicked for edit:', s.name);
+                  console.log('📝 onEdit function exists:', typeof onEdit === 'function');
+                  onEdit(s);
+                }}
               >
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium text-amber-600 px-2 py-0.5 rounded bg-amber-200">終日</span>
@@ -173,7 +182,16 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                 <li 
                   key={s.id} 
                   className="border-l-4 border-blue-500 pl-4 flex flex-col gap-1 cursor-pointer hover:bg-blue-50 rounded-md transition p-2"
-                  onClick={() => onEdit(s)}
+                  onClick={() => {
+                    console.log('👆 Time schedule clicked:', s.name);
+                    onEdit(s);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    console.log('📝 Time schedule double-clicked for edit:', s.name);
+                    console.log('📝 onEdit function exists:', typeof onEdit === 'function');
+                    onEdit(s);
+                  }}
                 >
                   <div className="flex items-center gap-3">
                     <span className="font-semibold text-blue-600 text-lg min-w-[4rem]">{s.time}</span>

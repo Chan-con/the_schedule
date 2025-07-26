@@ -10,7 +10,7 @@ const getMonthDays = (year, month) => {
   return days;
 };
 
-const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onScheduleUpdate, onAdd, isMobile }) => {
+const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onScheduleUpdate, onAdd, onEdit, isMobile }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [isAltPressed, setIsAltPressed] = useState(false);
@@ -498,11 +498,15 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
               key={index}
               data-date={dateStr}
               onClick={() => onDateClick(new Date(dateStr))}
-              onDoubleClick={() => {
+              onDoubleClick={(e) => {
+                // 予定要素でのダブルクリックの場合は新規作成しない
+                if (e.target.closest('.schedule-item')) {
+                  return;
+                }
                 if (onAdd) {
-                  // ダブルクリックされた日付で新規予定作成
+                  // 空き部分のダブルクリックで新規予定作成
                   onAdd(new Date(dateStr));
-                  console.log('📅 Double-clicked to create new schedule:', dateStr);
+                  console.log('📅 Empty area double-clicked to create new schedule:', dateStr);
                 }
               }}
               className={`
@@ -544,7 +548,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                       // カスタムドラッグシステムのみ使用
                       draggable={false}
                       className={`
-                        text-xs px-1 py-0.5 rounded truncate w-full leading-tight select-none
+                        schedule-item text-xs px-1 py-0.5 rounded truncate w-full leading-tight select-none
                         ${schedule.allDay ? 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300 cursor-grab' : 'bg-blue-200 text-blue-800 hover:bg-blue-300 cursor-pointer'}
                         ${draggedSchedule?.id === schedule.id ? 'opacity-50' : ''}
                         ${isCustomDragging && draggedSchedule?.id === schedule.id ? 'opacity-30 transform scale-95' : ''}
@@ -572,6 +576,18 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                           y: e.clientY - e.currentTarget.getBoundingClientRect().top
                         });
                         setMousePosition({ x: e.clientX, y: e.clientY });
+                      }}
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // 予定をダブルクリックで編集
+                        console.log('📝 Calendar schedule double-clicked for edit:', schedule.name);
+                        console.log('📝 onEdit function exists:', typeof onEdit === 'function');
+                        if (onEdit) {
+                          onEdit(schedule);
+                        } else {
+                          console.error('❌ onEdit function is not available');
+                        }
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
