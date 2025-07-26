@@ -541,23 +541,8 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                   return (
                     <div 
                       key={i}
-                      draggable={schedule.allDay} // 終日予定のみドラッグ可能
-                      onDragStart={(e) => {
-                        if (schedule.allDay) {
-                          handleAllDayDragStart(e, schedule);
-                        }
-                      }}
-                      onDragEnd={handleAllDayDragEnd}
-                      onDragOver={(e) => {
-                        if (schedule.allDay) {
-                          handleAllDayDragOver(e, schedule);
-                        }
-                      }}
-                      onDrop={(e) => {
-                        if (schedule.allDay) {
-                          handleAllDayDrop(e, schedule);
-                        }
-                      }}
+                      // カスタムドラッグシステムのみ使用
+                      draggable={false}
                       className={`
                         text-xs px-1 py-0.5 rounded truncate w-full leading-tight select-none
                         ${schedule.allDay ? 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300 cursor-grab' : 'bg-blue-200 text-blue-800 hover:bg-blue-300 cursor-pointer'}
@@ -569,15 +554,13 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                       `}
                       title={displayText}
                       onMouseDown={(e) => {
-                        // 時間指定予定のみカスタムドラッグ対象
-                        if (schedule.allDay) return;
-                        
                         e.preventDefault();
                         e.stopPropagation();
                         
                         console.log('🚀 Custom drag started:', {
                           scheduleId: schedule.id,
                           scheduleName: schedule.name,
+                          isAllDay: schedule.allDay,
                           isAltPressed: isAltPressed,
                           mousePosition: { x: e.clientX, y: e.clientY }
                         });
