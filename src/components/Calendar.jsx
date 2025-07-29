@@ -529,7 +529,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                   text-xs font-medium
                   ${isJapaneseHoliday(date) ? 'text-green-600' : 
                     date.getDay() === 0 ? 'text-red-500' : 
-                    date.getDay() === 6 ? 'text-blue-500' : 'text-gray-700'}
+                    date.getDay() === 6 ? 'text-blue-500' : 'text-gray-400'}
                   ${today ? 'font-bold' : ''}
                   ${!currentMonth ? 'text-gray-400' : ''}
                 `}
