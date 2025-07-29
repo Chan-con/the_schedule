@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { isJapaneseHoliday, getJapaneseHolidayName } from '../utils/holidays';
 
 const getMonthDays = (year, month) => {
   const firstDay = new Date(year, month, 1);
@@ -523,13 +524,17 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
               `}
             >
               {/* 日付部分 - 固定の高さ */}
-              <div className="flex-shrink-0 mb-0.5">
+              <div className="flex-shrink-0 mb-0.5 flex justify-center">
                 <span className={`
                   text-xs font-medium
-                  ${date.getDay() === 0 ? 'text-red-500' : date.getDay() === 6 ? 'text-blue-500' : 'text-gray-700'}
+                  ${isJapaneseHoliday(date) ? 'text-green-600' : 
+                    date.getDay() === 0 ? 'text-red-500' : 
+                    date.getDay() === 6 ? 'text-blue-500' : 'text-gray-700'}
                   ${today ? 'font-bold' : ''}
                   ${!currentMonth ? 'text-gray-400' : ''}
-                `}>
+                `}
+                title={isJapaneseHoliday(date) ? getJapaneseHolidayName(date) : ''}
+                >
                   {date.getDate()}
                 </span>
               </div>
