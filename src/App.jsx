@@ -5,6 +5,7 @@ import Calendar from './components/Calendar';
 import Timeline from './components/Timeline';
 import ScheduleForm from './components/ScheduleForm';
 import TitleBar from './components/TitleBar';
+import SettingsModal from './components/SettingsModal';
 
 // サンプルデータ - 今日の日付に合わせて調整
 const getTodayDateStr = () => {
@@ -26,6 +27,7 @@ function App() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   
   // 分割比率の状態管理（デフォルト50%）
   const [splitRatio, setSplitRatio] = useState(() => {
@@ -265,7 +267,7 @@ function App() {
 
   return (
     <div className="w-screen h-screen bg-gradient-to-br from-indigo-900 to-gray-900 text-gray-900 font-sans flex flex-col overflow-hidden">
-      <TitleBar />
+      <TitleBar onOpenSettings={() => setShowSettings(true)} />
       <main 
         className="flex-1 p-2 overflow-hidden flex relative"
         onMouseMove={handleMouseMove}
@@ -394,6 +396,12 @@ function App() {
           </div>
         </div>
       )}
+      
+      {/* 設定モーダル */}
+      <SettingsModal 
+        isOpen={showSettings} 
+        onClose={() => setShowSettings(false)} 
+      />
     </div>
   );
 }
