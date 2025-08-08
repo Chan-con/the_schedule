@@ -53,6 +53,17 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
     });
   };
 
+  // 中ボタンクリック（今日にジャンプ）
+  const handleMiddleClick = (e) => {
+    if (e.button === 1) { // 中ボタン（ホイールクリック）
+      e.preventDefault();
+      goToCurrentMonth();
+      // 今日の日付を選択状態にする
+      const today = new Date();
+      onDateClick(today);
+    }
+  };
+
   // 終日予定の並び替えハンドラー
   const handleAllDayDragStart = (e, schedule) => {
     // 終日予定のみ並び替え可能
@@ -439,6 +450,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
     <div 
       ref={calendarRef}
       className="bg-white rounded-lg shadow-lg p-3 w-full h-full flex flex-col overflow-hidden"
+      onMouseDown={handleMiddleClick}
     >
       <div className="flex justify-between items-center mb-3 flex-shrink-0">
         <button 
