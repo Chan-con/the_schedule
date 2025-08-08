@@ -523,17 +523,27 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                 }
               }}
               className={`
-                p-1 border relative flex flex-col bg-white
+                p-1 relative flex flex-col bg-white
                 focus:outline-none
                 ${dragOverDate === dateStr ? 
-                  'bg-green-100 border-green-300 hover:border-green-300' : 
+                  'bg-green-100 border border-green-300 hover:border-green-300' : 
+                  today && selected ?
+                    'bg-orange-50' :
                   selected ? 
-                    'border-indigo-300 hover:border-indigo-300' : 
+                    'border border-indigo-300 hover:border-indigo-300' : 
                   today ? 
-                    'bg-orange-50 border-orange-300 hover:border-orange-300' : 
-                    'border-gray-200 hover:border-gray-200'}
+                    'bg-orange-50 border border-orange-400 hover:border-orange-400' : 
+                    'border border-gray-200 hover:border-gray-200'}
                 ${!currentMonth ? 'opacity-30' : ''}
               `}
+              style={{
+                ...(today && selected ? {
+                  border: '1px solid transparent',
+                  borderRadius: '6px',
+                  background: `linear-gradient(white, white) padding-box, 
+                              linear-gradient(135deg, #fb923c 0%, #fb923c 50%, #6366f1 50%, #6366f1 100%) border-box`
+                } : {})
+              }}
             >
               {/* 日付部分 - 固定の高さ */}
               <div className="flex-shrink-0 mb-0.5 flex justify-center">
