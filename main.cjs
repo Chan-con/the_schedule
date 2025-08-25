@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -222,6 +222,17 @@ ipcMain.handle('save-settings', (event, settings) => {
 
 ipcMain.handle('register-global-shortcut', (event, accelerator) => {
   registerGlobalShortcut(accelerator);
+});
+
+// URLをデフォルトブラウザで開く
+ipcMain.handle('open-url', (event, url) => {
+  try {
+    shell.openExternal(url);
+    return { success: true };
+  } catch (error) {
+    console.error('Error opening URL:', error);
+    return { success: false, error: error.message };
+  }
 });
 
 // 多重起動防止

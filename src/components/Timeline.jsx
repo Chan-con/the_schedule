@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import MemoWithLinks from './MemoWithLinks';
 
 const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) => {
   const [draggedAllDayId, setDraggedAllDayId] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
+  const [allDayHeight, setAllDayHeight] = useState(200); // 終日エリアの初期高さ
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeStartY, setResizeStartY] = useState(0); // リサイズ開始時のマウスY座標
+  const [resizeStartHeight, setResizeStartHeight] = useState(0); // リサイズ開始時の高さ
+  const timelineRef = useRef(null);
+  const resizeRef = useRef(null);
 
   // 終日予定と時間指定予定を分ける
   const allDaySchedules = schedules.filter(s => s.allDay);
@@ -14,6 +21,46 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
     if (!b.time) return -1;
     return a.time.localeCompare(b.time);
   });
+
+  // リサイズハンドラー
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizing || !timelineRef.current) return;
+      
+      const rect = timelineRef.current.getBoundingClientRect();
+      const headerHeight = 60; // ヘッダー部分の高さ
+      const minHeight = 100; // 最小高さ
+      const maxHeight = rect.height - headerHeight - 100; // 最大高さ
+      
+      // マウス移動の差分を計算
+      const deltaY = e.clientY - resizeStartY;
+      const newHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartHeight + deltaY));
+      setAllDayHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, resizeStartY, resizeStartHeight]);
+
+  const handleResizeStart = (e) => {
+    e.preventDefault();
+    setIsResizing(true);
+    setResizeStartY(e.clientY);
+    setResizeStartHeight(allDayHeight);
+  };
 
   // 終日予定の並び替え処理
   const handleAllDayDragStart = (e, schedule) => {
@@ -87,7 +134,60 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
     : '選択された日付';
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-3 h-full flex flex-col overflow-hidden">
+    <div 
+      ref={timelineRef}
+      className="bg-white rounded-lg shadow-lg p-3 h-full flex flex-col overflow-hidden"
+      style={{
+        '--scrollbar-width': '6px',
+        '--scrollbar-track': '#f1f5f9',
+        '--scrollbar-thumb': '#cbd5e1',
+        '--scrollbar-thumb-hover': '#94a3b8'
+      }}
+    >
+      <style>{`
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+          width: var(--scrollbar-width);
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: var(--scrollbar-track);
+          border-radius: 3px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: var(--scrollbar-thumb);
+          border-radius: 3px;
+          transition: background-color 0.2s ease;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: var(--scrollbar-thumb-hover);
+        }
+        
+        .resize-handle {
+          background: transparent;
+          width: 100%;
+          height: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s ease;
+        }
+        
+        .resize-handle::before {
+          content: '';
+          width: 48px;
+          height: 3px;
+          background: #9ca3af;
+          border-radius: 2px;
+        }
+      `}</style>
+      
       <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-base font-bold text-gray-800">タイムライン</h2>
@@ -113,59 +213,72 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
         </button>
       </div>
       
-      {/* 終日予定エリア（並び替え可能） */}
+      {/* 終日予定エリア（リサイズ可能） */}
       {allDaySchedules.length > 0 && (
-        <div className="mb-4">
-          <div className="text-xs font-medium text-gray-500 mb-2 px-2 flex items-center gap-2">
-            <span>終日</span>
-            <span className="text-xs text-gray-400">（ドラッグで並び替え可能）</span>
-          </div>
-          <div className="space-y-2">
-            {allDaySchedules
-              .sort((a, b) => (a.allDayOrder || 0) - (b.allDayOrder || 0))
-              .map((s, index) => (
-              <div 
-                key={s.id}
-                draggable={true}
-                onDragStart={(e) => handleAllDayDragStart(e, s)}
-                onDragEnd={handleAllDayDragEnd}
-                onDragOver={(e) => handleAllDayDragOver(e, index)}
-                onDragLeave={handleAllDayDragLeave}
-                onDrop={(e) => handleAllDayDrop(e, index)}
-                className={`
-                  bg-amber-50 border-l-3 border-amber-400 px-3 py-2 rounded-r cursor-grab hover:bg-amber-100 transition-all duration-200
-                  ${draggedAllDayId === s.id ? 'opacity-50 transform scale-95' : ''}
-                  ${dragOverIndex === index && draggedAllDayId !== s.id ? 'transform translate-y-1 shadow-lg bg-amber-200' : ''}
-                `}
-                onClick={() => {
-                  console.log('👆 All-day schedule clicked:', s.name);
-                  onEdit(s);
-                }}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  console.log('📝 All-day schedule double-clicked for edit:', s.name);
-                  console.log('📝 onEdit function exists:', typeof onEdit === 'function');
-                  onEdit(s);
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-amber-600 px-2 py-0.5 rounded bg-amber-200">終日</span>
-                  <span className="font-medium text-gray-800">{s.name}</span>
-                  <div className="ml-auto opacity-40 hover:opacity-80 transition-opacity">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                    </svg>
+        <div className="flex flex-col">
+          <div 
+            className="custom-scrollbar overflow-auto"
+            style={{ height: `${allDayHeight}px` }}
+          >
+            <div className="text-xs font-medium text-gray-500 mb-2 px-2 flex items-center gap-2">
+              <span>終日</span>
+              <span className="text-xs text-gray-400">（ドラッグで並び替え可能）</span>
+            </div>
+            <div className="space-y-2 pr-2">
+              {allDaySchedules
+                .sort((a, b) => (a.allDayOrder || 0) - (b.allDayOrder || 0))
+                .map((s, index) => (
+                <div 
+                  key={s.id}
+                  draggable={true}
+                  onDragStart={(e) => handleAllDayDragStart(e, s)}
+                  onDragEnd={handleAllDayDragEnd}
+                  onDragOver={(e) => handleAllDayDragOver(e, index)}
+                  onDragLeave={handleAllDayDragLeave}
+                  onDrop={(e) => handleAllDayDrop(e, index)}
+                  className={`
+                    bg-amber-50 border-l-3 border-amber-400 px-3 py-2 rounded-r cursor-grab hover:bg-amber-100 transition-all duration-200
+                    ${draggedAllDayId === s.id ? 'opacity-50 transform scale-95' : ''}
+                    ${dragOverIndex === index && draggedAllDayId !== s.id ? 'transform translate-y-1 shadow-lg bg-amber-200' : ''}
+                  `}
+                  onClick={() => {
+                    console.log('👆 All-day schedule clicked:', s.name);
+                    onEdit(s);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    console.log('📝 All-day schedule double-clicked for edit:', s.name);
+                    console.log('📝 onEdit function exists:', typeof onEdit === 'function');
+                    onEdit(s);
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-amber-600 px-2 py-0.5 rounded bg-amber-200">終日</span>
+                    <span className="font-medium text-gray-800">{s.name}</span>
+                    <div className="ml-auto opacity-40 hover:opacity-80 transition-opacity">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                      </svg>
+                    </div>
                   </div>
+                  {s.memo && (
+                    <MemoWithLinks 
+                      memo={s.memo}
+                      className="text-sm text-gray-600 mt-1 pl-8"
+                    />
+                  )}
                 </div>
-                {s.memo && (
-                  <div className="text-sm text-gray-600 mt-1 pl-8">
-                    {s.memo}
-                  </div>
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-          <div className="border-b border-gray-200 mt-4 mb-4"></div>
+          
+          {/* リサイズハンドル */}
+          <div 
+            ref={resizeRef}
+            className="resize-handle relative h-4 cursor-row-resize select-none"
+            onMouseDown={handleResizeStart}
+            title="ドラッグして境界を調整"
+          />
         </div>
       )}
       
@@ -183,7 +296,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
             <p className="text-sm">時間指定の予定はありません</p>
           </div>
         ) : (
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 custom-scrollbar overflow-auto">
             <div className="text-xs font-medium text-gray-500 mb-3 px-2">時間指定</div>
             <ul className="space-y-3 pr-2">
               {sortedTimeSchedules.map(s => (
@@ -206,9 +319,10 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                     <span className="font-bold text-gray-900">{s.name}</span>
                   </div>
                   {s.memo && (
-                    <div className="text-gray-500 text-sm pl-2 border-l-2 border-gray-200 ml-1">
-                      {s.memo}
-                    </div>
+                    <MemoWithLinks 
+                      memo={s.memo}
+                      className="text-gray-500 text-sm pl-2 border-l-2 border-gray-200 ml-1"
+                    />
                   )}
                 </li>
               ))}
