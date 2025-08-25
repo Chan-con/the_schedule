@@ -317,6 +317,13 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         targetTag: e.target?.tagName
       });
 
+      // フォーム要素内では月切り替えを無効化
+      const isInFormElement = e.target.closest('form, .modal, [role="dialog"]');
+      if (isInFormElement) {
+        console.log('🚫 Wheel ignored: inside form element');
+        return;
+      }
+
       // スクロール量が小さい場合は無視
       if (Math.abs(e.deltaY) < 10) {
         console.log('🚫 Wheel ignored: deltaY too small');

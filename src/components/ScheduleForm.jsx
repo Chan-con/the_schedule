@@ -161,13 +161,41 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete }) => {
         
         <div>
           <label className="block text-gray-700 font-medium mb-2">メモ</label>
-          <textarea
-            name="memo"
-            value={formData.memo}
-            onChange={handleChange}
-            className="w-full border border-gray-300 rounded-lg px-4 py-3 h-28 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
-            placeholder="メモを入力してください（任意）"
-          ></textarea>
+          <div className="memo-container">
+            <textarea
+              name="memo"
+              value={formData.memo}
+              onChange={handleChange}
+              onWheel={(e) => e.stopPropagation()}
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 h-28 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none memo-textarea"
+              placeholder="メモを入力してください（任意）"
+            ></textarea>
+          </div>
+          <style dangerouslySetInnerHTML={{
+            __html: `
+              .memo-textarea::-webkit-scrollbar {
+                width: 6px;
+              }
+              
+              .memo-textarea::-webkit-scrollbar-track {
+                background: transparent;
+              }
+              
+              .memo-textarea::-webkit-scrollbar-thumb {
+                background: #cbd5e1;
+                border-radius: 3px;
+                transition: background-color 0.2s ease;
+              }
+              
+              .memo-textarea::-webkit-scrollbar-thumb:hover {
+                background: #94a3b8;
+              }
+              
+              .memo-textarea::-webkit-scrollbar-corner {
+                background: transparent;
+              }
+            `
+          }} />
         </div>
 
         {showDeleteConfirm ? (
