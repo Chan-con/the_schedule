@@ -20,6 +20,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
   const [isCustomDragging, setIsCustomDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [maxSchedulesPerCell, setMaxSchedulesPerCell] = useState(3); // 動的に調整される
   
   // 終日予定の並び替え用
   const [draggedAllDaySchedule, setDraggedAllDaySchedule] = useState(null);
@@ -29,6 +30,50 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+
+  // カレンダーのサイズ変更を監視して表示件数を調整
+  useEffect(() => {
+    const updateMaxSchedules = () => {
+      if (!calendarRef.current) return;
+      
+      const calendarHeight = calendarRef.current.clientHeight;
+      const headerHeight = 80; // ヘッダー部分の高さ
+      const availableHeight = calendarHeight - headerHeight;
+      const rowHeight = availableHeight / 6; // 6週間分
+      
+      // 日付表示部分（約20px）とスケジュール間隔（2px）を考慮
+      const dateHeight = 20;
+      const scheduleHeight = 20; // 1スケジュールの高さ
+      const scheduleSpacing = 2; // スケジュール間の余白
+      const otherItemsHeight = 16; // "他○件"の高さ
+      const padding = 8; // セル内のパディング
+      
+      const availableForSchedules = rowHeight - dateHeight - padding;
+      const maxSchedules = Math.max(1, Math.floor((availableForSchedules - otherItemsHeight) / (scheduleHeight + scheduleSpacing)));
+      
+      setMaxSchedulesPerCell(Math.min(maxSchedules, 6)); // 最大6件まで
+      
+      console.log('📏 Calendar size updated:', {
+        calendarHeight,
+        availableHeight,
+        rowHeight,
+        maxSchedules: Math.min(maxSchedules, 6)
+      });
+    };
+
+    // 初期サイズ計算
+    updateMaxSchedules();
+
+    // ResizeObserverでサイズ変更を監視
+    const resizeObserver = new ResizeObserver(updateMaxSchedules);
+    if (calendarRef.current) {
+      resizeObserver.observe(calendarRef.current);
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   // 月の移動関数
   const prevMonth = () => {
@@ -570,7 +615,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
               
               {/* 予定部分 - 残りのスペースを使用 */}
               <div className="flex-1 w-full overflow-hidden space-y-0.5">
-                {currentMonth && daySchedules.slice(0, 3).map((schedule, i) => {
+                {currentMonth && daySchedules.slice(0, maxSchedulesPerCell).map((schedule, i) => {
                   // 表示テキストを決定
                   const displayText = schedule.allDay 
                     ? schedule.name 
@@ -649,9 +694,9 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                   );
                 })}
                 
-                {currentMonth && daySchedules.length > 3 && (
-                  <div className="text-xs text-gray-500 px-1 py-0.5">
-                    他{daySchedules.length - 3}件
+                {currentMonth && daySchedules.length > maxSchedulesPerCell && (
+                  <div className="text-xs text-gray-500 px-1 py-0.5 truncate">
+                    他{daySchedules.length - maxSchedulesPerCell}件
                   </div>
                 )}
               </div>
