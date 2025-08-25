@@ -1,14 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 
-const MemoWithLinks = ({ memo, className = '' }) => {
+const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
+  const [isHovering, setIsHovering] = useState(false);
   if (!memo) return null;
 
   console.log('🔍 MemoWithLinks received memo:', memo);
 
-  const handleUrlClick = (url, e) => {
+  const handleMouseEnter = () => {
+    setIsHovering(true);
+    if (onHoverChange) {
+      onHoverChange(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovering(false);
+    if (onHoverChange) {
+      onHoverChange(false);
+    }
+  };
+
+  const handleUrlRightClick = (url, e) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('🖱️ URL clicked:', url);
+    console.log('🖱️ URL right-clicked:', url);
     
     if (window.electronAPI && window.electronAPI.openUrl) {
       console.log('📞 Calling electronAPI.openUrl...');
@@ -42,8 +57,16 @@ const MemoWithLinks = ({ memo, className = '' }) => {
     const hasUrl = line.toLowerCase().includes('http://') || line.toLowerCase().includes('https://');
     
     if (!hasUrl) {
-      // URLがない場合は通常のテキスト
-      return <span key={`line-${lineIndex}`}>{line}</span>;
+      // URLがない場合は通常のテキスト（選択可能）
+      return (
+        <span 
+          key={`line-${lineIndex}`}
+          className="select-text"
+          style={{ userSelect: 'text', cursor: 'text' }}
+        >
+          {line}
+        </span>
+      );
     }
 
     // URLがある場合は分割して処理
@@ -61,24 +84,43 @@ const MemoWithLinks = ({ memo, className = '' }) => {
             return (
               <span
                 key={`url-${lineIndex}-${partIndex}`}
-                className="text-blue-600 underline cursor-pointer hover:text-blue-800 transition-colors font-medium"
-                onClick={(e) => handleUrlClick(part, e)}
-                onContextMenu={(e) => handleUrlClick(part, e)}
-                title="クリックでブラウザで開く"
-                style={{ color: '#2563eb', textDecoration: 'underline' }}
+                className="text-blue-600 underline hover:text-blue-800 transition-colors font-medium select-text"
+                onContextMenu={(e) => handleUrlRightClick(part, e)}
+                title="右クリックでブラウザで開く"
+                style={{ 
+                  color: '#2563eb', 
+                  textDecoration: 'underline',
+                  cursor: 'text',
+                  userSelect: 'text'
+                }}
               >
                 {part}
               </span>
             );
           }
-          return <span key={`text-${lineIndex}-${partIndex}`}>{part}</span>;
+          return <span 
+            key={`text-${lineIndex}-${partIndex}`}
+            className="select-text"
+            style={{ userSelect: 'text', cursor: 'text' }}
+          >
+            {part}
+          </span>;
         })}
       </span>
     );
   };
 
   return (
-    <div className={className} style={{ whiteSpace: 'pre-wrap' }}>
+    <div 
+      className={`${className} select-text`} 
+      style={{ 
+        whiteSpace: 'pre-wrap',
+        userSelect: 'text',
+        cursor: 'text'
+      }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
       {lines.map((line, index) => (
         <React.Fragment key={`fragment-${index}`}>
           {renderLine(line, index)}

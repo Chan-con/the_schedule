@@ -8,6 +8,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
   const [isResizing, setIsResizing] = useState(false);
   const [resizeStartY, setResizeStartY] = useState(0); // リサイズ開始時のマウスY座標
   const [resizeStartHeight, setResizeStartHeight] = useState(0); // リサイズ開始時の高さ
+  const [isMemoHovering, setIsMemoHovering] = useState(false); // メモホバー状態
   const timelineRef = useRef(null);
   const resizeRef = useRef(null);
 
@@ -64,6 +65,12 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
 
   // 終日予定の並び替え処理
   const handleAllDayDragStart = (e, schedule) => {
+    // メモにホバー中は並び替えを無効化
+    if (isMemoHovering) {
+      e.preventDefault();
+      return;
+    }
+    
     setDraggedAllDayId(schedule.id);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/html', e.target.outerHTML);
@@ -230,22 +237,34 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                 .map((s, index) => (
                 <div 
                   key={s.id}
-                  draggable={true}
+                  draggable={!isMemoHovering}
                   onDragStart={(e) => handleAllDayDragStart(e, s)}
                   onDragEnd={handleAllDayDragEnd}
                   onDragOver={(e) => handleAllDayDragOver(e, index)}
                   onDragLeave={handleAllDayDragLeave}
                   onDrop={(e) => handleAllDayDrop(e, index)}
                   className={`
-                    bg-amber-50 border-l-3 border-amber-400 px-3 py-2 rounded-r cursor-grab hover:bg-amber-100 transition-all duration-200
+                    bg-amber-50 border-l-3 border-amber-400 px-3 py-2 rounded-r ${isMemoHovering ? 'cursor-text' : 'cursor-grab'} hover:bg-amber-100 transition-all duration-200
                     ${draggedAllDayId === s.id ? 'opacity-50 transform scale-95' : ''}
                     ${dragOverIndex === index && draggedAllDayId !== s.id ? 'transform translate-y-1 shadow-lg bg-amber-200' : ''}
                   `}
-                  onClick={() => {
+                  onClick={(e) => {
+                    // メモにホバー中はクリックを無効化
+                    if (isMemoHovering) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      return;
+                    }
                     console.log('👆 All-day schedule clicked:', s.name);
                     onEdit(s);
                   }}
                   onDoubleClick={(e) => {
+                    // メモにホバー中はダブルクリックを無効化
+                    if (isMemoHovering) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      return;
+                    }
                     e.stopPropagation();
                     console.log('📝 All-day schedule double-clicked for edit:', s.name);
                     console.log('📝 onEdit function exists:', typeof onEdit === 'function');
@@ -265,6 +284,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                     <MemoWithLinks 
                       memo={s.memo}
                       className="text-sm text-gray-600 mt-1 pl-8"
+                      onHoverChange={setIsMemoHovering}
                     />
                   )}
                 </div>
@@ -302,12 +322,24 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
               {sortedTimeSchedules.map(s => (
                 <li 
                   key={s.id} 
-                  className="border-l-4 border-blue-500 pl-4 flex flex-col gap-1 cursor-pointer hover:bg-blue-50 rounded-md transition p-2"
-                  onClick={() => {
+                  className={`border-l-4 border-blue-500 pl-4 flex flex-col gap-1 ${isMemoHovering ? 'cursor-text' : 'cursor-pointer'} hover:bg-blue-50 rounded-md transition p-2`}
+                  onClick={(e) => {
+                    // メモにホバー中はクリックを無効化
+                    if (isMemoHovering) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      return;
+                    }
                     console.log('👆 Time schedule clicked:', s.name);
                     onEdit(s);
                   }}
                   onDoubleClick={(e) => {
+                    // メモにホバー中はダブルクリックを無効化
+                    if (isMemoHovering) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      return;
+                    }
                     e.stopPropagation();
                     console.log('📝 Time schedule double-clicked for edit:', s.name);
                     console.log('📝 onEdit function exists:', typeof onEdit === 'function');
@@ -322,6 +354,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                     <MemoWithLinks 
                       memo={s.memo}
                       className="text-gray-500 text-sm pl-2 border-l-2 border-gray-200 ml-1"
+                      onHoverChange={setIsMemoHovering}
                     />
                   )}
                 </li>
