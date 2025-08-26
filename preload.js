@@ -15,4 +15,10 @@ window.electronAPI = {
   
   // URL操作のAPI
   openUrl: (url) => ipcRenderer.invoke('open-url', url),
+  
+  // 通知関連のAPI
+  showNotification: (options) => ipcRenderer.invoke('show-notification', options),
+  scheduleNotification: (options) => ipcRenderer.invoke('schedule-notification', options),
+  cancelNotification: (id) => ipcRenderer.invoke('cancel-notification', id),
+  cancelAllNotifications: () => ipcRenderer.invoke('cancel-all-notifications'),
 };

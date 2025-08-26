@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, shell, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -231,6 +231,114 @@ ipcMain.handle('open-url', (event, url) => {
     return { success: true };
   } catch (error) {
     console.error('Error opening URL:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 通知関連のIPC
+ipcMain.handle('show-notification', (event, options) => {
+  try {
+    if (Notification.isSupported()) {
+      const notification = new Notification({
+        title: options.title || 'スケジュール通知',
+        body: options.body || '',
+        icon: isDev 
+          ? path.join(__dirname, 'asset', 'icon.PNG')
+          : path.join(process.resourcesPath, 'asset', 'icon.PNG'),
+        urgency: 'normal',
+        timeoutType: 'default'
+      });
+
+      notification.on('click', () => {
+        // 通知をクリックした時にアプリを表示
+        showWindow();
+      });
+
+      notification.show();
+      return { success: true };
+    } else {
+      console.warn('Notifications not supported');
+      return { success: false, error: 'Notifications not supported' };
+    }
+  } catch (error) {
+    console.error('Error showing notification:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 通知のスケジュール管理
+let notificationTimers = new Map();
+
+ipcMain.handle('schedule-notification', (event, options) => {
+  try {
+    const { id, time, title, body } = options;
+    const now = new Date().getTime();
+    const notificationTime = new Date(time).getTime();
+    const delay = notificationTime - now;
+
+    // 既存のタイマーがあれば削除
+    if (notificationTimers.has(id)) {
+      clearTimeout(notificationTimers.get(id));
+    }
+
+    if (delay > 0) {
+      const timer = setTimeout(() => {
+        if (Notification.isSupported()) {
+          const notification = new Notification({
+            title: title || 'スケジュール通知',
+            body: body || '',
+            icon: isDev 
+              ? path.join(__dirname, 'asset', 'icon.PNG')
+              : path.join(process.resourcesPath, 'asset', 'icon.PNG'),
+            urgency: 'normal',
+            timeoutType: 'default'
+          });
+
+          notification.on('click', () => {
+            showWindow();
+          });
+
+          notification.show();
+        }
+        
+        // タイマーをMapから削除
+        notificationTimers.delete(id);
+      }, delay);
+
+      notificationTimers.set(id, timer);
+      return { success: true, scheduledFor: new Date(notificationTime).toISOString() };
+    } else {
+      return { success: false, error: 'Notification time is in the past' };
+    }
+  } catch (error) {
+    console.error('Error scheduling notification:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('cancel-notification', (event, id) => {
+  try {
+    if (notificationTimers.has(id)) {
+      clearTimeout(notificationTimers.get(id));
+      notificationTimers.delete(id);
+      return { success: true };
+    }
+    return { success: false, error: 'Notification not found' };
+  } catch (error) {
+    console.error('Error canceling notification:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('cancel-all-notifications', () => {
+  try {
+    for (const timer of notificationTimers.values()) {
+      clearTimeout(timer);
+    }
+    notificationTimers.clear();
+    return { success: true };
+  } catch (error) {
+    console.error('Error canceling all notifications:', error);
     return { success: false, error: error.message };
   }
 });

@@ -180,3 +180,28 @@ button:focus-visible {
   scroll-behavior: smooth;
   overscroll-behavior: contain;
 }
+
+/* 通知設定フォーム要素のスタイル強制適用 */
+.notification-input {
+  background-color: white !important;
+  color: #374151 !important;
+}
+
+.notification-select {
+  background-color: white !important;
+  color: #374151 !important;
+}
+
+.notification-select option {
+  background-color: white !important;
+  color: #374151 !important;
+}
+
+.notification-button {
+  background-color: white !important;
+  color: #2563eb !important;
+}
+
+.notification-button:hover {
+  background-color: #eff6ff !important;
+}

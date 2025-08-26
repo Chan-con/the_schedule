@@ -5,6 +5,7 @@ import Calendar from './components/Calendar';
 import Timeline from './components/Timeline';
 import ScheduleForm from './components/ScheduleForm';
 import TitleBar from './components/TitleBar';
+import { useNotifications } from './hooks/useNotifications';
 
 // サンプルデータ - 今日の日付に合わせて調整
 const getTodayDateStr = () => {
@@ -42,6 +43,9 @@ function App() {
   const [mouseStart, setMouseStart] = useState(null);
   const [mouseEnd, setMouseEnd] = useState(null);
   const [isMouseDown, setIsMouseDown] = useState(false);
+  
+  // 通知システム
+  const { scheduleAllNotifications, cancelScheduleNotifications, sendTestNotification } = useNotifications(schedules);
   
   // 画面サイズの監視
   useEffect(() => {
@@ -195,6 +199,8 @@ function App() {
 
   // 予定削除ハンドラー（ドラッグ&ドロップやAlt+右クリック用）
   const handleScheduleDelete = (id) => {
+    // 通知もキャンセル
+    cancelScheduleNotifications(id);
     setSchedules(schedules.filter(s => s.id !== id));
   };
 
@@ -252,6 +258,8 @@ function App() {
 
   // 予定削除ハンドラー
   const handleDelete = (id) => {
+    // 通知もキャンセル
+    cancelScheduleNotifications(id);
     setSchedules(schedules.filter(s => s.id !== id));
     setShowForm(false);
   };
@@ -383,13 +391,14 @@ function App() {
       </main>
       
       {showForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full h-[90vh] max-h-[90vh] flex flex-col overflow-hidden">
             <ScheduleForm 
               schedule={editingSchedule} 
               onSave={handleSave} 
               onClose={handleClose} 
               onDelete={editingSchedule?.id ? handleDelete : undefined}
+              sendTestNotification={sendTestNotification}
             />
           </div>
         </div>
