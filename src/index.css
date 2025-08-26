@@ -187,6 +187,34 @@ button:focus-visible {
   color: #374151 !important;
 }
 
+/* スピンボタンを完全に削除 */
+.notification-input::-webkit-outer-spin-button,
+.notification-input::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  margin: 0 !important;
+  display: none !important;
+}
+
+.notification-input[type="number"] {
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
+input[type="number"].notification-input {
+  background-color: white !important;
+  color: #374151 !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: 0.375rem !important;
+  padding: 0.25rem 0.5rem !important;
+}
+
+input[type="number"].notification-input:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px #3b82f6 !important;
+  border-color: #3b82f6 !important;
+}
+
 .notification-select {
   background-color: white !important;
   color: #374151 !important;
