@@ -109,3 +109,74 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* 統一されたカスタムスクロールバー */
+.custom-scrollbar {
+  scrollbar-width: thin !important;
+  scrollbar-color: #cbd5e1 #f1f5f9 !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+  background: transparent !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+  border-radius: 3px !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1 !important;
+  border-radius: 3px !important;
+  border: none !important;
+  min-height: 20px !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8 !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-corner {
+  background: #f1f5f9 !important;
+}
+
+/* 絵文字選択エリア専用スクロールバー */
+.emoji-scrollbar {
+  scrollbar-width: thin !important;
+  scrollbar-color: #cbd5e1 #f1f5f9 !important;
+}
+
+.emoji-scrollbar::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+  background: transparent !important;
+}
+
+.emoji-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+  border-radius: 3px !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.emoji-scrollbar::-webkit-scrollbar-thumb {
+  background: #64748b !important;
+  border-radius: 3px !important;
+  border: none !important;
+  min-height: 20px !important;
+}
+
+.emoji-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569 !important;
+}
+
+.emoji-scrollbar::-webkit-scrollbar-corner {
+  background: #f1f5f9 !important;
+}
+
+/* スムーズスクロール */
+.smooth-scroll {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}

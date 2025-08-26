@@ -273,7 +273,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-amber-600 px-2 py-0.5 rounded bg-amber-200">終日</span>
-                    <span className="font-medium text-gray-800">{s.name}</span>
+                    <span className="font-medium text-gray-800">{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
                     <div className="ml-auto opacity-40 hover:opacity-80 transition-opacity">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
@@ -348,7 +348,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                 >
                   <div className="flex items-center gap-3">
                     <span className="font-semibold text-blue-600 text-lg min-w-[4rem]">{s.time}</span>
-                    <span className="font-bold text-gray-900">{s.name}</span>
+                    <span className="font-bold text-gray-900">{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
                   </div>
                   {s.memo && (
                     <MemoWithLinks 

@@ -1,5 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+const EMOJI_OPTIONS = [
+  { value: '', label: 'なし', emoji: '' },
+  { value: '⭐', label: '星', emoji: '⭐' },
+  { value: '💖', label: 'ハート', emoji: '💖' },
+  { value: '🌸', label: '花', emoji: '🌸' },
+  { value: '✨', label: 'キラキラ', emoji: '✨' },
+  { value: '☀️', label: '太陽', emoji: '☀️' },
+  { value: '🌙', label: '月', emoji: '🌙' },
+  { value: '🍃', label: '葉っぱ', emoji: '🍃' },
+  { value: '🐱', label: '猫', emoji: '🐱' },
+  { value: '🐶', label: '犬', emoji: '🐶' },
+  { value: '😊', label: 'スマイル', emoji: '😊' },
+  { value: '☕', label: 'コーヒー', emoji: '☕' },
+  { value: '📚', label: '本', emoji: '📚' },
+  { value: '🎵', label: '音楽', emoji: '🎵' },
+  { value: '🕐', label: '時計', emoji: '🕐' },
+  { value: '✅', label: 'チェック', emoji: '✅' },
+  { value: '✔️', label: 'チェックマーク', emoji: '✔️' },
+  { value: '☑️', label: 'チェックボックス', emoji: '☑️' },
+  { value: '✖️', label: 'バツ', emoji: '✖️' },
+  { value: '💰', label: 'お金袋', emoji: '💰' },
+  { value: '💴', label: '円札', emoji: '💴' },
+  { value: '💵', label: 'ドル札', emoji: '💵' },
+  { value: '💳', label: 'クレジットカード', emoji: '💳' },
+  { value: '🏦', label: '銀行', emoji: '🏦' }
+];
+
 const ScheduleForm = ({ schedule, onSave, onClose, onDelete }) => {
   const [formData, setFormData] = useState({
     id: null,
@@ -7,7 +34,8 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete }) => {
     date: '',
     time: '',
     memo: '',
-    allDay: false
+    allDay: false,
+    emoji: ''
   });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
@@ -27,7 +55,8 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete }) => {
         date: today,
         time: '',
         memo: '',
-        allDay: true  // 新規作成時は開始時間が空欄なので終日に設定
+        allDay: true,  // 新規作成時は開始時間が空欄なので終日に設定
+        emoji: ''
       });
     }
   }, [schedule]);
@@ -122,6 +151,38 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete }) => {
             required
             placeholder="予定名を入力してください"
           />
+        </div>
+        
+        <div>
+          <label className="block text-gray-700 font-medium mb-2">絵文字</label>
+          <div className="border border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 p-2 shadow-inner">
+            <div 
+              className="grid grid-cols-6 gap-1 overflow-y-auto emoji-scrollbar smooth-scroll" 
+              style={{ 
+                height: '72px', 
+                maxHeight: '72px',
+                scrollBehavior: 'smooth'
+              }}
+            >
+              {EMOJI_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setFormData({...formData, emoji: option.value})}
+                  title={option.label}
+                  className={`
+                    w-8 h-8 rounded-md border transition-all duration-200 flex items-center justify-center text-lg hover:scale-110 flex-shrink-0
+                    ${formData.emoji === option.value 
+                      ? 'border-blue-500 bg-blue-100 shadow-md' 
+                      : 'border-gray-200 hover:border-gray-300 bg-white hover:shadow-sm'
+                    }
+                  `}
+                >
+                  {option.emoji}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         
         <div>

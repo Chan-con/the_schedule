@@ -618,8 +618,8 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                 {currentMonth && daySchedules.slice(0, maxSchedulesPerCell).map((schedule, i) => {
                   // 表示テキストを決定
                   const displayText = schedule.allDay 
-                    ? schedule.name 
-                    : `${schedule.time} ${schedule.name}`;
+                    ? `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.name}` 
+                    : `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.time} ${schedule.name}`;
                   
                   return (
                     <div 
@@ -728,8 +728,8 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
               )}
               <span className="font-medium">
                 {draggedSchedule.allDay 
-                  ? draggedSchedule.name 
-                  : `${draggedSchedule.time} ${draggedSchedule.name}`}
+                  ? `${draggedSchedule.emoji || ''}${draggedSchedule.emoji ? ' ' : ''}${draggedSchedule.name}` 
+                  : `${draggedSchedule.emoji || ''}${draggedSchedule.emoji ? ' ' : ''}${draggedSchedule.time} ${draggedSchedule.name}`}
               </span>
             </div>
           </div>
