@@ -316,12 +316,14 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
             const newSchedule = {
               ...draggedSchedule,
               date: dragOverDate,
-              id: Date.now() // 新しいIDでコピー
+              id: Date.now(), // 新しいIDでコピー
+              notificationSettings: null // 通知設定をリセット（コピー時は通知設定も複製しない）
             };
             console.log('📋 Copying schedule to new date:', { 
               originalId: draggedSchedule.id, 
               newId: newSchedule.id, 
-              newDate: dragOverDate 
+              newDate: dragOverDate,
+              notificationReset: true
             });
             onScheduleCopy(newSchedule);
           } else if (onScheduleCopy && onScheduleDelete) {

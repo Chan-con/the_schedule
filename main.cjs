@@ -288,38 +288,53 @@ ipcMain.handle('schedule-notification', (event, options) => {
     }
 
     // 最小遅延時間を設定（1秒）
-    if (delay > 1000) {
-      const timer = setTimeout(() => {
-        console.log(`🔔 通知実行: ${title}`);
-        if (Notification.isSupported()) {
-          const notification = new Notification({
-            title: title || 'スケジュール通知',
-            body: body || '',
-            icon: isDev 
-              ? path.join(__dirname, 'asset', 'icon.PNG')
-              : path.join(process.resourcesPath, 'asset', 'icon.PNG'),
-            urgency: 'normal',
-            timeoutType: 'default'
-          });
-
-          notification.on('click', () => {
-            showWindow();
-          });
-
-          notification.show();
-        }
-        
-        // タイマーをMapから削除
-        notificationTimers.delete(id);
-      }, delay);
-
-      notificationTimers.set(id, timer);
-      console.log(`✅ 通知タイマー設定完了: ${id}`);
-      return { success: true, scheduledFor: new Date(notificationTime).toISOString() };
-    } else {
+    if (delay <= 1000) {
       console.log(`❌ 通知時間が過去または直近すぎます: ${delay}ms`);
       return { success: false, error: 'Notification time is in the past or too soon' };
     }
+
+    // JavaScriptのsetTimeoutの最大値チェック（約24.8日）
+    const MAX_TIMEOUT = 2147483647; // 32ビット整数の最大値
+    
+    if (delay > MAX_TIMEOUT) {
+      console.log(`⚠️ 通知時間が遠すぎます (${Math.round(delay / 86400000)}日後)`);
+      console.log(`🚫 JavaScript setTimeout制限により、この通知はスケジュールできません`);
+      
+      // 24日以内の通知のみスケジュール可能であることをユーザーに通知
+      return { 
+        success: false, 
+        error: 'Notification time is too far in the future (max 24 days)',
+        maxDays: Math.floor(MAX_TIMEOUT / 86400000)
+      };
+    }
+
+    const timer = setTimeout(() => {
+      console.log(`🔔 通知実行: ${title}`);
+      if (Notification.isSupported()) {
+        const notification = new Notification({
+          title: title || 'スケジュール通知',
+          body: body || '',
+          icon: isDev 
+            ? path.join(__dirname, 'asset', 'icon.PNG')
+            : path.join(process.resourcesPath, 'asset', 'icon.PNG'),
+          urgency: 'normal',
+          timeoutType: 'default'
+        });
+
+        notification.on('click', () => {
+          showWindow();
+        });
+
+        notification.show();
+      }
+        
+      // タイマーをMapから削除
+      notificationTimers.delete(id);
+    }, delay);
+
+    notificationTimers.set(id, timer);
+    console.log(`✅ 通知タイマー設定完了: ${id}`);
+    return { success: true, scheduledFor: new Date(notificationTime).toISOString() };
   } catch (error) {
     console.error('Error scheduling notification:', error);
     return { success: false, error: error.message };

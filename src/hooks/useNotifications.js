@@ -98,6 +98,12 @@ export const useNotifications = (schedules) => {
               console.log(`✅ 通知をスケジュールしました: ${title} - ${notificationTime.toLocaleString()}`);
             } else {
               console.error(`❌ 通知のスケジュールに失敗: ${result.error}`);
+              
+              // 遠すぎる未来の通知の場合の特別なメッセージ
+              if (result.error.includes('too far in the future')) {
+                console.warn(`⚠️ 通知時間が遠すぎます（最大${result.maxDays || 24}日後まで）: ${title}`);
+                console.warn(`📅 この通知はスケジュール当日に手動で確認してください`);
+              }
             }
           } else if (notificationTime) {
             console.log(`⏰ 過去の通知時間のためスキップ: ${notificationTime.toLocaleString()}`);
