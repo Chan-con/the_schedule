@@ -2,7 +2,7 @@ import { useEffect, useCallback } from 'react';
 
 // 通知時間を計算する関数
 const calculateNotificationTime = (schedule, notification) => {
-  const scheduleDate = new Date(schedule.date);
+  const scheduleDate = new Date(schedule.date + 'T00:00:00'); // 日付を明示的に設定
   
   if (schedule.allDay) {
     // 終日予定の場合、当日9:00に通知
@@ -71,6 +71,7 @@ export const useNotifications = (schedules) => {
       await window.electronAPI.cancelAllNotifications();
       
       const now = new Date();
+      console.log('🔔 現在時刻:', now.toLocaleString());
       
       // 各予定の通知をスケジュール
       for (const schedule of schedules) {
@@ -79,6 +80,8 @@ export const useNotifications = (schedules) => {
         for (let i = 0; i < schedule.notifications.length; i++) {
           const notification = schedule.notifications[i];
           const notificationTime = calculateNotificationTime(schedule, notification);
+          
+          console.log(`📅 予定: ${schedule.name}, 通知時間: ${notificationTime?.toLocaleString()}`);
           
           if (notificationTime && notificationTime > now) {
             const notificationId = `${schedule.id}-${i}`;
@@ -92,10 +95,12 @@ export const useNotifications = (schedules) => {
             });
             
             if (result.success) {
-              console.log(`通知をスケジュールしました: ${title} - ${notificationTime.toLocaleString()}`);
+              console.log(`✅ 通知をスケジュールしました: ${title} - ${notificationTime.toLocaleString()}`);
             } else {
-              console.error(`通知のスケジュールに失敗: ${result.error}`);
+              console.error(`❌ 通知のスケジュールに失敗: ${result.error}`);
             }
+          } else if (notificationTime) {
+            console.log(`⏰ 過去の通知時間のためスキップ: ${notificationTime.toLocaleString()}`);
           }
         }
       }
@@ -143,10 +148,17 @@ export const useNotifications = (schedules) => {
     }
   }, []);
 
-  // 予定データが変更されたら通知を再スケジュール
+  // 予定データが変更されたら通知を再スケジュール（デバウンス付き）
   useEffect(() => {
-    scheduleAllNotifications();
-  }, [scheduleAllNotifications]);
+    const debounceTimer = setTimeout(() => {
+      console.log('🔄 予定データ変更により通知を再スケジュール');
+      scheduleAllNotifications();
+    }, 500); // 500ms のデバウンス
+
+    return () => {
+      clearTimeout(debounceTimer);
+    };
+  }, [schedules]);
 
   return {
     scheduleAllNotifications,

@@ -276,13 +276,21 @@ ipcMain.handle('schedule-notification', (event, options) => {
     const notificationTime = new Date(time).getTime();
     const delay = notificationTime - now;
 
+    console.log(`🔔 通知スケジュール: ${title}`);
+    console.log(`📅 現在時刻: ${new Date(now).toLocaleString()}`);
+    console.log(`⏰ 通知時刻: ${new Date(notificationTime).toLocaleString()}`);
+    console.log(`⏱️ 遅延: ${delay}ms (${Math.round(delay / 1000)}秒)`);
+
     // 既存のタイマーがあれば削除
     if (notificationTimers.has(id)) {
       clearTimeout(notificationTimers.get(id));
+      console.log(`🗑️ 既存タイマーを削除: ${id}`);
     }
 
-    if (delay > 0) {
+    // 最小遅延時間を設定（1秒）
+    if (delay > 1000) {
       const timer = setTimeout(() => {
+        console.log(`🔔 通知実行: ${title}`);
         if (Notification.isSupported()) {
           const notification = new Notification({
             title: title || 'スケジュール通知',
@@ -306,9 +314,11 @@ ipcMain.handle('schedule-notification', (event, options) => {
       }, delay);
 
       notificationTimers.set(id, timer);
+      console.log(`✅ 通知タイマー設定完了: ${id}`);
       return { success: true, scheduledFor: new Date(notificationTime).toISOString() };
     } else {
-      return { success: false, error: 'Notification time is in the past' };
+      console.log(`❌ 通知時間が過去または直近すぎます: ${delay}ms`);
+      return { success: false, error: 'Notification time is in the past or too soon' };
     }
   } catch (error) {
     console.error('Error scheduling notification:', error);
