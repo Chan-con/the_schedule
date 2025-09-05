@@ -21,6 +21,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [maxSchedulesPerCell, setMaxSchedulesPerCell] = useState(3); // 動的に調整される
+  const [scrollTrigger, setScrollTrigger] = useState(0); // スクロール時の再レンダリング用
   
   // 終日予定の並び替え用
   const [draggedAllDaySchedule, setDraggedAllDaySchedule] = useState(null);
@@ -80,18 +81,35 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
     const newDate = new Date(currentDate);
     newDate.setMonth(newDate.getMonth() - 1);
     setCurrentDate(newDate);
+    // スクロールオフセットをリセット
+    resetAllScrollOffsets();
   };
 
   const nextMonth = () => {
     const newDate = new Date(currentDate);
     newDate.setMonth(newDate.getMonth() + 1);
     setCurrentDate(newDate);
+    // スクロールオフセットをリセット
+    resetAllScrollOffsets();
+  };
+
+  // 全ての日付セルのスクロールオフセットをリセット
+  const resetAllScrollOffsets = () => {
+    setTimeout(() => {
+      const dateCells = document.querySelectorAll('.date-cell');
+      dateCells.forEach(cell => {
+        cell.setAttribute('data-scroll-offset', '0');
+      });
+      console.log('📅 Reset all scroll offsets');
+    }, 50); // 少し遅延させてDOMの更新を待つ
   };
 
   // 今月に戻る関数
   const goToCurrentMonth = () => {
     const today = new Date();
     setCurrentDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+    // スクロールオフセットをリセット
+    resetAllScrollOffsets();
     console.log('📅 Jumped to current month:', {
       year: today.getFullYear(),
       month: today.getMonth() + 1
@@ -354,14 +372,15 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       }
     };
 
-    // 統合されたwheelイベントハンドラー - カスタムドラッグ中でも機能
+    // 統合されたwheelイベントハンドラー - 日付セル内外を区別して処理
     const handleWheel = (e) => {
       console.log('🎯 Integrated wheel event:', {
         deltaY: e.deltaY,
         isCustomDragging,
         isDragging,
         isAltPressed,
-        targetTag: e.target?.tagName
+        targetTag: e.target?.tagName,
+        targetClass: e.target?.className
       });
 
       // フォーム要素内では月切り替えを無効化
@@ -398,11 +417,64 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         return;
       }
 
+      // 日付セル内かどうかを判定
+      const dateCell = e.target.closest('.date-cell');
+      const schedulesContainer = e.target.closest('.schedules-container');
+      
+      if (dateCell && schedulesContainer) {
+        // 日付セル内のスクロール処理
+        handleDateCellScroll(e, schedulesContainer, dateCell);
+      } else {
+        // 日付枠外での月切り替え処理
+        handleMonthNavigation(e);
+      }
+    };
+
+    // 日付セル内の予定スクロール処理
+    const handleDateCellScroll = (e, schedulesContainer, dateCell) => {
+      const dateStr = dateCell.getAttribute('data-date');
+      const daySchedules = schedules.filter(s => s.date === dateStr);
+      
+      // 表示可能な予定数より多い場合のみスクロールを許可
+      if (daySchedules.length <= maxSchedulesPerCell) {
+        console.log('📅 Cell scroll: not enough schedules to scroll');
+        // 予定が少ない場合は月切り替えにフォールバック
+        handleMonthNavigation(e);
+        return;
+      }
+
+      // 現在の表示オフセットを取得（データ属性から）
+      let currentOffset = parseInt(dateCell.getAttribute('data-scroll-offset') || '0');
+      const maxOffset = Math.max(0, daySchedules.length - maxSchedulesPerCell);
+      
+      // スクロール方向に応じてオフセットを調整
+      if (e.deltaY < 0) {
+        // 上スクロール: 前の予定を表示
+        currentOffset = Math.max(0, currentOffset - 1);
+        console.log('📅 Cell scroll up: offset', currentOffset);
+      } else {
+        // 下スクロール: 次の予定を表示
+        currentOffset = Math.min(maxOffset, currentOffset + 1);
+        console.log('📅 Cell scroll down: offset', currentOffset);
+      }
+      
+      // オフセットを保存
+      dateCell.setAttribute('data-scroll-offset', currentOffset.toString());
+      
+      // 再レンダリングをトリガー
+      setScrollTrigger(prev => prev + 1);
+      
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    // 月切り替え処理
+    const handleMonthNavigation = (e) => {
       // ホイールイベントを処理（ドラッグ中でも通常時でも動作）
       e.preventDefault();
       e.stopPropagation();
       
-      console.log('✅ Wheel event processing:', {
+      console.log('✅ Month navigation:', {
         direction: e.deltaY < 0 ? 'up (previous)' : 'down (next)',
         currentMonth: month,
         currentYear: year
@@ -564,20 +636,9 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
             <button
               key={index}
               data-date={dateStr}
-              onClick={() => onDateClick(new Date(dateStr))}
-              onDoubleClick={(e) => {
-                // 予定要素でのダブルクリックの場合は新規作成しない
-                if (e.target.closest('.schedule-item')) {
-                  return;
-                }
-                if (onAdd) {
-                  // 空き部分のダブルクリックで新規予定作成
-                  onAdd(new Date(dateStr));
-                  console.log('📅 Empty area double-clicked to create new schedule:', dateStr);
-                }
-              }}
+              data-scroll-offset="0"
               className={`
-                p-1 relative flex flex-col bg-white
+                date-cell p-1 relative flex flex-col bg-white
                 focus:outline-none
                 ${dragOverDate === dateStr ? 
                   'bg-green-100 border border-green-300 hover:border-green-300' : 
@@ -590,6 +651,18 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                     'border border-gray-200 hover:border-gray-200'}
                 ${!currentMonth ? 'opacity-30' : ''}
               `}
+              onClick={() => onDateClick(new Date(dateStr))}
+              onDoubleClick={(e) => {
+                // 予定要素でのダブルクリックの場合は新規作成しない
+                if (e.target.closest('.schedule-item')) {
+                  return;
+                }
+                if (onAdd) {
+                  // 空き部分のダブルクリックで新規予定作成
+                  onAdd(new Date(dateStr));
+                  console.log('📅 Empty area double-clicked to create new schedule:', dateStr);
+                }
+              }}
               style={{
                 ...(today && selected ? {
                   border: '1px solid transparent',
@@ -616,14 +689,20 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
               </div>
               
               {/* 予定部分 - 残りのスペースを使用 */}
-              <div className="flex-1 w-full overflow-hidden space-y-0.5">
-                {currentMonth && daySchedules.slice(0, maxSchedulesPerCell).map((schedule, i) => {
-                  // 表示テキストを決定
-                  const displayText = schedule.allDay 
-                    ? `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.name}` 
-                    : `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.time} ${schedule.name}`;
+              <div className="schedules-container flex-1 w-full overflow-hidden space-y-0.5">
+                {currentMonth && (() => {
+                  // スクロールオフセットを取得
+                  const scrollOffset = parseInt(document.querySelector(`[data-date="${dateStr}"]`)?.getAttribute('data-scroll-offset') || '0');
+                  // オフセットを適用して表示する予定を決定
+                  const visibleSchedules = daySchedules.slice(scrollOffset, scrollOffset + maxSchedulesPerCell);
                   
-                  return (
+                  return visibleSchedules.map((schedule, i) => {
+                    // 表示テキストを決定
+                    const displayText = schedule.allDay 
+                      ? `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.name}` 
+                      : `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.time} ${schedule.name}`;
+                    
+                    return (
                     <div 
                       key={i}
                       // カスタムドラッグシステムのみ使用
@@ -694,13 +773,42 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                       </div>
                     </div>
                   );
-                })}
+                });
+                })()}
                 
-                {currentMonth && daySchedules.length > maxSchedulesPerCell && (
-                  <div className="text-xs text-gray-500 px-1 py-0.5 truncate">
-                    他{daySchedules.length - maxSchedulesPerCell}件
-                  </div>
-                )}
+                {currentMonth && (() => {
+                  const scrollOffset = parseInt(document.querySelector(`[data-date="${dateStr}"]`)?.getAttribute('data-scroll-offset') || '0');
+                  const totalSchedules = daySchedules.length;
+                  const hiddenSchedules = totalSchedules - maxSchedulesPerCell - scrollOffset;
+                  
+                  if (totalSchedules > maxSchedulesPerCell) {
+                    if (scrollOffset > 0 && hiddenSchedules > 0) {
+                      // 上にも下にも隠れた予定がある場合
+                      return (
+                        <div className="text-xs text-gray-500 px-1 py-0.5 truncate flex justify-between items-center bg-gray-50 rounded">
+                          <span>↑{scrollOffset}件</span>
+                          <span className="text-gray-400">•••</span>
+                          <span>↓{hiddenSchedules}件</span>
+                        </div>
+                      );
+                    } else if (scrollOffset > 0) {
+                      // 上にのみ隠れた予定がある場合
+                      return (
+                        <div className="text-xs text-gray-500 px-1 py-0.5 truncate text-center bg-gray-50 rounded">
+                          ↑ 他{scrollOffset}件
+                        </div>
+                      );
+                    } else {
+                      // 下にのみ隠れた予定がある場合
+                      return (
+                        <div className="text-xs text-gray-500 px-1 py-0.5 truncate text-center bg-gray-50 rounded">
+                          ↓ 他{hiddenSchedules}件
+                        </div>
+                      );
+                    }
+                  }
+                  return null;
+                })()}
               </div>
             </button>
           );
