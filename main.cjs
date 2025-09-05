@@ -90,7 +90,21 @@ function createWindow() {
     if (!isQuitting && settings.minimizeToTray) {
       event.preventDefault();
       mainWindow.hide();
+      console.log('ウィンドウをトレイに最小化');
+    } else {
+      console.log('ウィンドウを閉じています');
     }
+  });
+
+  // ウィンドウが破棄される直前の処理
+  mainWindow.on('closed', () => {
+    console.log('メインウィンドウが破棄されました');
+    mainWindow = null;
+  });
+
+  // WebContentsの破棄処理
+  mainWindow.webContents.on('destroyed', () => {
+    console.log('WebContentsが破棄されました');
   });
 
   // URLを環境に応じて設定
@@ -129,8 +143,19 @@ function createTray() {
     {
       label: '終了',
       click: () => {
+        console.log('トレイメニューから終了が選択されました');
         isQuitting = true;
-        app.quit();
+        
+        try {
+          // 安全な終了処理
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.close();
+          }
+          app.quit();
+        } catch (error) {
+          console.error('トレイメニュー終了処理中にエラー:', error);
+          process.exit(1);
+        }
       }
     }
   ]);
@@ -383,39 +408,135 @@ if (!gotTheLock) {
 }
 
 app.whenReady().then(() => {
-  // アプリのアイコンを設定
-  app.setAppUserModelId('com.schedule.app');
-  
-  createWindow();
-  createTray();
-  
-  // 初期設定のホットキーを登録
-  const settings = loadSettings();
-  registerGlobalShortcut(settings.hotkey);
+  try {
+    console.log('Electronアプリケーション起動中...');
+    
+    // アプリのアイコンを設定
+    app.setAppUserModelId('com.schedule.app');
+    
+    createWindow();
+    createTray();
+    
+    // 初期設定のホットキーを登録
+    const settings = loadSettings();
+    registerGlobalShortcut(settings.hotkey);
+    
+    console.log('アプリケーション起動完了');
+  } catch (error) {
+    console.error('アプリケーション起動中にエラー:', error);
+    app.quit();
+  }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    } else {
-      showWindow();
+    try {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      } else {
+        showWindow();
+      }
+    } catch (error) {
+      console.error('activate処理中にエラー:', error);
     }
   });
+}).catch((error) => {
+  console.error('アプリケーション起動に失敗:', error);
+  process.exit(1);
 });
 
 app.on('window-all-closed', () => {
+  console.log('全てのウィンドウが閉じられました');
   // macOS以外では、すべてのウィンドウが閉じられてもアプリは終了しない（タスクトレイで動作）
   if (process.platform !== 'darwin' && !isQuitting) {
+    console.log('タスクトレイで動作継続');
     // アプリは終了しない
   } else if (process.platform === 'darwin') {
+    console.log('macOS: アプリケーション終了');
     app.quit();
   }
 });
 
 app.on('before-quit', () => {
+  console.log('アプリケーション終了処理を開始');
   isQuitting = true;
+  
+  try {
+    // 全ての通知タイマーをクリア
+    console.log(`通知タイマーをクリア中: ${notificationTimers.size}個`);
+    for (const timer of notificationTimers.values()) {
+      clearTimeout(timer);
+    }
+    notificationTimers.clear();
+    
+    // トレイアイコンを破棄
+    if (tray) {
+      tray.destroy();
+      tray = null;
+      console.log('トレイアイコンを破棄');
+    }
+    
+    console.log('終了処理完了');
+  } catch (error) {
+    console.error('終了処理中にエラー:', error);
+  }
 });
 
-app.on('will-quit', () => {
-  // グローバルショートカットの解除
-  globalShortcut.unregisterAll();
+app.on('will-quit', (event) => {
+  try {
+    // グローバルショートカットの解除
+    globalShortcut.unregisterAll();
+    console.log('グローバルショートカットを解除');
+    
+    // 最終的なクリーンアップ
+    if (notificationTimers.size > 0) {
+      console.warn(`警告: まだクリアされていないタイマー: ${notificationTimers.size}個`);
+      for (const timer of notificationTimers.values()) {
+        clearTimeout(timer);
+      }
+      notificationTimers.clear();
+    }
+  } catch (error) {
+    console.error('will-quit処理中にエラー:', error);
+    // エラーが発生してもアプリの終了は継続
+  }
+});
+
+// プロセス終了時の緊急クリーンアップ
+process.on('exit', () => {
+  console.log('プロセス終了: 緊急クリーンアップ実行');
+  try {
+    if (notificationTimers.size > 0) {
+      for (const timer of notificationTimers.values()) {
+        clearTimeout(timer);
+      }
+      notificationTimers.clear();
+    }
+  } catch (error) {
+    console.error('緊急クリーンアップ中にエラー:', error);
+  }
+});
+
+// 未処理の例外をキャッチ
+process.on('uncaughtException', (error) => {
+  console.error('未処理の例外:', error);
+  try {
+    // 緊急クリーンアップ
+    if (notificationTimers.size > 0) {
+      for (const timer of notificationTimers.values()) {
+        clearTimeout(timer);
+      }
+      notificationTimers.clear();
+    }
+    if (tray) {
+      tray.destroy();
+    }
+  } catch (cleanupError) {
+    console.error('緊急クリーンアップエラー:', cleanupError);
+  }
+  process.exit(1);
+});
+
+// 未処理のPromise拒否をキャッチ
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('未処理のPromise拒否:', reason);
+  console.error('Promise:', promise);
 });
