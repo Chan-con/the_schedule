@@ -54,9 +54,17 @@ const generateNotificationText = (schedule, notification) => {
     ? '終日予定' 
     : `${schedule.time}`;
   
+  // 0分前の場合は「開始時刻」と表示
+  let notificationTypeText;
+  if (notification.value === 0 && notification.unit === 'minutes') {
+    notificationTypeText = '開始時刻';
+  } else {
+    notificationTypeText = `${notification.value}${unitText[notification.unit]}`;
+  }
+  
   return {
     title: `${schedule.emoji || '📅'} ${schedule.name}`,
-    body: `${notification.value}${unitText[notification.unit]}の通知\n${timeText}${schedule.memo ? `\n📝 ${schedule.memo}` : ''}`
+    body: `${notificationTypeText}の通知\n${timeText}${schedule.memo ? `\n📝 ${schedule.memo}` : ''}`
   };
 };
 

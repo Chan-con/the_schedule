@@ -370,10 +370,10 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                   >
                     <input
                       type="number"
-                      min="1"
+                      min="0"
                       max="999"
                       value={notification.value}
-                      onChange={(e) => updateNotification(index, 'value', parseInt(e.target.value) || 1)}
+                      onChange={(e) => updateNotification(index, 'value', parseInt(e.target.value) || 0)}
                       className={`w-16 text-center border border-gray-300 rounded px-2 py-1 text-sm notification-input focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                         isPast 
                           ? 'bg-gray-100 text-gray-500' 
