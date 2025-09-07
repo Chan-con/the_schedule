@@ -34,9 +34,7 @@ const TitleBar = ({ onSettingsClick }) => {
   return (
     <div className="flex items-center justify-between bg-gradient-to-r from-indigo-800 to-purple-800 text-white h-8 px-4 select-none" 
          style={{ WebkitAppRegion: 'drag' }}>
-      <div className="flex items-center space-x-3">
-        <span className="text-sm font-medium">予定帳</span>
-      </div>
+  <div className="flex items-center space-x-3" />
       
       <div className="flex items-center space-x-1 text-white" style={{ WebkitAppRegion: 'no-drag' }}>
         <button
