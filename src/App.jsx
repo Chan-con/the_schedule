@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 
 import Calendar from './components/Calendar';
 import Timeline from './components/Timeline';
+import CurrentDateTimeBar from './components/CurrentDateTimeBar';
 import ScheduleForm from './components/ScheduleForm';
 import TitleBar from './components/TitleBar';
 import SettingsModal from './components/SettingsModal';
@@ -466,7 +467,8 @@ function App() {
                 >
                   <div className="h-full flex flex-col">
                     {/* タイムラインコンテンツ */}
-                    <div className="flex-1 overflow-hidden">
+                    <div className="flex-1 overflow-hidden flex flex-col">
+                      <CurrentDateTimeBar selectedDate={selectedDate} />
                       <Timeline 
                         schedules={filteredSchedules} 
                         selectedDate={selectedDate} 
@@ -522,6 +524,7 @@ function App() {
               className="flex flex-col overflow-hidden pl-1"
               style={{ width: `${100 - splitRatio}%` }}
             >
+              <CurrentDateTimeBar selectedDate={selectedDate} />
               <Timeline 
                 schedules={filteredSchedules} 
                 selectedDate={selectedDate} 
