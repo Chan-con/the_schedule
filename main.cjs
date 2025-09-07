@@ -14,7 +14,9 @@ const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 const defaultSettings = {
   hotkey: '',
   startWithSystem: false,
-  minimizeToTray: true
+  minimizeToTray: true,
+  discordWebhookUrl: '',
+  discordNotifyEnabled: false
 };
 
 // 設定の読み込み
@@ -23,9 +25,11 @@ function loadSettings() {
     if (fs.existsSync(settingsPath)) {
       const data = fs.readFileSync(settingsPath, 'utf8');
       const user = JSON.parse(data);
-      // hotkey 未定義なら空文字を補う
-      if (user.hotkey === undefined || user.hotkey === null) user.hotkey = '';
-      return { ...defaultSettings, ...user };
+  // hotkey 未定義なら空文字を補う
+  if (user.hotkey === undefined || user.hotkey === null) user.hotkey = '';
+  if (user.discordWebhookUrl === undefined || user.discordWebhookUrl === null) user.discordWebhookUrl = '';
+  if (user.discordNotifyEnabled === undefined) user.discordNotifyEnabled = false;
+  return { ...defaultSettings, ...user };
     }
   } catch (error) {
     console.error('設定の読み込みに失敗:', error);
@@ -213,6 +217,52 @@ function unregisterGlobalShortcut() {
   console.log('グローバルショートカットを解除しました');
 }
 
+// Discord Webhook 送信（軽量）
+function postToDiscord(webhookUrl, payload) {
+  return new Promise((resolve) => {
+    try {
+      if (!webhookUrl) return resolve({ success: false, error: 'empty webhook' });
+      const url = new URL(webhookUrl);
+      const https = require('https');
+      const data = JSON.stringify(payload);
+      const options = {
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(data)
+        }
+      };
+      const req = https.request(options, (res) => {
+        res.on('data', () => {});
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ success: true });
+          } else {
+            resolve({ success: false, error: 'status ' + res.statusCode });
+          }
+        });
+      });
+      req.on('error', (err) => resolve({ success: false, error: err.message }));
+      req.write(data);
+      req.end();
+    } catch (e) {
+      resolve({ success: false, error: e.message });
+    }
+  });
+}
+
+// Discord テスト送信
+ipcMain.handle('discord-test', async () => {
+  const settings = loadSettings();
+  if (!settings.discordNotifyEnabled || !settings.discordWebhookUrl) {
+    return { success: false, error: 'Discord未設定' };
+  }
+  const payload = { content: '✅ Discord 通知テスト: 連携成功です。' };
+  return await postToDiscord(settings.discordWebhookUrl, payload);
+});
+
 // IPC通信ハンドラー
 ipcMain.handle('window-minimize', () => {
   mainWindow.minimize();
@@ -247,6 +297,8 @@ ipcMain.handle('get-settings', () => {
 
 ipcMain.handle('save-settings', (event, settings) => {
   if (settings.hotkey === undefined || settings.hotkey === null) settings.hotkey = '';
+  if (settings.discordWebhookUrl === undefined || settings.discordWebhookUrl === null) settings.discordWebhookUrl = '';
+  if (settings.discordNotifyEnabled === undefined) settings.discordNotifyEnabled = false;
   const success = saveSettings(settings);
   if (success && settings.startWithSystem) {
     app.setLoginItemSettings({
@@ -371,6 +423,16 @@ ipcMain.handle('schedule-notification', (event, options) => {
         });
 
         notification.show();
+      }
+      // Discord 連携（失敗しても無視）
+      try {
+        const settings = loadSettings();
+        if (settings.discordNotifyEnabled && settings.discordWebhookUrl) {
+          const content = `**${(title || 'スケジュール通知').slice(0,100)}**\n${(body || '').slice(0,1800)}`;
+          postToDiscord(settings.discordWebhookUrl, { content });
+        }
+      } catch (e) {
+        console.error('Discord通知失敗:', e);
       }
         
       // タイマーをMapから削除

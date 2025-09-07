@@ -4,6 +4,9 @@ const SettingsModal = ({ isOpen, onClose }) => {
   const [hotkey, setHotkey] = useState('');
   const [startWithSystem, setStartWithSystem] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
+  const [discordWebhookUrl, setDiscordWebhookUrl] = useState('');
+  const [discordNotifyEnabled, setDiscordNotifyEnabled] = useState(false);
+  const [discordTestStatus, setDiscordTestStatus] = useState(null); // null | 'ok' | 'ng'
   const [shortcuts, setShortcuts] = useState({
     undo: 'Control+Z',
     redo: 'Control+Shift+Z',
@@ -28,8 +31,10 @@ const SettingsModal = ({ isOpen, onClose }) => {
         } else {
           setHotkey(settings.hotkey);
         }
-        setStartWithSystem(settings.startWithSystem || false);
-        setMinimizeToTray(settings.minimizeToTray || true);
+  setStartWithSystem(settings.startWithSystem || false);
+  setMinimizeToTray(settings.minimizeToTray || true);
+  setDiscordWebhookUrl(settings.discordWebhookUrl || '');
+  setDiscordNotifyEnabled(!!settings.discordNotifyEnabled);
       });
     }
     
@@ -106,7 +111,9 @@ const SettingsModal = ({ isOpen, onClose }) => {
       const settings = {
         hotkey,
         startWithSystem,
-        minimizeToTray
+  minimizeToTray,
+  discordWebhookUrl,
+  discordNotifyEnabled
       };
       
       await window.electronAPI.saveSettings(settings);
@@ -301,7 +308,9 @@ const SettingsModal = ({ isOpen, onClose }) => {
         window.electronAPI.saveSettings({
           hotkey: '',
           startWithSystem,
-          minimizeToTray
+          minimizeToTray,
+          discordWebhookUrl,
+          discordNotifyEnabled
         });
         window.electronAPI.unregisterGlobalShortcut().then(() => {
           console.log('グローバルホットキーを削除（未設定保存済み）');
@@ -350,7 +359,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
         window.electronAPI.registerGlobalShortcut(newHotkey).then(() => {
           console.log('新しいグローバルホットキーを登録しました:', newHotkey);
           // 永続化
-          window.electronAPI.saveSettings({ hotkey: newHotkey, startWithSystem, minimizeToTray });
+          window.electronAPI.saveSettings({ hotkey: newHotkey, startWithSystem, minimizeToTray, discordWebhookUrl, discordNotifyEnabled });
         }).catch((error) => {
           console.error('グローバルホットキーの登録に失敗:', error);
         });
@@ -456,7 +465,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
                     // クリアボタン
                     setHotkey('');
                     if (window.electronAPI) {
-                      window.electronAPI.saveSettings({ hotkey: '', startWithSystem, minimizeToTray });
+                      window.electronAPI.saveSettings({ hotkey: '', startWithSystem, minimizeToTray, discordWebhookUrl, discordNotifyEnabled });
                       window.electronAPI.unregisterGlobalShortcut();
                     }
                   }}
@@ -549,6 +558,51 @@ const SettingsModal = ({ isOpen, onClose }) => {
             <label htmlFor="minimizeToTray" className="ml-3 text-sm font-medium text-gray-700 cursor-pointer">
               閉じるボタンでタスクトレイに最小化
             </label>
+          </div>
+
+          {/* Discord 通知設定 */}
+          <div className="p-4 bg-gradient-to-r from-gray-50 to-purple-50 rounded-lg border border-purple-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">Discord 通知</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="discordNotifyEnabled"
+                  checked={discordNotifyEnabled}
+                  onChange={(e) => setDiscordNotifyEnabled(e.target.checked)}
+                  className="custom-checkbox"
+                />
+                <label htmlFor="discordNotifyEnabled" className="text-xs text-gray-600 cursor-pointer">有効</label>
+              </div>
+            </div>
+            <input
+              type="text"
+              placeholder="Discord Webhook URL"
+              value={discordWebhookUrl}
+              onChange={(e) => setDiscordWebhookUrl(e.target.value.trim())}
+              className="w-full px-3 py-2 border border-purple-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white text-gray-800 placeholder-gray-400 shadow-sm"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  setDiscordTestStatus(null);
+                  if (!window.electronAPI) return;
+                  // 一時保存（URL/有効フラグ）
+                  await window.electronAPI.saveSettings({ hotkey, startWithSystem, minimizeToTray, discordWebhookUrl, discordNotifyEnabled });
+                  const res = await window.electronAPI.discordTest();
+                  setDiscordTestStatus(res.success ? 'ok' : 'ng');
+                  setTimeout(() => setDiscordTestStatus(null), 4000);
+                }}
+                disabled={!discordNotifyEnabled || !discordWebhookUrl}
+                className={`px-3 py-1.5 text-xs rounded-md border transition ${(!discordNotifyEnabled || !discordWebhookUrl) ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-purple-600 border-purple-300 hover:bg-purple-50 hover:border-purple-400'}`}
+              >テスト送信</button>
+              {discordTestStatus === 'ok' && <span className="text-xs text-green-600 font-medium">OK</span>}
+              {discordTestStatus === 'ng' && <span className="text-xs text-red-600 font-medium">失敗</span>}
+            </div>
+            <p className="text-xs text-purple-600 leading-relaxed">
+              有効化するとスケジュール通知時に同じ内容を Discord Webhook へ送信します。
+            </p>
           </div>
         </div>
 

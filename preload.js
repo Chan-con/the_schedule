@@ -22,4 +22,6 @@ window.electronAPI = {
   scheduleNotification: (options) => ipcRenderer.invoke('schedule-notification', options),
   cancelNotification: (id) => ipcRenderer.invoke('cancel-notification', id),
   cancelAllNotifications: () => ipcRenderer.invoke('cancel-all-notifications'),
+  // Discord
+  discordTest: () => ipcRenderer.invoke('discord-test'),
 };
