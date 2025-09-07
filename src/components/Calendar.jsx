@@ -11,6 +11,28 @@ const getMonthDays = (year, month) => {
   return days;
 };
 
+// 予定が過去かどうかを判定する関数
+const isSchedulePast = (schedule) => {
+  const now = new Date();
+  const scheduleDate = new Date(schedule.date);
+  
+  if (schedule.allDay) {
+    // 終日予定の場合、日付のみで比較（当日は過去扱いしない）
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // 当日の終了時刻
+    return scheduleDate < today;
+  } else {
+    // 時間指定予定の場合、時刻も含めて比較
+    if (!schedule.time) return false;
+    
+    const [hours, minutes] = schedule.time.split(':').map(Number);
+    const scheduleDateTime = new Date(scheduleDate);
+    scheduleDateTime.setHours(hours, minutes, 0, 0);
+    
+    return scheduleDateTime < now;
+  }
+};
+
 const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onScheduleUpdate, onAdd, onEdit, isMobile }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
@@ -702,6 +724,9 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                       ? `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.name}` 
                       : `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.time} ${schedule.name}`;
                     
+                    // 予定が過去かどうかを判定
+                    const isPast = isSchedulePast(schedule);
+                    
                     return (
                     <div 
                       key={i}
@@ -709,7 +734,12 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                       draggable={false}
                       className={`
                         schedule-item text-xs px-1 py-0.5 rounded truncate w-full leading-tight select-none
-                        ${schedule.allDay ? 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300 cursor-grab' : 'bg-blue-200 text-blue-800 hover:bg-blue-300 cursor-pointer'}
+                        ${schedule.allDay ? 
+                          isPast ? 'bg-yellow-100 text-yellow-600 hover:bg-yellow-200 cursor-grab' : 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300 cursor-grab'
+                          : 
+                          isPast ? 'bg-blue-100 text-blue-600 hover:bg-blue-200 cursor-pointer' : 'bg-blue-200 text-blue-800 hover:bg-blue-300 cursor-pointer'
+                        }
+                        ${isPast ? 'opacity-60' : ''}
                         ${draggedSchedule?.id === schedule.id ? 'opacity-50' : ''}
                         ${isCustomDragging && draggedSchedule?.id === schedule.id ? 'opacity-30 transform scale-95' : ''}
                         ${draggedAllDaySchedule?.id === schedule.id ? 'opacity-60 transform scale-95' : ''}

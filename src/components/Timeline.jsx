@@ -1,6 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MemoWithLinks from './MemoWithLinks';
 
+// 予定が過去かどうかを判定する関数
+const isSchedulePast = (schedule, selectedDate) => {
+  const now = new Date();
+  const scheduleDate = new Date(selectedDate);
+  
+  if (schedule.allDay) {
+    // 終日予定の場合、日付のみで比較（当日は過去扱いしない）
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // 当日の終了時刻
+    return scheduleDate < today;
+  } else {
+    // 時間指定予定の場合、時刻も含めて比較
+    if (!schedule.time) return false;
+    
+    const [hours, minutes] = schedule.time.split(':').map(Number);
+    const scheduleDateTime = new Date(scheduleDate);
+    scheduleDateTime.setHours(hours, minutes, 0, 0);
+    
+    return scheduleDateTime < now;
+  }
+};
+
 const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) => {
   const [draggedAllDayId, setDraggedAllDayId] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -234,7 +256,9 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
             <div className="space-y-2 pr-2">
               {allDaySchedules
                 .sort((a, b) => (a.allDayOrder || 0) - (b.allDayOrder || 0))
-                .map((s, index) => (
+                .map((s, index) => {
+                  const isPast = isSchedulePast(s, selectedDate);
+                  return (
                 <div 
                   key={s.id}
                   draggable={!isMemoHovering}
@@ -244,7 +268,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                   onDragLeave={handleAllDayDragLeave}
                   onDrop={(e) => handleAllDayDrop(e, index)}
                   className={`
-                    bg-amber-50 border-l-3 border-amber-400 px-3 py-2 rounded-r ${isMemoHovering ? 'cursor-text' : 'cursor-grab'} hover:bg-amber-100 transition-all duration-200
+                    ${isPast ? 'bg-amber-50 border-l-3 border-amber-300' : 'bg-amber-50 border-l-3 border-amber-400'} px-3 py-2 rounded-r ${isMemoHovering ? 'cursor-text' : 'cursor-grab'} ${isPast ? 'hover:bg-amber-100 opacity-60' : 'hover:bg-amber-100'} transition-all duration-200
                     ${draggedAllDayId === s.id ? 'opacity-50 transform scale-95' : ''}
                     ${dragOverIndex === index && draggedAllDayId !== s.id ? 'transform translate-y-1 shadow-lg bg-amber-200' : ''}
                   `}
@@ -272,8 +296,8 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                   }}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-amber-600 px-2 py-0.5 rounded bg-amber-200">終日</span>
-                    <span className="font-medium text-gray-800">{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${isPast ? 'text-amber-500 bg-amber-100' : 'text-amber-600 bg-amber-200'}`}>終日</span>
+                    <span className={`font-medium ${isPast ? 'text-gray-500' : 'text-gray-800'}`}>{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
                     <div className="ml-auto opacity-40 hover:opacity-80 transition-opacity">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
@@ -288,7 +312,8 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                     />
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
           
@@ -319,10 +344,12 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
           <div className="flex-1 custom-scrollbar overflow-auto">
             <div className="text-xs font-medium text-gray-500 mb-3 px-2">時間指定</div>
             <ul className="space-y-3 pr-2">
-              {sortedTimeSchedules.map(s => (
+              {sortedTimeSchedules.map(s => {
+                const isPast = isSchedulePast(s, selectedDate);
+                return (
                 <li 
                   key={s.id} 
-                  className={`border-l-4 border-blue-500 pl-4 flex flex-col gap-1 ${isMemoHovering ? 'cursor-text' : 'cursor-pointer'} hover:bg-blue-50 rounded-md transition p-2`}
+                  className={`border-l-4 ${isPast ? 'border-blue-300 opacity-60' : 'border-blue-500'} pl-4 flex flex-col gap-1 ${isMemoHovering ? 'cursor-text' : 'cursor-pointer'} ${isPast ? 'hover:bg-blue-50' : 'hover:bg-blue-50'} rounded-md transition p-2`}
                   onClick={(e) => {
                     // メモにホバー中はクリックを無効化
                     if (isMemoHovering) {
@@ -347,8 +374,8 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                   }}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="font-semibold text-blue-600 text-lg min-w-[4rem]">{s.time}</span>
-                    <span className="font-bold text-gray-900">{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
+                    <span className={`font-semibold text-lg min-w-[4rem] ${isPast ? 'text-blue-400' : 'text-blue-600'}`}>{s.time}</span>
+                    <span className={`font-bold ${isPast ? 'text-gray-500' : 'text-gray-900'}`}>{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
                   </div>
                   {s.memo && (
                     <MemoWithLinks 
@@ -358,7 +385,8 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                     />
                   )}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </div>
         )}
