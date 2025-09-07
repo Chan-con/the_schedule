@@ -21,9 +21,6 @@ const CurrentDateTimeBar = ({ selectedDate }) => {
       </div>
       <div className="flex items-center gap-3">
         <span className="font-mono text-lg font-semibold text-indigo-700 tabular-nums">{time}</span>
-        {!sameDay && selectedDate && (
-          <span className="text-xs text-gray-500 bg-white/60 px-2 py-1 rounded border border-indigo-100">表示中: {selectedDate.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' })}</span>
-        )}
       </div>
     </div>
   );
