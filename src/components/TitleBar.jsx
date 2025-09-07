@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const TitleBar = () => {
+const TitleBar = ({ onSettingsClick }) => {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
@@ -39,6 +39,14 @@ const TitleBar = () => {
       </div>
       
       <div className="flex items-center space-x-1 text-white" style={{ WebkitAppRegion: 'no-drag' }}>
+        <button
+          onClick={onSettingsClick}
+          className="w-6 h-6 flex items-center justify-center bg-transparent hover:bg-white hover:bg-opacity-20 rounded text-xs"
+          title="設定"
+        >
+          ⚙️
+        </button>
+        
         <button
           onClick={handleMinimize}
           className="w-6 h-6 flex items-center justify-center bg-transparent hover:bg-black hover:bg-opacity-10 text-xs font-bold"

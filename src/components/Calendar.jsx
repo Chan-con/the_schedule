@@ -405,6 +405,13 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         targetClass: e.target?.className
       });
 
+      // モーダルが開いている場合はカレンダーのスクロールを無効化
+      const isModalOpen = document.querySelector('.settings-modal-content, .schedule-form-modal, [role="dialog"]');
+      if (isModalOpen) {
+        console.log('🚫 Wheel ignored: modal is open');
+        return;
+      }
+
       // フォーム要素内では月切り替えを無効化
       const isInFormElement = e.target.closest('form, .modal, [role="dialog"]');
       if (isInFormElement) {
@@ -413,7 +420,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       }
 
       // スクロール量が小さい場合は無視
-      if (Math.abs(e.deltaY) < 10) {
+      if (Math.abs(e.deltaY) < 5) {
         console.log('🚫 Wheel ignored: deltaY too small');
         return;
       }
@@ -445,7 +452,11 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       
       if (dateCell && schedulesContainer) {
         // 日付セル内のスクロール処理
-        handleDateCellScroll(e, schedulesContainer, dateCell);
+        const hasScrolled = handleDateCellScroll(e, schedulesContainer, dateCell);
+        if (!hasScrolled) {
+          // セル内スクロールできない場合は月切り替えにフォールバック
+          handleMonthNavigation(e);
+        }
       } else {
         // 日付枠外での月切り替え処理
         handleMonthNavigation(e);
@@ -460,34 +471,40 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       // 表示可能な予定数より多い場合のみスクロールを許可
       if (daySchedules.length <= maxSchedulesPerCell) {
         console.log('📅 Cell scroll: not enough schedules to scroll');
-        // 予定が少ない場合は月切り替えにフォールバック
-        handleMonthNavigation(e);
-        return;
+        return false; // スクロールしなかったことを示す
       }
 
       // 現在の表示オフセットを取得（データ属性から）
       let currentOffset = parseInt(dateCell.getAttribute('data-scroll-offset') || '0');
       const maxOffset = Math.max(0, daySchedules.length - maxSchedulesPerCell);
       
+      let newOffset = currentOffset;
+      
       // スクロール方向に応じてオフセットを調整
       if (e.deltaY < 0) {
         // 上スクロール: 前の予定を表示
-        currentOffset = Math.max(0, currentOffset - 1);
-        console.log('📅 Cell scroll up: offset', currentOffset);
+        newOffset = Math.max(0, currentOffset - 1);
+        console.log('📅 Cell scroll up: offset', newOffset);
       } else {
         // 下スクロール: 次の予定を表示
-        currentOffset = Math.min(maxOffset, currentOffset + 1);
-        console.log('📅 Cell scroll down: offset', currentOffset);
+        newOffset = Math.min(maxOffset, currentOffset + 1);
+        console.log('📅 Cell scroll down: offset', newOffset);
       }
       
-      // オフセットを保存
-      dateCell.setAttribute('data-scroll-offset', currentOffset.toString());
+      // オフセットが変更された場合のみ処理
+      if (newOffset !== currentOffset) {
+        // オフセットを保存
+        dateCell.setAttribute('data-scroll-offset', newOffset.toString());
+        
+        // 再レンダリングをトリガー
+        setScrollTrigger(prev => prev + 1);
+        
+        e.preventDefault();
+        e.stopPropagation();
+        return true; // スクロールしたことを示す
+      }
       
-      // 再レンダリングをトリガー
-      setScrollTrigger(prev => prev + 1);
-      
-      e.preventDefault();
-      e.stopPropagation();
+      return false; // スクロールしなかったことを示す
     };
 
     // 月切り替え処理

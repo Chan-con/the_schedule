@@ -79,6 +79,36 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
     }
   }, [schedule]); // scheduleが変更されたときにフォーカスを再設定
 
+  // モーダル表示中は背景のスクロールを防止
+  useEffect(() => {
+    // より強力なスクロール防止
+    const preventAllScroll = (e) => {
+      // モーダル内のスクロールは許可
+      const isInModal = e.target.closest('.schedule-form-modal');
+      if (!isInModal) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    // bodyのスクロールを無効化（CSS制御併用）
+    document.body.classList.add('modal-open');
+    document.body.style.overflow = 'hidden';
+    
+    // 複数の方法でスクロールイベントを防止
+    document.addEventListener('wheel', preventAllScroll, { passive: false, capture: true });
+    document.addEventListener('touchmove', preventAllScroll, { passive: false, capture: true });
+    
+    return () => {
+      // クリーンアップ
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+      document.removeEventListener('wheel', preventAllScroll, { capture: true });
+      document.removeEventListener('touchmove', preventAllScroll, { capture: true });
+    };
+  }, []);
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     let newFormData = {
@@ -228,7 +258,13 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
   };
 
   return (
-    <div className="flex flex-col h-full w-full">
+    <div 
+      className="schedule-form-modal flex flex-col h-full w-full"
+      onWheel={(e) => {
+        // モーダル内のスクロールのみ許可、外部への伝播を停止
+        e.stopPropagation();
+      }}
+    >
       {/* ヘッダー部分（固定） */}
       <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-200 flex-shrink-0">
         <h2 className="text-2xl font-bold text-gray-800">

@@ -10,8 +10,9 @@ let isQuitting = false;
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 
 // デフォルト設定
+// hotkey はデフォルト無し（未設定=空文字）
 const defaultSettings = {
-  hotkey: 'Control+Alt+S',
+  hotkey: '',
   startWithSystem: false,
   minimizeToTray: true
 };
@@ -21,12 +22,15 @@ function loadSettings() {
   try {
     if (fs.existsSync(settingsPath)) {
       const data = fs.readFileSync(settingsPath, 'utf8');
-      return { ...defaultSettings, ...JSON.parse(data) };
+      const user = JSON.parse(data);
+      // hotkey 未定義なら空文字を補う
+      if (user.hotkey === undefined || user.hotkey === null) user.hotkey = '';
+      return { ...defaultSettings, ...user };
     }
   } catch (error) {
     console.error('設定の読み込みに失敗:', error);
   }
-  return defaultSettings;
+  return { ...defaultSettings };
 }
 
 // 設定の保存
@@ -188,19 +192,25 @@ function showWindow() {
 
 // グローバルショートカットの登録
 function registerGlobalShortcut(accelerator) {
-  // 既存のショートカットを解除
+  // 一旦すべて解除
   globalShortcut.unregisterAll();
-  
-  // 新しいショートカットを登録
-  const ret = globalShortcut.register(accelerator, () => {
-    toggleWindow();
-  });
-
+  // 未設定（空文字 / null / undefined）は登録しない
+  if (!accelerator) {
+    console.log('グローバルショートカット未設定（登録なし）');
+    return;
+  }
+  const ret = globalShortcut.register(accelerator, () => { toggleWindow(); });
   if (!ret) {
     console.error('ショートカットの登録に失敗:', accelerator);
   } else {
     console.log('ショートカットを登録:', accelerator);
   }
+}
+
+// グローバルショートカットの解除
+function unregisterGlobalShortcut() {
+  globalShortcut.unregisterAll();
+  console.log('グローバルショートカットを解除しました');
 }
 
 // IPC通信ハンドラー
@@ -236,6 +246,7 @@ ipcMain.handle('get-settings', () => {
 });
 
 ipcMain.handle('save-settings', (event, settings) => {
+  if (settings.hotkey === undefined || settings.hotkey === null) settings.hotkey = '';
   const success = saveSettings(settings);
   if (success && settings.startWithSystem) {
     app.setLoginItemSettings({
@@ -246,7 +257,16 @@ ipcMain.handle('save-settings', (event, settings) => {
 });
 
 ipcMain.handle('register-global-shortcut', (event, accelerator) => {
+  if (!accelerator) {
+    unregisterGlobalShortcut();
+    console.log('（IPC）未設定のためショートカット登録スキップ');
+    return;
+  }
   registerGlobalShortcut(accelerator);
+});
+
+ipcMain.handle('unregister-global-shortcut', () => {
+  unregisterGlobalShortcut();
 });
 
 // URLをデフォルトブラウザで開く
@@ -419,7 +439,11 @@ app.whenReady().then(() => {
     
     // 初期設定のホットキーを登録
     const settings = loadSettings();
-    registerGlobalShortcut(settings.hotkey);
+    if (settings.hotkey) {
+      registerGlobalShortcut(settings.hotkey);
+    } else {
+      console.log('起動時ホットキー未設定');
+    }
     
     console.log('アプリケーション起動完了');
   } catch (error) {

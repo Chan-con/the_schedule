@@ -137,23 +137,60 @@ export const useHistory = (initialState, maxHistorySize = 100) => {
                        e.target.contentEditable === 'true';
       
       if (isInInput) return;
-      
-      // Ctrl+Z (Undo)
-      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        if (canUndo) {
-          undo();
+
+      // 設定からショートカットを読み込み
+      const savedShortcuts = localStorage.getItem('scheduleAppShortcuts');
+      const shortcuts = savedShortcuts ? JSON.parse(savedShortcuts) : {
+        undo: 'Control+Z',
+        redo: 'Control+Shift+Z'
+      };
+
+      // Undoショートカットの処理（未設定ならスキップ）
+      if (shortcuts.undo) {
+        const undoKeys = shortcuts.undo.split('+').filter(k => k);
+        const isUndoShortcut = undoKeys.length > 0 && undoKeys.every(key => {
+          switch(key) {
+            case 'Control': return e.ctrlKey;
+            case 'Shift': return e.shiftKey;
+            case 'Alt': return e.altKey;
+            case 'Meta': return e.metaKey;
+            default: return e.key.toUpperCase() === key;
+          }
+        }) && undoKeys.length === (
+          (e.ctrlKey ? 1 : 0) + 
+          (e.shiftKey ? 1 : 0) + 
+          (e.altKey ? 1 : 0) + 
+          (e.metaKey ? 1 : 0) + 1
+        );
+        if (isUndoShortcut) {
+          e.preventDefault();
+          if (canUndo) undo();
+          return;
         }
-        return;
       }
-      
-      // Ctrl+Shift+Z (Redo) または Ctrl+Y (Redo)
-      if ((e.ctrlKey && e.shiftKey && e.key === 'Z') || (e.ctrlKey && e.key === 'y')) {
-        e.preventDefault();
-        if (canRedo) {
-          redo();
+
+      // Redoショートカットの処理（未設定ならスキップ）
+      if (shortcuts.redo) {
+        const redoKeys = shortcuts.redo.split('+').filter(k => k);
+        const isRedoShortcut = redoKeys.length > 0 && redoKeys.every(key => {
+          switch(key) {
+            case 'Control': return e.ctrlKey;
+            case 'Shift': return e.shiftKey;
+            case 'Alt': return e.altKey;
+            case 'Meta': return e.metaKey;
+            default: return e.key.toUpperCase() === key;
+          }
+        }) && redoKeys.length === (
+          (e.ctrlKey ? 1 : 0) + 
+          (e.shiftKey ? 1 : 0) + 
+          (e.altKey ? 1 : 0) + 
+          (e.metaKey ? 1 : 0) + 1
+        );
+        if (isRedoShortcut) {
+          e.preventDefault();
+          if (canRedo) redo();
+          return;
         }
-        return;
       }
     };
     
