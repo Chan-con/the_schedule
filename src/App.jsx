@@ -6,6 +6,7 @@ import Timeline from './components/Timeline';
 import ScheduleForm from './components/ScheduleForm';
 import TitleBar from './components/TitleBar';
 import { useNotifications } from './hooks/useNotifications';
+import { useHistory } from './hooks/useHistory';
 
 // サンプルデータ - 今日の日付に合わせて調整
 const getTodayDateStr = () => {
@@ -19,11 +20,24 @@ const initialSchedules = [
 ];
 
 function App() {
-  const [schedules, setSchedules] = useState(() => {
-    // ローカルストレージから予定を読み込む
-    const savedSchedules = localStorage.getItem('schedules');
-    return savedSchedules ? JSON.parse(savedSchedules) : initialSchedules;
-  });
+  // ローカルストレージから予定を読み込む
+  const savedSchedules = localStorage.getItem('schedules');
+  const loadedSchedules = savedSchedules ? JSON.parse(savedSchedules) : initialSchedules;
+  
+  // 履歴管理機能付きの予定状態
+  const {
+    state: schedules,
+    setState: setSchedules,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    clearHistory,
+    historyLength,
+    currentIndex,
+    lastActionType
+  } = useHistory(loadedSchedules, 100);
+  
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -44,8 +58,25 @@ function App() {
   const [mouseEnd, setMouseEnd] = useState(null);
   const [isMouseDown, setIsMouseDown] = useState(false);
   
+  // ハンバーガーメニューの開閉状態
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  
   // 通知システム
   const { scheduleAllNotifications, cancelScheduleNotifications, sendTestNotification } = useNotifications(schedules);
+  
+  // メニュー外クリックでメニューを閉じる
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (isMenuOpen && !event.target.closest('[data-menu-container]')) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMenuOpen]);
   
   // 画面サイズの監視
   useEffect(() => {
@@ -65,7 +96,13 @@ function App() {
   // 予定が変更されたらローカルストレージに保存
   useEffect(() => {
     localStorage.setItem('schedules', JSON.stringify(schedules));
-  }, [schedules]);
+    console.log('💾 Schedules saved to localStorage:', {
+      count: schedules.length,
+      historyIndex: currentIndex,
+      historyLength: historyLength,
+      lastAction: lastActionType
+    });
+  }, [schedules, currentIndex, historyLength, lastActionType]);
   
   // 分割比率が変更されたらローカルストレージに保存
   useEffect(() => {
@@ -188,11 +225,11 @@ function App() {
       // 既存のスケジュールが見つかった場合（移動）
       const updatedSchedules = [...schedules];
       updatedSchedules[existingScheduleIndex] = schedule;
-      setSchedules(updatedSchedules);
+      setSchedules(updatedSchedules, 'schedule_move');
       console.log('📝 Schedule updated (moved):', { id: schedule.id, newDate: schedule.date });
     } else {
       // 新しいスケジュール（コピー）
-      setSchedules([...schedules, schedule]);
+      setSchedules([...schedules, schedule], 'schedule_copy');
       console.log('➕ Schedule added (copied):', { id: schedule.id, date: schedule.date });
     }
   };
@@ -201,16 +238,15 @@ function App() {
   const handleScheduleDelete = (id) => {
     // 通知もキャンセル
     cancelScheduleNotifications(id);
-    setSchedules(schedules.filter(s => s.id !== id));
+    setSchedules(schedules.filter(s => s.id !== id), 'schedule_delete');
   };
 
   // 予定更新ハンドラー（並び替え用）
   const handleScheduleUpdate = (updatedSchedule) => {
-    setSchedules(prevSchedules => 
-      prevSchedules.map(s => 
-        s.id === updatedSchedule.id ? updatedSchedule : s
-      )
+    const newSchedules = schedules.map(s => 
+      s.id === updatedSchedule.id ? updatedSchedule : s
     );
+    setSchedules(newSchedules, 'schedule_reorder');
   };
 
   // 予定追加ハンドラー
@@ -238,7 +274,8 @@ function App() {
   const handleSave = (schedule) => {
     if (schedule.id) {
       // 既存の予定を更新
-      setSchedules(schedules.map(s => s.id === schedule.id ? schedule : s));
+      const newSchedules = schedules.map(s => s.id === schedule.id ? schedule : s);
+      setSchedules(newSchedules, 'schedule_edit');
     } else {
       // 新しい予定を追加
       const newSchedule = { ...schedule, id: Date.now() };
@@ -251,7 +288,7 @@ function App() {
         newSchedule.allDayOrder = sameDateAllDaySchedules.length;
       }
       
-      setSchedules([...schedules, newSchedule]);
+      setSchedules([...schedules, newSchedule], 'schedule_create');
     }
     setShowForm(false);
   };
@@ -260,7 +297,7 @@ function App() {
   const handleDelete = (id) => {
     // 通知もキャンセル
     cancelScheduleNotifications(id);
-    setSchedules(schedules.filter(s => s.id !== id));
+    setSchedules(schedules.filter(s => s.id !== id), 'schedule_delete');
     setShowForm(false);
   };
 
@@ -279,6 +316,102 @@ function App() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
       >
+        {/* ハンバーガーメニュー */}
+        <div 
+          className={`
+            fixed bottom-4 z-30 transition-all duration-300
+            ${isMobile && isTimelineOpen ? 'right-96' : 'right-4'}
+          `}
+          data-menu-container
+        >
+          {/* メニューボタン */}
+          <button
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className={`
+              w-8 h-8 rounded-full shadow-md transition-all duration-200 flex items-center justify-center relative
+              bg-white border border-gray-200 hover:border-indigo-300 hover:shadow-lg hover:scale-105 cursor-pointer
+              ${isMenuOpen ? 'bg-indigo-50 border-indigo-400 scale-105 shadow-lg' : ''}
+            `}
+            title={isMenuOpen ? "メニューを閉じる" : "メニューを開く"}
+          >
+            {/* ハンバーガー → × アニメーション */}
+            <div className="relative w-3 h-3 flex items-center justify-center">
+              {/* 1本目の線 */}
+              <div className={`
+                absolute w-3 h-0.5 rounded-full transition-all duration-300 
+                ${isMenuOpen 
+                  ? 'bg-indigo-600 rotate-45' 
+                  : 'bg-gray-600 rotate-0 -translate-y-1'
+                }
+              `}></div>
+              
+              {/* 2本目の線（中央、×の時は消える） */}
+              <div className={`
+                absolute w-3 h-0.5 rounded-full transition-all duration-300
+                ${isMenuOpen 
+                  ? 'bg-indigo-600 opacity-0 scale-0' 
+                  : 'bg-gray-600 opacity-100 scale-100'
+                }
+              `}></div>
+              
+              {/* 3本目の線 */}
+              <div className={`
+                absolute w-3 h-0.5 rounded-full transition-all duration-300
+                ${isMenuOpen 
+                  ? 'bg-indigo-600 -rotate-45' 
+                  : 'bg-gray-600 rotate-0 translate-y-1'
+                }
+              `}></div>
+            </div>
+          </button>
+          {/* メニュー項目 */}
+          {isMenuOpen && (
+            <div className={`
+              absolute bottom-10 right-0 bg-white rounded-lg shadow-xl border border-gray-100 py-1 min-w-[120px]
+              transition-all duration-200
+              ${isMenuOpen ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-2'}
+            `}>
+              <button
+                onClick={() => {
+                  undo();
+                  setIsMenuOpen(false);
+                }}
+                disabled={!canUndo}
+                className={`
+                  w-full flex items-center gap-2 px-3 py-2 text-sm transition-all duration-200 text-left bg-white
+                  ${canUndo 
+                    ? 'text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 cursor-pointer' 
+                    : 'text-gray-400 cursor-not-allowed'
+                  }
+                `}
+                title={`Ctrl+Z${canUndo ? '' : ' - 利用不可'}`}
+              >
+                <span className="text-sm">↩️</span>
+                <span className="font-medium">元に戻す</span>
+              </button>
+              <div className="border-t border-gray-100 mx-1"></div>
+              <button
+                onClick={() => {
+                  redo();
+                  setIsMenuOpen(false);
+                }}
+                disabled={!canRedo}
+                className={`
+                  w-full flex items-center gap-2 px-3 py-2 text-sm transition-all duration-200 text-left bg-white
+                  ${canRedo 
+                    ? 'text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 cursor-pointer' 
+                    : 'text-gray-400 cursor-not-allowed'
+                  }
+                `}
+                title={`Ctrl+Shift+Z${canRedo ? '' : ' - 利用不可'}`}
+              >
+                <span className="text-sm">↪️</span>
+                <span className="font-medium">やり直し</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* モバイル表示 */}
         {isMobile ? (
           <>
