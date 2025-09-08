@@ -109,6 +109,22 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
     };
   }, []);
 
+  // ESCキーで閉じる / 削除確認中なら確認を閉じる
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        // 削除確認表示中は確認を閉じるだけ
+        if (showDeleteConfirm) {
+          setShowDeleteConfirm(false);
+        } else if (onClose) {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [showDeleteConfirm, onClose]);
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     let newFormData = {
