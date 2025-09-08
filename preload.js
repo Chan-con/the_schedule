@@ -13,6 +13,7 @@ window.electronAPI = {
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   registerGlobalShortcut: (accelerator) => ipcRenderer.invoke('register-global-shortcut', accelerator),
   unregisterGlobalShortcut: () => ipcRenderer.invoke('unregister-global-shortcut'),
+  saveLayout: (layout) => ipcRenderer.invoke('save-layout', layout),
   
   // URL操作のAPI
   openUrl: (url) => ipcRenderer.invoke('open-url', url),

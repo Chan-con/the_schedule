@@ -16,7 +16,9 @@ const defaultSettings = {
   startWithSystem: false,
   minimizeToTray: true,
   discordWebhookUrl: '',
-  discordNotifyEnabled: false
+  discordNotifyEnabled: false,
+  splitRatio: 50,           // カレンダー:タイムライン 比率 (％)
+  allDayHeight: 200         // 終日エリア高さ(px)
 };
 
 // 設定の読み込み
@@ -29,6 +31,10 @@ function loadSettings() {
   if (user.hotkey === undefined || user.hotkey === null) user.hotkey = '';
   if (user.discordWebhookUrl === undefined || user.discordWebhookUrl === null) user.discordWebhookUrl = '';
   if (user.discordNotifyEnabled === undefined) user.discordNotifyEnabled = false;
+  if (typeof user.splitRatio !== 'number' || isNaN(user.splitRatio)) user.splitRatio = 50;
+  if (user.splitRatio < 20 || user.splitRatio > 80) user.splitRatio = 50;
+  if (typeof user.allDayHeight !== 'number' || isNaN(user.allDayHeight)) user.allDayHeight = 200;
+  if (user.allDayHeight < 80) user.allDayHeight = 80;
   return { ...defaultSettings, ...user };
     }
   } catch (error) {
@@ -299,6 +305,10 @@ ipcMain.handle('save-settings', (event, settings) => {
   if (settings.hotkey === undefined || settings.hotkey === null) settings.hotkey = '';
   if (settings.discordWebhookUrl === undefined || settings.discordWebhookUrl === null) settings.discordWebhookUrl = '';
   if (settings.discordNotifyEnabled === undefined) settings.discordNotifyEnabled = false;
+  if (typeof settings.splitRatio !== 'number' || isNaN(settings.splitRatio)) settings.splitRatio = 50;
+  if (settings.splitRatio < 20 || settings.splitRatio > 80) settings.splitRatio = 50;
+  if (typeof settings.allDayHeight !== 'number' || isNaN(settings.allDayHeight)) settings.allDayHeight = 200;
+  if (settings.allDayHeight < 80) settings.allDayHeight = 80;
   const success = saveSettings(settings);
   if (success && settings.startWithSystem) {
     app.setLoginItemSettings({
@@ -319,6 +329,24 @@ ipcMain.handle('register-global-shortcut', (event, accelerator) => {
 
 ipcMain.handle('unregister-global-shortcut', () => {
   unregisterGlobalShortcut();
+});
+
+// レイアウトのみ保存 (頻繁に呼ばれるため軽量)
+ipcMain.handle('save-layout', (event, layout) => {
+  try {
+    const settings = loadSettings();
+    const next = { ...settings };
+    if (typeof layout.splitRatio === 'number' && !isNaN(layout.splitRatio)) {
+      next.splitRatio = Math.min(80, Math.max(20, layout.splitRatio));
+    }
+    if (typeof layout.allDayHeight === 'number' && !isNaN(layout.allDayHeight)) {
+      next.allDayHeight = Math.max(80, layout.allDayHeight);
+    }
+    saveSettings(next);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 });
 
 // URLをデフォルトブラウザで開く

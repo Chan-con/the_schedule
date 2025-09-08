@@ -46,10 +46,8 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   
   // 分割比率の状態管理（デフォルト50%）
-  const [splitRatio, setSplitRatio] = useState(() => {
-    const savedRatio = localStorage.getItem('splitRatio');
-    return savedRatio ? parseFloat(savedRatio) : 50;
-  });
+  const [splitRatio, setSplitRatio] = useState(50);
+  const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   
   // モバイル表示の状態管理
@@ -107,10 +105,45 @@ function App() {
     });
   }, [schedules, currentIndex, historyLength, lastActionType]);
   
-  // 分割比率が変更されたらローカルストレージに保存
+  // 起動時に設定からレイアウト読み込み
   useEffect(() => {
-    localStorage.setItem('splitRatio', splitRatio.toString());
-  }, [splitRatio]);
+    (async () => {
+      let loaded = false;
+      if (window.electronAPI) {
+        try {
+          const s = await window.electronAPI.getSettings();
+          if (typeof s.splitRatio === 'number') {
+            setSplitRatio(s.splitRatio);
+            loaded = true;
+            console.log('[layout] splitRatio loaded from settings:', s.splitRatio);
+          }
+        } catch (e) {
+          console.warn('[layout] failed to load splitRatio from settings', e);
+        }
+      }
+      if (!loaded) {
+        const savedRatio = localStorage.getItem('splitRatio');
+        if (savedRatio) {
+          const v = parseFloat(savedRatio);
+          if (!isNaN(v)) {
+            setSplitRatio(v);
+            console.log('[layout] splitRatio loaded from localStorage:', v);
+          }
+        }
+      }
+      setLayoutLoaded(true);
+    })();
+  }, []);
+
+  // 分割比率変更時に保存（ロード完了後）
+  useEffect(() => {
+    if (!layoutLoaded) return; // 初期ロード完了までは保存しない
+    if (window.electronAPI) {
+      window.electronAPI.saveLayout({ splitRatio });
+    } else {
+      localStorage.setItem('splitRatio', String(splitRatio));
+    }
+  }, [splitRatio, layoutLoaded]);
   
   // マウス移動ハンドラー
   const handleMouseMove = (e) => {

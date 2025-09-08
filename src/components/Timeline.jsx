@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import MemoWithLinks from './MemoWithLinks';
 
 // 予定が過去かどうかを判定する関数
@@ -26,7 +26,8 @@ const isSchedulePast = (schedule, selectedDate) => {
 const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) => {
   const [draggedAllDayId, setDraggedAllDayId] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
-  const [allDayHeight, setAllDayHeight] = useState(200); // 終日エリアの初期高さ
+  const [allDayHeight, setAllDayHeight] = useState(200); // 終日エリア高さ（settings から初期化）
+  const [heightLoaded, setHeightLoaded] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [resizeStartY, setResizeStartY] = useState(0); // リサイズ開始時のマウスY座標
   const [resizeStartHeight, setResizeStartHeight] = useState(0); // リサイズ開始時の高さ
@@ -84,6 +85,53 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
     setResizeStartY(e.clientY);
     setResizeStartHeight(allDayHeight);
   };
+
+  // 初期ロード時に settings から復元
+  useLayoutEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        if (window.electronAPI) {
+          const s = await window.electronAPI.getSettings();
+          if (!mounted) return;
+          const val = typeof s.allDayHeight === 'number' ? s.allDayHeight : 200;
+          const container = timelineRef.current;
+          const rect = container ? container.getBoundingClientRect() : null;
+            const headerHeight = 60;
+            const minHeight = 100;
+            const dynamicMax = rect ? Math.max(minHeight, rect.height - headerHeight - 100) : 600;
+            const clamped = Math.min(Math.max(val, minHeight), dynamicMax);
+            setAllDayHeight(clamped);
+            setHeightLoaded(true);
+        } else {
+          const stored = localStorage.getItem('allDayHeight');
+          if (!stored) return;
+          const raw = parseInt(stored, 10);
+          if (!isNaN(raw)) {
+            setAllDayHeight(raw);
+            setHeightLoaded(true);
+          }
+        }
+      } catch (e) {
+        console.warn('終日エリア高さの読み込みに失敗:', e);
+        setHeightLoaded(true);
+      }
+    };
+    load();
+    return () => { mounted = false; };
+  }, []);
+
+  // 高さ変更を保存（ドラッグ終了時）
+  useEffect(() => {
+    if (!heightLoaded) return; // 初期ロード前は保存しない
+    if (!isResizing) {
+      if (window.electronAPI) {
+        window.electronAPI.saveLayout({ allDayHeight });
+      } else {
+        try { localStorage.setItem('allDayHeight', String(allDayHeight)); } catch (_) {}
+      }
+    }
+  }, [allDayHeight, isResizing, heightLoaded]);
 
   // 終日予定の並び替え処理
   const handleAllDayDragStart = (e, schedule) => {
