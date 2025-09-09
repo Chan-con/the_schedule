@@ -1,8 +1,9 @@
 import { useEffect, useCallback } from 'react';
+import { fromDateStrLocal } from '../utils/date';
 
 // 通知時間を計算する関数
 const calculateNotificationTime = (schedule, notification) => {
-  const scheduleDate = new Date(schedule.date + 'T00:00:00'); // 日付を明示的に設定
+  const scheduleDate = fromDateStrLocal(schedule.date); // ローカル日の 00:00 基準
   
   if (schedule.allDay) {
     // 終日予定の場合、当日9:00に通知

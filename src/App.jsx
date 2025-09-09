@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { toDateStrLocal } from './utils/date';
 
 import Calendar from './components/Calendar';
 import Timeline from './components/Timeline';
@@ -11,10 +12,7 @@ import { useNotifications } from './hooks/useNotifications';
 import { useHistory } from './hooks/useHistory';
 
 // サンプルデータ - 今日の日付に合わせて調整
-const getTodayDateStr = () => {
-  const today = new Date();
-  return today.toISOString().split('T')[0];
-};
+const getTodayDateStr = () => toDateStrLocal(new Date());
 
 const initialSchedules = [
   { id: 1, date: getTodayDateStr(), time: '09:00', name: '打ち合わせ', memo: 'ZoomリンクはSlack参照', allDay: false },
@@ -289,7 +287,7 @@ function App() {
   const handleAdd = (targetDate = null) => {
     // ターゲット日付が指定されていればその日付を使用、なければ選択中の日付を使用
     const dateToUse = targetDate || selectedDate;
-    const dateStr = dateToUse.toISOString().split('T')[0];
+  const dateStr = toDateStrLocal(dateToUse);
     
     setEditingSchedule({
       date: dateStr,
@@ -341,7 +339,7 @@ function App() {
   const handleClose = () => setShowForm(false);
 
   // 選択された日付の予定のみ表示
-  const selectedDateStr = selectedDate ? selectedDate.toISOString().split('T')[0] : '';
+  const selectedDateStr = selectedDate ? toDateStrLocal(selectedDate) : '';
   const filteredSchedules = schedules.filter(s => s.date === selectedDateStr);
 
   return (

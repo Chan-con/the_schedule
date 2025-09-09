@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { toDateStrLocal } from '../utils/date';
 import { isJapaneseHoliday, getJapaneseHolidayName } from '../utils/holidays';
 
 const getMonthDays = (year, month) => {
@@ -592,7 +593,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
   // 日付が選択されているかチェック
   const isSelected = dateStr => {
     if (!selectedDate) return false;
-    return selectedDate.toISOString().slice(0, 10) === dateStr;
+    return toDateStrLocal(selectedDate) === dateStr;
   };
   
   // 今日の日付かチェック（OSの現在時刻を使用）

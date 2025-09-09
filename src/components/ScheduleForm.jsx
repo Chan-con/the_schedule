@@ -52,7 +52,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
       });
     } else {
       // 新規作成時、日付は今日の日付を初期値に
-      const today = new Date().toISOString().slice(0, 10);
+            const today = toDateStrLocal(new Date());
       setFormData({
         id: null,
         name: '',
