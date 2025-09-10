@@ -47,6 +47,30 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
   const lines = memo.split('\n');
   console.log('📄 Split into lines:', lines);
 
+  const formatUrlForDisplay = (urlStr, maxLen = 30) => {
+    try {
+      const u = new URL(urlStr);
+      const host = (u.hostname || '').replace(/^www\./, '');
+      let path = u.pathname || '';
+      if (path === '/') path = '';
+      let base = host + path;
+      if (!base) base = u.host || urlStr;
+      if (base.length > maxLen) {
+        const keep = Math.max(0, maxLen - host.length - 1);
+        const sliced = keep > 0 ? path.slice(0, keep) : '';
+        return `${host}${sliced}…`;
+      }
+      return base;
+    } catch (_) {
+      // フォールバック: プロトコル・クエリ・ハッシュを除去して短縮
+      const clean = urlStr
+        .replace(/^https?:\/\//i, '')
+        .replace(/^www\./i, '')
+        .split(/[?#]/)[0];
+      return clean.length > maxLen ? clean.slice(0, maxLen - 1) + '…' : clean;
+    }
+  };
+
   const renderLine = (line, lineIndex) => {
     if (!line) {
       // 空行の場合
@@ -81,12 +105,13 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
           console.log(`🧩 Part ${partIndex}: "${part}" isUrl: ${isUrl}`);
           
           if (isUrl) {
+            const display = formatUrlForDisplay(part);
             return (
               <span
                 key={`url-${lineIndex}-${partIndex}`}
                 className="text-blue-600 underline hover:text-blue-800 transition-colors font-medium select-text"
                 onContextMenu={(e) => handleUrlRightClick(part, e)}
-                title="右クリックでブラウザで開く"
+                title={`${part}\n(右クリックでブラウザで開く)`}
                 style={{ 
                   color: '#2563eb', 
                   textDecoration: 'underline',
@@ -94,7 +119,7 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
                   userSelect: 'text'
                 }}
               >
-                {part}
+                {display}
               </span>
             );
           }
