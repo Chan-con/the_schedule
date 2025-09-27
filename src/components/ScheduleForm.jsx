@@ -2,29 +2,47 @@ import React, { useState, useEffect, useRef } from 'react';
 
 const EMOJI_OPTIONS = [
   { value: '', label: 'なし', emoji: '' },
-  { value: '⭐', label: '星', emoji: '⭐' },
-  { value: '💖', label: 'ハート', emoji: '💖' },
-  { value: '🌸', label: '花', emoji: '🌸' },
-  { value: '✨', label: 'キラキラ', emoji: '✨' },
-  { value: '☀️', label: '太陽', emoji: '☀️' },
-  { value: '🌙', label: '月', emoji: '🌙' },
-  { value: '🍃', label: '葉っぱ', emoji: '🍃' },
-  { value: '🐱', label: '猫', emoji: '🐱' },
-  { value: '🐶', label: '犬', emoji: '🐶' },
-  { value: '😊', label: 'スマイル', emoji: '😊' },
-  { value: '☕', label: 'コーヒー', emoji: '☕' },
-  { value: '📚', label: '本', emoji: '📚' },
-  { value: '🎵', label: '音楽', emoji: '🎵' },
-  { value: '🕐', label: '時計', emoji: '🕐' },
-  { value: '✅', label: 'チェック', emoji: '✅' },
+  // リマインド・ステータス
   { value: '✔️', label: 'チェックマーク', emoji: '✔️' },
-  { value: '☑️', label: 'チェックボックス', emoji: '☑️' },
   { value: '✖️', label: 'バツ', emoji: '✖️' },
-  { value: '💰', label: 'お金袋', emoji: '💰' },
-  { value: '💴', label: '円札', emoji: '💴' },
-  { value: '💵', label: 'ドル札', emoji: '💵' },
-  { value: '💳', label: 'クレジットカード', emoji: '💳' },
-  { value: '🏦', label: '銀行', emoji: '🏦' }
+  { value: '❗', label: '重要', emoji: '❗' },
+  { value: '⚠️', label: '注意', emoji: '⚠️' },
+  // 仕事・勉強
+  { value: '💼', label: '仕事', emoji: '💼' },
+  { value: '📚', label: '勉強', emoji: '📚' },
+  { value: '📝', label: 'メモ', emoji: '📝' },
+  { value: '📞', label: '電話', emoji: '📞' },
+  { value: '💻', label: 'PC作業', emoji: '💻' },
+  { value: '🤝', label: 'ミーティング', emoji: '🤝' },
+  // お金・支払いステータス
+  { value: '✅', label: '振込済み', emoji: '✅' },
+  { value: '☑️', label: '支払い済み', emoji: '☑️' },
+  { value: '🟢', label: '入金確認済み', emoji: '🟢' },
+  // お金・支払い
+  { value: '💰', label: '支払い', emoji: '💰' },
+  { value: '💵', label: '現金', emoji: '💵' },
+  { value: '💸', label: '支払い', emoji: '💸' },
+  { value: '💳', label: 'カード', emoji: '💳' },
+  { value: '🧾', label: '請求書', emoji: '🧾' },
+  { value: '🏦', label: '銀行', emoji: '🏦' },
+  // 運動・健康
+  { value: '💪', label: '筋トレ', emoji: '💪' },
+  { value: '🏋️', label: 'ウェイト', emoji: '🏋️' },
+  { value: '🧘', label: 'ヨガ', emoji: '🧘' },
+  { value: '🚴', label: 'サイクリング', emoji: '🚴' },
+  { value: '🏃', label: 'ランニング', emoji: '🏃' },
+  // イベント・趣味
+  { value: '🎂', label: '誕生日', emoji: '🎂' },
+  { value: '🎉', label: 'イベント', emoji: '🎉' },
+  { value: '🎤', label: 'ライブ', emoji: '🎤' },
+  { value: '🎬', label: '映画', emoji: '🎬' },
+  { value: '🎮', label: 'ゲーム', emoji: '🎮' },
+  // 外出・生活
+  { value: '✈️', label: '旅行', emoji: '✈️' },
+  { value: '🏖️', label: '休暇', emoji: '🏖️' },
+  { value: '🏥', label: '病院', emoji: '🏥' },
+  { value: '🛒', label: '買い物', emoji: '🛒' },
+  { value: '🚗', label: 'ドライブ', emoji: '🚗' },  
 ];
 
 const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotification }) => {
