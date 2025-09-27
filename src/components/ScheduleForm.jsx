@@ -5,8 +5,15 @@ const EMOJI_OPTIONS = [
   // リマインド・ステータス
   { value: '✔️', label: 'チェックマーク', emoji: '✔️' },
   { value: '✖️', label: 'バツ', emoji: '✖️' },
+  { value: '☑️', label: 'チェックボックス', emoji: '☑️' },
   { value: '❗', label: '重要', emoji: '❗' },
+{ value: '❓', label: '要確認', emoji: '❓' },
   { value: '⚠️', label: '注意', emoji: '⚠️' },
+  { value: '🟡', label: '進行中', emoji: '🟡' },
+  { value: '🟢', label: '確認済み', emoji: '🟢' },
+  { value: '🔴', label: '未対応', emoji: '🔴' },
+  { value: '🚩', label: 'フラグ', emoji: '🚩' },
+  { value: '🎯', label: 'ターゲット', emoji: '🎯' },
   // 仕事・勉強
   { value: '💼', label: '仕事', emoji: '💼' },
   { value: '📚', label: '勉強', emoji: '📚' },
@@ -373,8 +380,8 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
             <div 
               className="grid grid-cols-6 gap-1 overflow-y-auto emoji-scrollbar smooth-scroll" 
               style={{ 
-                height: '72px', 
-                maxHeight: '72px',
+                height: '112px', 
+                maxHeight: '112px',
                 scrollBehavior: 'smooth'
               }}
             >
