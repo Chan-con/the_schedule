@@ -2,16 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { toDateStrLocal } from '../utils/date';
 import { isJapaneseHoliday, getJapaneseHolidayName } from '../utils/holidays';
 
-const getMonthDays = (year, month) => {
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  const days = [];
-  for (let i = 1; i <= lastDay.getDate(); i++) {
-    days.push(new Date(year, month, i));
-  }
-  return days;
-};
-
 // 予定が過去かどうかを判定する関数
 const isSchedulePast = (schedule) => {
   const now = new Date();
@@ -34,7 +24,7 @@ const isSchedulePast = (schedule) => {
   }
 };
 
-const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onScheduleUpdate, onAdd, onEdit, isMobile }) => {
+const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onScheduleUpdate, onAdd, onEdit }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [isAltPressed, setIsAltPressed] = useState(false);
@@ -44,11 +34,9 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [maxSchedulesPerCell, setMaxSchedulesPerCell] = useState(3); // 動的に調整される
-  const [scrollTrigger, setScrollTrigger] = useState(0); // スクロール時の再レンダリング用
+  const [_scrollTrigger, setScrollTrigger] = useState(0); // スクロール時の再レンダリング用（未使用変数のLint回避）
   
-  // 終日予定の並び替え用
-  const [draggedAllDaySchedule, setDraggedAllDaySchedule] = useState(null);
-  const [dropTargetAllDaySchedule, setDropTargetAllDaySchedule] = useState(null);
+  // 終日予定の並び替え用（未使用のため削除）
   
   const calendarRef = useRef(null);
 
@@ -151,82 +139,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
   };
 
   // 終日予定の並び替えハンドラー
-  const handleAllDayDragStart = (e, schedule) => {
-    // 終日予定のみ並び替え可能
-    if (!schedule.allDay) return;
-    
-    e.stopPropagation(); // カスタムドラッグイベントとの競合を防ぐ
-    setDraggedAllDaySchedule(schedule);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('application/json', JSON.stringify(schedule));
-    console.log('🏷️ All-day schedule drag started:', schedule.name);
-  };
-
-  const handleAllDayDragEnd = () => {
-    setDraggedAllDaySchedule(null);
-    setDropTargetAllDaySchedule(null);
-  };
-
-  const handleAllDayDragOver = (e, targetSchedule) => {
-    // 終日予定のみドロップ対象
-    if (!targetSchedule.allDay || !draggedAllDaySchedule) return;
-    
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // 同じ日付の終日予定のみ並び替え可能
-    if (draggedAllDaySchedule.date === targetSchedule.date) {
-      e.dataTransfer.dropEffect = 'move';
-      setDropTargetAllDaySchedule(targetSchedule);
-    }
-  };
-
-  const handleAllDayDrop = (e, targetSchedule) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (!draggedAllDaySchedule || !targetSchedule.allDay) return;
-    if (draggedAllDaySchedule.id === targetSchedule.id) return;
-    if (draggedAllDaySchedule.date !== targetSchedule.date) return;
-
-    // 同じ日付の終日予定を取得
-    const sameDateAllDaySchedules = schedules.filter(s => 
-      s.date === draggedAllDaySchedule.date && s.allDay
-    ).sort((a, b) => (a.allDayOrder || 0) - (b.allDayOrder || 0));
-
-    const draggedIndex = sameDateAllDaySchedules.findIndex(s => s.id === draggedAllDaySchedule.id);
-    const targetIndex = sameDateAllDaySchedules.findIndex(s => s.id === targetSchedule.id);
-
-    if (draggedIndex === -1 || targetIndex === -1) return;
-
-    // 新しい順序で配列を再構築
-    const newSchedules = [...sameDateAllDaySchedules];
-    newSchedules.splice(draggedIndex, 1);
-    newSchedules.splice(targetIndex, 0, draggedAllDaySchedule);
-
-    // allDayOrderを更新
-    const updatedSchedules = newSchedules.map((schedule, index) => ({
-      ...schedule,
-      allDayOrder: index
-    }));
-
-    // 親コンポーネントに更新を通知
-    if (onScheduleUpdate) {
-      updatedSchedules.forEach(schedule => {
-        onScheduleUpdate(schedule);
-      });
-    }
-
-    console.log('🔄 All-day schedules reordered in calendar:', {
-      from: draggedIndex,
-      to: targetIndex,
-      draggedId: draggedAllDaySchedule.id,
-      targetId: targetSchedule.id
-    });
-
-    setDraggedAllDaySchedule(null);
-    setDropTargetAllDaySchedule(null);
-  };  // キーボードイベントの監視
+  // キーボードイベントの監視
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.altKey && !isAltPressed) {
@@ -662,10 +575,10 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       >
         {calendarDays.map((date, index) => {
           // ローカル時間で日付文字列を生成
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          const dateStr = `${year}-${month}-${day}`;
+          const y = date.getFullYear();
+          const mStr = String(date.getMonth() + 1).padStart(2, '0');
+          const dStr = String(date.getDate()).padStart(2, '0');
+          const dateStr = `${y}-${mStr}-${dStr}`;
           
           const daySchedules = getSchedulesForDate(dateStr);
           const selected = isSelected(dateStr);
@@ -688,8 +601,8 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                     'border border-indigo-300 hover:border-indigo-300' : 
                   today ? 
                     'bg-orange-50 border border-orange-400 hover:border-orange-400' : 
-                    'border border-gray-200 hover:border-gray-200'}
-                ${!currentMonth ? 'opacity-30' : ''}
+                    (currentMonth ? 'border border-gray-400 hover:border-gray-500' : 'border border-gray-200 hover:border-gray-200')}
+                ${!currentMonth ? 'bg-gray-50' : ''}
               `}
               onClick={() => onDateClick(new Date(dateStr))}
               onDoubleClick={(e) => {
@@ -728,9 +641,9 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                 </span>
               </div>
               
-              {/* 予定部分 - 残りのスペースを使用 */}
+              {/* 予定部分 - 残りのスペースを使用（表示中の全日付で予定を表示） */}
               <div className="schedules-container flex-1 w-full overflow-hidden space-y-0.5">
-                {currentMonth && (() => {
+                {(() => {
                   // スクロールオフセットを取得
                   const scrollOffset = parseInt(document.querySelector(`[data-date="${dateStr}"]`)?.getAttribute('data-scroll-offset') || '0');
                   // オフセットを適用して表示する予定を決定
@@ -760,8 +673,6 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                         ${isPast ? 'opacity-60' : ''}
                         ${draggedSchedule?.id === schedule.id ? 'opacity-50' : ''}
                         ${isCustomDragging && draggedSchedule?.id === schedule.id ? 'opacity-30 transform scale-95' : ''}
-                        ${draggedAllDaySchedule?.id === schedule.id ? 'opacity-60 transform scale-95' : ''}
-                        ${dropTargetAllDaySchedule?.id === schedule.id ? 'bg-green-300 border-2 border-green-500' : ''}
                         transition-all duration-150
                       `}
                       title={displayText}
@@ -824,7 +735,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                 });
                 })()}
                 
-                {currentMonth && (() => {
+                {(() => {
                   const scrollOffset = parseInt(document.querySelector(`[data-date="${dateStr}"]`)?.getAttribute('data-scroll-offset') || '0');
                   const totalSchedules = daySchedules.length;
                   const hiddenSchedules = totalSchedules - maxSchedulesPerCell - scrollOffset;
