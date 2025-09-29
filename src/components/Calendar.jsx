@@ -5,21 +5,21 @@ import { isJapaneseHoliday, getJapaneseHolidayName } from '../utils/holidays';
 // 予定が過去かどうかを判定する関数
 const isSchedulePast = (schedule) => {
   const now = new Date();
-  const scheduleDate = new Date(schedule.date);
-  
+  // schedule.date は 'YYYY-MM-DD' 想定。ローカル日付で安全にパースする
+  const [y, m, d] = (schedule.date || '').split('-').map(Number);
+  const scheduleDateLocal = new Date(y, (m || 1) - 1, d || 1);
+
   if (schedule.allDay) {
-    // 終日予定の場合、日付のみで比較（当日は過去扱いしない）
-    const today = new Date();
-    today.setHours(23, 59, 59, 999); // 当日の終了時刻
-    return scheduleDate < today;
+    // 終日予定は「今日より前」のみ過去。当日は過去扱いしない
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    return scheduleDateLocal < startOfToday;
   } else {
-    // 時間指定予定の場合、時刻も含めて比較
+    // 時間指定予定は日時で比較（時間未指定は過去扱いしない）
     if (!schedule.time) return false;
-    
     const [hours, minutes] = schedule.time.split(':').map(Number);
-    const scheduleDateTime = new Date(scheduleDate);
-    scheduleDateTime.setHours(hours, minutes, 0, 0);
-    
+    const scheduleDateTime = new Date(scheduleDateLocal);
+    scheduleDateTime.setHours(hours || 0, minutes || 0, 0, 0);
     return scheduleDateTime < now;
   }
 };
