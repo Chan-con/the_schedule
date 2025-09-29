@@ -601,7 +601,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                     'border border-indigo-300 hover:border-indigo-300' : 
                   today ? 
                     'bg-orange-50 border border-orange-400 hover:border-orange-400' : 
-                    (currentMonth ? 'border border-gray-400 hover:border-gray-500' : 'border border-gray-200 hover:border-gray-200')}
+                    (currentMonth ? 'border border-gray-300 hover:border-gray-400' : 'border border-gray-200 hover:border-gray-200')}
                 ${!currentMonth ? 'bg-gray-50' : ''}
               `}
               onClick={() => onDateClick(new Date(dateStr))}
