@@ -627,18 +627,28 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
             >
               {/* 日付部分 - 固定の高さ */}
               <div className="flex-shrink-0 mb-0.5 flex justify-center">
-                <span className={`
-                  text-xs font-medium
-                  ${isJapaneseHoliday(date) ? 'text-green-600' : 
-                    date.getDay() === 0 ? 'text-red-500' : 
-                    date.getDay() === 6 ? 'text-blue-500' : 'text-gray-400'}
-                  ${today ? 'font-bold' : ''}
-                  ${!currentMonth ? 'text-gray-400' : ''}
-                `}
-                title={isJapaneseHoliday(date) ? getJapaneseHolidayName(date) : ''}
-                >
-                  {date.getDate()}
-                </span>
+                {(() => {
+                  const dow = date.getDay();
+                  const holiday = isJapaneseHoliday(date);
+                  let dateTextColorClass = '';
+                  if (holiday) {
+                    dateTextColorClass = currentMonth ? 'text-green-600' : 'text-green-400';
+                  } else if (dow === 0) {
+                    dateTextColorClass = currentMonth ? 'text-red-500' : 'text-red-300';
+                  } else if (dow === 6) {
+                    dateTextColorClass = currentMonth ? 'text-blue-500' : 'text-blue-300';
+                  } else {
+                    dateTextColorClass = currentMonth ? 'text-gray-400' : 'text-gray-300';
+                  }
+                  return (
+                    <span
+                      className={`text-xs font-medium ${dateTextColorClass} ${today ? 'font-bold' : ''}`}
+                      title={holiday ? getJapaneseHolidayName(date) : ''}
+                    >
+                      {date.getDate()}
+                    </span>
+                  );
+                })()}
               </div>
               
               {/* 予定部分 - 残りのスペースを使用（表示中の全日付で予定を表示） */}
