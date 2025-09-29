@@ -5,13 +5,10 @@ const EMOJI_OPTIONS = [
   // リマインド・ステータス
   { value: '✔️', label: 'チェックマーク', emoji: '✔️' },
   { value: '✖️', label: 'バツ', emoji: '✖️' },
-  { value: '☑️', label: 'チェックボックス', emoji: '☑️' },
-  { value: '❗', label: '重要', emoji: '❗' },
-{ value: '❓', label: '要確認', emoji: '❓' },
-  { value: '⚠️', label: '注意', emoji: '⚠️' },
   { value: '🟡', label: '進行中', emoji: '🟡' },
   { value: '🟢', label: '確認済み', emoji: '🟢' },
   { value: '🔴', label: '未対応', emoji: '🔴' },
+  { value: '⚠️', label: '注意', emoji: '⚠️' },
   { value: '🚩', label: 'フラグ', emoji: '🚩' },
   { value: '🎯', label: 'ターゲット', emoji: '🎯' },
   // 仕事・勉強
@@ -24,7 +21,6 @@ const EMOJI_OPTIONS = [
   // お金・支払いステータス
   { value: '✅', label: '振込済み', emoji: '✅' },
   { value: '☑️', label: '支払い済み', emoji: '☑️' },
-  { value: '🟢', label: '入金確認済み', emoji: '🟢' },
   // お金・支払い
   { value: '💰', label: '支払い', emoji: '💰' },
   { value: '💵', label: '現金', emoji: '💵' },
@@ -43,13 +39,11 @@ const EMOJI_OPTIONS = [
   { value: '🎉', label: 'イベント', emoji: '🎉' },
   { value: '🎤', label: 'ライブ', emoji: '🎤' },
   { value: '🎬', label: '映画', emoji: '🎬' },
-  { value: '🎮', label: 'ゲーム', emoji: '🎮' },
   // 外出・生活
   { value: '✈️', label: '旅行', emoji: '✈️' },
   { value: '🏖️', label: '休暇', emoji: '🏖️' },
   { value: '🏥', label: '病院', emoji: '🏥' },
   { value: '🛒', label: '買い物', emoji: '🛒' },
-  { value: '🚗', label: 'ドライブ', emoji: '🚗' },  
 ];
 
 const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotification }) => {
