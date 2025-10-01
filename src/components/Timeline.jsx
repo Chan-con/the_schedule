@@ -5,20 +5,22 @@ import MemoWithLinks from './MemoWithLinks';
 const isSchedulePast = (schedule, selectedDate) => {
   const now = new Date();
   const scheduleDate = new Date(selectedDate);
-  
+
   if (schedule.allDay) {
-    // 終日予定の場合、日付のみで比較（当日は過去扱いしない）
-    const today = new Date();
-    today.setHours(23, 59, 59, 999); // 当日の終了時刻
-    return scheduleDate < today;
+    // 終日予定は「今日より前」のみ過去。当日は過去扱いしない（日時は無視）
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const dateOnly = new Date(scheduleDate);
+    dateOnly.setHours(0, 0, 0, 0);
+    return dateOnly < startOfToday;
   } else {
     // 時間指定予定の場合、時刻も含めて比較
     if (!schedule.time) return false;
-    
+
     const [hours, minutes] = schedule.time.split(':').map(Number);
     const scheduleDateTime = new Date(scheduleDate);
     scheduleDateTime.setHours(hours, minutes, 0, 0);
-    
+
     return scheduleDateTime < now;
   }
 };
@@ -322,7 +324,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate, on
                   onDragLeave={handleAllDayDragLeave}
                   onDrop={(e) => handleAllDayDrop(e, index)}
                   className={`
-                    ${isPast ? 'bg-amber-50 border-l-3 border-amber-300' : 'bg-amber-50 border-l-3 border-amber-400'} px-3 py-2 rounded-r ${isMemoHovering ? 'cursor-text' : 'cursor-grab'} ${(isPast || isDimTask) ? 'hover:bg-amber-100 opacity-60' : 'hover:bg-amber-100'} transition-all duration-200
+                    ${isPast ? 'bg-amber-50 border-l-3 border-amber-300' : 'bg-amber-50 border-l-3 border-amber-400'} px-3 py-2 rounded-r ${isMemoHovering ? 'cursor-text' : 'cursor-grab'} ${isDimTask ? 'hover:bg-amber-100 opacity-60' : 'hover:bg-amber-100'} transition-all duration-200
                     ${draggedAllDayId === s.id ? 'opacity-50 transform scale-95' : ''}
                     ${dragOverIndex === index && draggedAllDayId !== s.id ? 'transform translate-y-1 shadow-lg bg-amber-200' : ''}
                   `}
@@ -364,7 +366,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate, on
                       </button>
                     )}
                     <span className={`text-xs font-medium px-2 py-0.5 rounded ${isPast ? 'text-amber-500 bg-amber-100' : 'text-amber-600 bg-amber-200'}`}>終日</span>
-                    <span className={`font-medium ${isPast ? 'text-gray-500' : 'text-gray-800'}`}>{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
+                    <span className={`font-medium ${isDimTask ? 'text-gray-500' : 'text-gray-800'}`}>{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
                     <div className="ml-auto opacity-40 hover:opacity-80 transition-opacity">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
