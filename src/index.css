@@ -26,7 +26,7 @@ html, body, #root {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Zen Maru Gothic', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
 }
 
 /* スムーズなスライドトランジション */
@@ -42,7 +42,7 @@ body {
 }
 
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Zen Maru Gothic', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
