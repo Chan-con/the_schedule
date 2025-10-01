@@ -1,3 +1,5 @@
+/* eslint-env node */
+/* eslint-disable no-undef */
 // Electron preload script
 const { ipcRenderer } = require('electron');
 

@@ -1,20 +1,17 @@
-import React, { useState } from 'react';
+import React from 'react';
 
 const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
-  const [isHovering, setIsHovering] = useState(false);
   if (!memo) return null;
 
   console.log('🔍 MemoWithLinks received memo:', memo);
 
   const handleMouseEnter = () => {
-    setIsHovering(true);
     if (onHoverChange) {
       onHoverChange(true);
     }
   };
 
   const handleMouseLeave = () => {
-    setIsHovering(false);
     if (onHoverChange) {
       onHoverChange(false);
     }
@@ -61,7 +58,7 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
         return `${host}${sliced}…`;
       }
       return base;
-    } catch (_) {
+  } catch {
       // フォールバック: プロトコル・クエリ・ハッシュを除去して短縮
       const clean = urlStr
         .replace(/^https?:\/\//i, '')

@@ -252,13 +252,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
     setShortcuts(defaultShortcuts);
   };
 
-  const handleHotkeyChange = (e) => {
-    const value = e.target.value;
-    // 基本的なキー組み合わせの検証
-    if (value.includes('Control') || value.includes('Alt') || value.includes('Shift')) {
-      setHotkey(value);
-    }
-  };
+  // 入力欄からのホットキー変更はホットキーキャプチャで扱うため関数は不要
 
   const startHotkeyCapture = async () => {
     // 現在のホットキーを保存（キャンセル時の復元用）

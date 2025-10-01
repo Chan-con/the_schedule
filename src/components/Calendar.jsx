@@ -24,7 +24,15 @@ const isSchedulePast = (schedule) => {
   }
 };
 
-const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onScheduleUpdate, onAdd, onEdit }) => {
+// タスクの完了状態に応じた薄表示かどうかを判定
+const shouldDimForTask = (schedule) => {
+  if (!schedule?.isTask) return false;
+  if (!schedule.completed) return false;
+  // タスクは当日や未来でも完了済みは薄く表示
+  return true;
+};
+
+const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onAdd, onEdit, onToggleTask }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [isAltPressed, setIsAltPressed] = useState(false);
@@ -260,7 +268,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       }
     };
     
-    const handleMouseUp = (e) => {
+    const handleMouseUp = () => {
       if (isCustomDragging) {
         console.log('🏁 Custom drag ended');
         
@@ -457,7 +465,6 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
   // カレンダーグリッドを6週間分（42日）で構築
   const getCalendarDays = () => {
     const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
     const startDate = new Date(firstDay);
     
     // 月曜日始まりに調整
@@ -667,6 +674,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                     
                     // 予定が過去かどうかを判定
                     const isPast = isSchedulePast(schedule);
+                    const isDimTask = shouldDimForTask(schedule);
                     
                     return (
                     <div 
@@ -680,7 +688,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                           : 
                           isPast ? 'bg-blue-100 text-blue-600 hover:bg-blue-200 cursor-pointer' : 'bg-blue-200 text-blue-800 hover:bg-blue-300 cursor-pointer'
                         }
-                        ${isPast ? 'opacity-60' : ''}
+                        ${isPast || isDimTask ? 'opacity-60' : ''}
                         ${draggedSchedule?.id === schedule.id ? 'opacity-50' : ''}
                         ${isCustomDragging && draggedSchedule?.id === schedule.id ? 'opacity-30 transform scale-95' : ''}
                         transition-all duration-150
@@ -732,13 +740,26 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                         }
                       }}
                     >
-                      <div className="flex items-center pointer-events-none">
+                      <div className="flex items-center">
+                        {schedule.isTask && (
+                          <button
+                            type="button"
+                            className={`mr-1 w-3.5 h-3.5 flex items-center justify-center rounded border text-[10px] leading-none ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}
+                            title={schedule.completed ? '完了済み' : '未完了'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onToggleTask) onToggleTask(schedule.id, !schedule.completed);
+                            }}
+                          >
+                            ✓
+                          </button>
+                        )}
                         {isAltPressed && (
                           <span className="mr-1 text-xs opacity-70">
                             {draggedSchedule?.id === schedule.id ? '📋' : '⚡'}
                           </span>
                         )}
-                        <span className="truncate">{displayText}</span>
+                        <span className="truncate pointer-events-none">{displayText}</span>
                       </div>
                     </div>
                   );

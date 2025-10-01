@@ -23,7 +23,12 @@ const isSchedulePast = (schedule, selectedDate) => {
   }
 };
 
-const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) => {
+const shouldDimForTask = (schedule) => {
+  if (!schedule?.isTask) return false;
+  return !!schedule.completed;
+};
+
+const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate, onToggleTask }) => {
   const [draggedAllDayId, setDraggedAllDayId] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [allDayHeight, setAllDayHeight] = useState(200); // 終日エリア高さ（settings から初期化）
@@ -128,7 +133,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
       if (window.electronAPI) {
         window.electronAPI.saveLayout({ allDayHeight });
       } else {
-        try { localStorage.setItem('allDayHeight', String(allDayHeight)); } catch (_) {}
+        localStorage.setItem('allDayHeight', String(allDayHeight));
       }
     }
   }, [allDayHeight, isResizing, heightLoaded]);
@@ -274,7 +279,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
         </div>
         
         <button
-          onClick={(e) => {
+          onClick={() => {
             console.log('➕ Timeline add button clicked');
             console.log('➕ onAdd function exists:', typeof onAdd === 'function');
             if (onAdd) {
@@ -306,6 +311,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                 .sort((a, b) => (a.allDayOrder || 0) - (b.allDayOrder || 0))
                 .map((s, index) => {
                   const isPast = isSchedulePast(s, selectedDate);
+                  const isDimTask = shouldDimForTask(s);
                   return (
                 <div 
                   key={s.id}
@@ -316,7 +322,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                   onDragLeave={handleAllDayDragLeave}
                   onDrop={(e) => handleAllDayDrop(e, index)}
                   className={`
-                    ${isPast ? 'bg-amber-50 border-l-3 border-amber-300' : 'bg-amber-50 border-l-3 border-amber-400'} px-3 py-2 rounded-r ${isMemoHovering ? 'cursor-text' : 'cursor-grab'} ${isPast ? 'hover:bg-amber-100 opacity-60' : 'hover:bg-amber-100'} transition-all duration-200
+                    ${isPast ? 'bg-amber-50 border-l-3 border-amber-300' : 'bg-amber-50 border-l-3 border-amber-400'} px-3 py-2 rounded-r ${isMemoHovering ? 'cursor-text' : 'cursor-grab'} ${(isPast || isDimTask) ? 'hover:bg-amber-100 opacity-60' : 'hover:bg-amber-100'} transition-all duration-200
                     ${draggedAllDayId === s.id ? 'opacity-50 transform scale-95' : ''}
                     ${dragOverIndex === index && draggedAllDayId !== s.id ? 'transform translate-y-1 shadow-lg bg-amber-200' : ''}
                   `}
@@ -344,6 +350,19 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                   }}
                 >
                   <div className="flex items-center gap-2">
+                    {s.isTask && (
+                      <button
+                        type="button"
+                        className={`w-4 h-4 flex items-center justify-center rounded border text-[10px] leading-none ${s.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}
+                        title={s.completed ? '完了済み' : '未完了'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onToggleTask) onToggleTask(s.id, !s.completed);
+                        }}
+                      >
+                        ✓
+                      </button>
+                    )}
                     <span className={`text-xs font-medium px-2 py-0.5 rounded ${isPast ? 'text-amber-500 bg-amber-100' : 'text-amber-600 bg-amber-200'}`}>終日</span>
                     <span className={`font-medium ${isPast ? 'text-gray-500' : 'text-gray-800'}`}>{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
                     <div className="ml-auto opacity-40 hover:opacity-80 transition-opacity">
@@ -394,10 +413,11 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
             <ul className="space-y-3 pr-2">
               {sortedTimeSchedules.map(s => {
                 const isPast = isSchedulePast(s, selectedDate);
+                const isDimTask = shouldDimForTask(s);
                 return (
                 <li 
                   key={s.id} 
-                  className={`border-l-4 ${isPast ? 'border-blue-300 opacity-60' : 'border-blue-500'} pl-4 flex flex-col gap-1 ${isMemoHovering ? 'cursor-text' : 'cursor-pointer'} ${isPast ? 'hover:bg-blue-50' : 'hover:bg-blue-50'} rounded-md transition p-2`}
+                  className={`border-l-4 ${(isPast || isDimTask) ? 'border-blue-300 opacity-60' : 'border-blue-500'} pl-4 flex flex-col gap-1 ${isMemoHovering ? 'cursor-text' : 'cursor-pointer'} ${isPast ? 'hover:bg-blue-50' : 'hover:bg-blue-50'} rounded-md transition p-2`}
                   onClick={(e) => {
                     // メモにホバー中はクリックを無効化
                     if (isMemoHovering) {
@@ -422,8 +442,21 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate }) 
                   }}
                 >
                   <div className="flex items-center gap-3">
-                    <span className={`font-semibold text-lg min-w-[4rem] ${isPast ? 'text-blue-400' : 'text-blue-600'}`}>{s.time}</span>
-                    <span className={`font-bold ${isPast ? 'text-gray-500' : 'text-gray-900'}`}>{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
+                    {s.isTask && (
+                      <button
+                        type="button"
+                        className={`w-4 h-4 flex items-center justify-center rounded border text-[10px] leading-none ${s.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}
+                        title={s.completed ? '完了済み' : '未完了'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onToggleTask) onToggleTask(s.id, !s.completed);
+                        }}
+                      >
+                        ✓
+                      </button>
+                    )}
+                    <span className={`font-semibold text-lg min-w-[4rem] ${(isPast || isDimTask) ? 'text-blue-400' : 'text-blue-600'}`}>{s.time}</span>
+                    <span className={`font-bold ${(isPast || isDimTask) ? 'text-gray-500' : 'text-gray-900'}`}>{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
                   </div>
                   {s.memo && (
                     <MemoWithLinks 

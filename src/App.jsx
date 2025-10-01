@@ -15,14 +15,19 @@ import { useHistory } from './hooks/useHistory';
 const getTodayDateStr = () => toDateStrLocal(new Date());
 
 const initialSchedules = [
-  { id: 1, date: getTodayDateStr(), time: '09:00', name: '打ち合わせ', memo: 'ZoomリンクはSlack参照', allDay: false },
-  { id: 2, date: getTodayDateStr(), time: '', name: '終日イベント', memo: '終日エリアに表示', allDay: true, allDayOrder: 0 },
+  { id: 1, date: getTodayDateStr(), time: '09:00', name: '打ち合わせ', memo: 'ZoomリンクはSlack参照', allDay: false, isTask: false, completed: false },
+  { id: 2, date: getTodayDateStr(), time: '', name: '終日イベント', memo: '終日エリアに表示', allDay: true, allDayOrder: 0, isTask: false, completed: false },
 ];
 
 function App() {
   // ローカルストレージから予定を読み込む
   const savedSchedules = localStorage.getItem('schedules');
-  const loadedSchedules = savedSchedules ? JSON.parse(savedSchedules) : initialSchedules;
+  const loadedSchedules = (savedSchedules ? JSON.parse(savedSchedules) : initialSchedules).map(s => ({
+    ...s,
+    // 既存データにプロパティがなければ既定値
+    isTask: s.isTask ?? false,
+    completed: s.completed ?? false,
+  }));
   
   // 履歴管理機能付きの予定状態
   const {
@@ -32,7 +37,6 @@ function App() {
     redo,
     canUndo,
     canRedo,
-    clearHistory,
     historyLength,
     currentIndex,
     lastActionType
@@ -61,7 +65,7 @@ function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   // 通知システム
-  const { scheduleAllNotifications, cancelScheduleNotifications, sendTestNotification } = useNotifications(schedules);
+  const { cancelScheduleNotifications, sendTestNotification } = useNotifications(schedules);
   
   // メニュー外クリックでメニューを閉じる
   useEffect(() => {
@@ -283,6 +287,12 @@ function App() {
     setSchedules(newSchedules, 'schedule_reorder');
   };
 
+  // タスクのチェック状態トグル
+  const handleToggleTask = (id, completed) => {
+    const newSchedules = schedules.map(s => s.id === id ? { ...s, completed, isTask: true } : s);
+    setSchedules(newSchedules, 'task_toggle');
+  };
+
   // 予定追加ハンドラー
   const handleAdd = (targetDate = null) => {
     // ターゲット日付が指定されていればその日付を使用、なければ選択中の日付を使用
@@ -294,7 +304,9 @@ function App() {
       time: '',
       name: '',
       memo: '',
-      allDay: true  // 新規作成時は開始時間が空欄なので終日に設定
+      allDay: true,  // 新規作成時は開始時間が空欄なので終日に設定
+      isTask: false,
+      completed: false
     });
     setShowForm(true);
     
@@ -308,11 +320,16 @@ function App() {
   const handleSave = (schedule) => {
     if (schedule.id) {
       // 既存の予定を更新
-      const newSchedules = schedules.map(s => s.id === schedule.id ? schedule : s);
+      const newSchedules = schedules.map(s => s.id === schedule.id ? { ...s, ...schedule } : s);
       setSchedules(newSchedules, 'schedule_edit');
     } else {
       // 新しい予定を追加
-      const newSchedule = { ...schedule, id: Date.now() };
+      const newSchedule = { 
+        ...schedule, 
+        id: Date.now(),
+        isTask: !!schedule.isTask,
+        completed: !!schedule.completed
+      };
       
       // 終日予定の場合、allDayOrderを自動設定
       if (newSchedule.allDay) {
@@ -470,6 +487,7 @@ function App() {
                 onAdd={handleAdd}
                 onEdit={handleEdit}
                 isMobile={isMobile}
+                onToggleTask={handleToggleTask}
               />
             </div>
             
@@ -499,13 +517,14 @@ function App() {
                   <div className="h-full flex flex-col">
                     {/* タイムラインコンテンツ */}
                     <div className="flex-1 overflow-hidden flex flex-col">
-                      <CurrentDateTimeBar selectedDate={selectedDate} />
+                      <CurrentDateTimeBar />
                       <Timeline 
                         schedules={filteredSchedules} 
                         selectedDate={selectedDate} 
                         onEdit={handleEdit}
                         onAdd={handleAdd}
                         onScheduleUpdate={handleScheduleUpdate}
+                        onToggleTask={handleToggleTask}
                       />
                     </div>
                   </div>
@@ -531,6 +550,7 @@ function App() {
                 onAdd={handleAdd}
                 onEdit={handleEdit}
                 isMobile={isMobile}
+                onToggleTask={handleToggleTask}
               />
             </div>
             
@@ -555,13 +575,14 @@ function App() {
               className="flex flex-col overflow-hidden pl-1"
               style={{ width: `${100 - splitRatio}%` }}
             >
-              <CurrentDateTimeBar selectedDate={selectedDate} />
+              <CurrentDateTimeBar />
               <Timeline 
                 schedules={filteredSchedules} 
                 selectedDate={selectedDate} 
                 onEdit={handleEdit}
                 onAdd={handleAdd}
                 onScheduleUpdate={handleScheduleUpdate}
+                onToggleTask={handleToggleTask}
               />
             </div>
           </>
