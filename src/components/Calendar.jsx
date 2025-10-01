@@ -744,7 +744,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                         {schedule.isTask && (
                           <button
                             type="button"
-                            className={`mr-1 inline-flex h-3 w-3 items-center justify-center rounded border p-0 text-[8px] leading-none transition-colors duration-150 ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'}`}
+                            className={`mr-1 inline-flex h-3 w-3 items-center justify-center rounded border p-0 text-[8px] leading-none transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'}`}
                             title={schedule.completed ? '完了済み' : '未完了'}
                             onClick={(e) => {
                               e.stopPropagation();
