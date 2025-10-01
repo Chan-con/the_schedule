@@ -266,8 +266,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
         <form id="schedule-form" onSubmit={handleSubmit} className="p-6 pt-4 space-y-5">
           <div className="space-y-3">
             <div className="bg-gray-50 border border-gray-200 rounded-2xl p-1 shadow-inner">
-              <div className="relative grid grid-cols-2 gap-1">
-                <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gray-50" aria-hidden="true" />
+              <div className="grid grid-cols-2 gap-1">
                 <button
                   type="button"
                   aria-pressed={!formData.isTask}
@@ -278,14 +277,10 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                       completed: false
                     }))
                   }
-                  className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${
-                    !formData.isTask
-                      ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-200'
-                      : 'bg-gray-50 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
-                  }`}
+                  className={`tab-toggle-button ${!formData.isTask ? 'is-active' : ''}`}
                   title="予定モード"
                 >
-                  <span className="text-xs font-bold uppercase tracking-wide">予定</span>
+                  <span>予定</span>
                 </button>
                 <button
                   type="button"
@@ -298,14 +293,10 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                       completed: prev.completed || false
                     }))
                   }
-                  className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${
-                    formData.isTask
-                      ? 'bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow-md shadow-indigo-200'
-                      : 'bg-gray-50 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
-                  }`}
+                  className={`tab-toggle-button ${formData.isTask ? 'is-active' : ''}`}
                   title="タスクモード"
                 >
-                  <span className="text-xs font-bold uppercase tracking-wide">タスク</span>
+                  <span>タスク</span>
                 </button>
               </div>
             </div>
@@ -557,6 +548,57 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                   }
                   .memo-textarea::-webkit-scrollbar-corner {
                     background: transparent;
+                  }
+                  .tab-toggle-button {
+                    position: relative;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 0.35rem;
+                    padding: 0.55rem 1rem;
+                    border-radius: 0.9rem;
+                    font-weight: 600;
+                    font-size: 0.85rem;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    color: #4b5563;
+                    background: #f9fafb;
+                    cursor: pointer;
+                    user-select: none;
+                    transition: color 0.15s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+                    overflow: hidden;
+                  }
+                  .tab-toggle-button::before {
+                    content: '';
+                    position: absolute;
+                    inset: 0;
+                    border-radius: inherit;
+                    background: linear-gradient(90deg, #6366f1, #3b82f6);
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
+                    z-index: 0;
+                  }
+                  .tab-toggle-button > span {
+                    position: relative;
+                    z-index: 1;
+                  }
+                  .tab-toggle-button.is-active {
+                    color: #ffffff;
+                    box-shadow: 0 12px 28px -16px rgba(79, 70, 229, 0.65);
+                  }
+                  .tab-toggle-button.is-active::before {
+                    opacity: 1;
+                  }
+                  .tab-toggle-button:not(.is-active):hover {
+                    color: #4338ca;
+                    background: #e0e7ff;
+                  }
+                  .tab-toggle-button:focus {
+                    outline: none;
+                  }
+                  .tab-toggle-button:focus-visible {
+                    outline: none;
+                    box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.45);
                   }
                 `
               }}
