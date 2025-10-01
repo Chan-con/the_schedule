@@ -266,7 +266,8 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
         <form id="schedule-form" onSubmit={handleSubmit} className="p-6 pt-4 space-y-5">
           <div className="space-y-3">
             <div className="bg-gray-50 border border-gray-200 rounded-2xl p-1 shadow-inner">
-              <div className="grid grid-cols-2 gap-1">
+              <div className="relative grid grid-cols-2 gap-1">
+                <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gray-50" aria-hidden="true" />
                 <button
                   type="button"
                   aria-pressed={!formData.isTask}
@@ -277,10 +278,10 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                       completed: false
                     }))
                   }
-                  className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+                  className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${
                     !formData.isTask
                       ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-200'
-                      : 'bg-white text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                      : 'bg-gray-50 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
                   }`}
                   title="予定モード"
                 >
@@ -297,10 +298,10 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                       completed: prev.completed || false
                     }))
                   }
-                  className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+                  className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${
                     formData.isTask
                       ? 'bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow-md shadow-indigo-200'
-                      : 'bg-white text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                      : 'bg-gray-50 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
                   }`}
                   title="タスクモード"
                 >
