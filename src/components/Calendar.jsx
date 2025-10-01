@@ -198,6 +198,28 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         );
         
         if (!isInCalendar) return;
+
+        // ポインタ直下の日付セルがスクロール可能なら、月移動を無効化
+        const cells = calendarElement.querySelectorAll('button[data-date]');
+        let hoveredCell = null;
+        cells.forEach(cell => {
+          const r = cell.getBoundingClientRect();
+          if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+            hoveredCell = cell;
+          }
+        });
+        if (hoveredCell) {
+          const dateStr = hoveredCell.getAttribute('data-date');
+          const daySchedules = schedules.filter(s => s.date === dateStr);
+          const isScrollable = daySchedules.length > maxSchedulesPerCell;
+          if (isScrollable) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('🚫 Month navigation disabled during drag: cell is scrollable');
+            return;
+          }
+        }
         
         if (Math.abs(e.deltaY) >= 10) {
           e.preventDefault();
@@ -236,7 +258,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         });
       };
     }
-  }, [draggedSchedule, month, year]);
+  }, [draggedSchedule, month, year, schedules, maxSchedulesPerCell]);
 
   // カスタムドラッグのマウスイベント処理とwheelイベント統合
   useEffect(() => {
@@ -373,12 +395,21 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       const schedulesContainer = e.target.closest('.schedules-container');
       
       if (dateCell && schedulesContainer) {
-        // 日付セル内のスクロール処理
-        const hasScrolled = handleDateCellScroll(e, schedulesContainer, dateCell);
-        if (!hasScrolled) {
-          // セル内スクロールできない場合は月切り替えにフォールバック
-          handleMonthNavigation(e);
+        // 日付セルがスクロール可能な場合は、月移動を無効化し、セル内スクロールのみを許可
+        const dateStr = dateCell.getAttribute('data-date');
+        const daySchedules = schedules.filter(s => s.date === dateStr);
+        const isScrollable = daySchedules.length > maxSchedulesPerCell;
+
+        if (isScrollable) {
+          // セル内スクロールを試行（上端/下端でも月切替にはフォールバックしない）
+          handleDateCellScroll(e, schedulesContainer, dateCell);
+          e.preventDefault();
+          e.stopPropagation();
+          return;
         }
+
+        // スクロールできないセルなら月移動
+        handleMonthNavigation(e);
       } else {
         // 日付枠外での月切り替え処理
         handleMonthNavigation(e);
