@@ -298,7 +298,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                       isTask: true
                     }))
                   }
-                  className={`w-7 h-7 flex items-center justify-center rounded border transition-colors text-[12px] leading-none ${
+                  className={`inline-flex w-7 aspect-square items-center justify-center rounded-md border transition-colors duration-200 text-[12px] leading-none ${
                     formData.completed
                       ? 'bg-green-500 border-green-600 text-white'
                       : 'bg-white border-gray-300 text-transparent hover:bg-gray-50'

@@ -744,7 +744,8 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                         {schedule.isTask && (
                           <button
                             type="button"
-                            className={`mr-1 w-3.5 h-3.5 flex items-center justify-center rounded border text-[10px] leading-none ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}
+                            className={`mr-1 inline-flex items-center justify-center rounded border text-[8px] leading-none transition-colors duration-150 ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'}`}
+                            style={{ width: '0.6rem', height: '0.6rem' }}
                             title={schedule.completed ? '完了済み' : '未完了'}
                             onClick={(e) => {
                               e.stopPropagation();
@@ -759,7 +760,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                             {draggedSchedule?.id === schedule.id ? '📋' : '⚡'}
                           </span>
                         )}
-                        <span className="truncate pointer-events-none">{displayText}</span>
+                        <span className={`truncate pointer-events-none text-[0.8rem] ${schedule.isTask ? 'font-normal text-gray-700' : 'font-medium text-gray-800'}`}>{displayText}</span>
                       </div>
                     </div>
                   );

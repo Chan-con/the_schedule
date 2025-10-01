@@ -353,7 +353,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate, on
                     {s.isTask && (
                       <button
                         type="button"
-                        className={`w-4 h-4 flex items-center justify-center rounded border text-[10px] leading-none ${s.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent'}`}
+                        className={`inline-flex w-4 aspect-square items-center justify-center rounded-md border text-[10px] leading-none transition-colors duration-200 ${s.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:bg-gray-50'}`}
                         title={s.completed ? '完了済み' : '未完了'}
                         onClick={(e) => {
                           e.stopPropagation();
