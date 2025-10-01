@@ -324,9 +324,9 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate, on
                   onDragLeave={handleAllDayDragLeave}
                   onDrop={(e) => handleAllDayDrop(e, index)}
                   className={`
-                    ${isPast ? 'bg-amber-50 border-l-3 border-amber-300' : 'bg-amber-50 border-l-3 border-amber-400'} px-3 py-2 rounded-r ${isMemoHovering ? 'cursor-text' : 'cursor-grab'} ${isDimTask ? 'hover:bg-amber-100 opacity-60' : 'hover:bg-amber-100'} transition-all duration-200
+                    border-l-4 ${isDimTask ? 'border-yellow-300 opacity-60' : 'border-yellow-500'} pl-4 flex flex-col gap-1 ${isMemoHovering ? 'cursor-text' : 'cursor-grab'} hover:bg-yellow-50 rounded-md transition p-2 bg-white
                     ${draggedAllDayId === s.id ? 'opacity-50 transform scale-95' : ''}
-                    ${dragOverIndex === index && draggedAllDayId !== s.id ? 'transform translate-y-1 shadow-lg bg-amber-200' : ''}
+                    ${dragOverIndex === index && draggedAllDayId !== s.id ? 'transform translate-y-1 shadow-lg bg-yellow-100' : ''}
                   `}
                   onClick={(e) => {
                     // メモにホバー中はクリックを無効化
@@ -365,8 +365,8 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate, on
                         ✓
                       </button>
                     )}
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${isPast ? 'text-amber-500 bg-amber-100' : 'text-amber-600 bg-amber-200'}`}>終日</span>
-                    <span className={`font-medium ${isDimTask ? 'text-gray-500' : 'text-gray-800'}`}>{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${isDimTask ? 'text-yellow-500 bg-yellow-50' : 'text-yellow-700 bg-yellow-100'}`}>終日</span>
+                    <span className={`font-medium ${isDimTask ? 'text-gray-500' : 'text-gray-900'}`}>{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
                     <div className="ml-auto opacity-40 hover:opacity-80 transition-opacity">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
@@ -376,7 +376,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate, on
                   {s.memo && (
                     <MemoWithLinks 
                       memo={s.memo}
-                      className="text-sm text-gray-600 mt-1 pl-8"
+                      className="text-gray-500 text-sm pl-2 border-l-2 border-gray-200 ml-1"
                       onHoverChange={setIsMemoHovering}
                     />
                   )}
