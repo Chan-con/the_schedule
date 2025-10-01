@@ -243,40 +243,48 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
       <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ minHeight: 0, maxHeight: 'calc(90vh - 160px)' }}>
         <form id="schedule-form" onSubmit={handleSubmit} className="p-6 pt-4 space-y-5">
           <div className="space-y-3">
-            <div className="inline-flex rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm">
-              <button
-                type="button"
-                onClick={() =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    isTask: false,
-                    completed: false
-                  }))
-                }
-                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                  !formData.isTask ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-                title="予定モード"
-              >
-                予定
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    isTask: true,
-                    emoji: '',
-                    completed: prev.completed || false
-                  }))
-                }
-                className={`px-3 py-1.5 text-sm font-medium transition-colors border-l border-gray-200 ${
-                  formData.isTask ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-                title="タスクモード"
-              >
-                タスク
-              </button>
+            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-1 shadow-inner">
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  aria-pressed={!formData.isTask}
+                  onClick={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isTask: false,
+                      completed: false
+                    }))
+                  }
+                  className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+                    !formData.isTask
+                      ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-200'
+                      : 'bg-white text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                  }`}
+                  title="予定モード"
+                >
+                  <span className="text-xs font-bold uppercase tracking-wide">予定</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={formData.isTask}
+                  onClick={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isTask: true,
+                      emoji: '',
+                      completed: prev.completed || false
+                    }))
+                  }
+                  className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+                    formData.isTask
+                      ? 'bg-gradient-to-r from-indigo-500 to-blue-500 text-white shadow-md shadow-indigo-200'
+                      : 'bg-white text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                  }`}
+                  title="タスクモード"
+                >
+                  <span className="text-xs font-bold uppercase tracking-wide">タスク</span>
+                </button>
+              </div>
             </div>
 
             {formData.isTask && (
