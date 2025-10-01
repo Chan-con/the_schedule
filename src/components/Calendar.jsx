@@ -570,7 +570,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         {["月","火","水","木","金","土","日"].map((w, i) => (
           <div 
             key={i} 
-            className={`text-center font-medium text-xs py-1 ${i === 5 ? 'text-blue-500' : i === 6 ? 'text-red-500' : 'text-gray-600'}`}
+            className={`text-center font-bold text-xs py-1 ${i === 5 ? 'text-blue-500' : i === 6 ? 'text-red-500' : 'text-gray-600'}`}
           >
             {w}
           </div>
@@ -649,7 +649,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                   }
                   return (
                     <span
-                      className={`text-xs font-medium ${dateTextColorClass} ${today ? 'font-bold' : ''}`}
+                      className={`text-xs font-bold ${dateTextColorClass}`}
                       title={holiday ? getJapaneseHolidayName(date) : ''}
                     >
                       {date.getDate()}
@@ -755,11 +755,11 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                           </button>
                         )}
                         {isAltPressed && (
-                          <span className="mr-1 text-xs opacity-70">
+                          <span className="mr-1 text-xs font-bold opacity-70">
                             {draggedSchedule?.id === schedule.id ? '📋' : '⚡'}
                           </span>
                         )}
-                        <span className={`truncate pointer-events-none text-[0.8rem] ${schedule.isTask ? 'font-normal text-gray-700' : 'font-medium text-gray-800'}`}>{displayText}</span>
+                        <span className={`truncate pointer-events-none text-[0.8rem] font-bold ${schedule.isTask ? 'text-gray-700' : 'text-gray-800'}`}>{displayText}</span>
                       </div>
                     </div>
                   );
@@ -775,7 +775,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                     if (scrollOffset > 0 && hiddenSchedules > 0) {
                       // 上にも下にも隠れた予定がある場合
                       return (
-                        <div className="text-xs text-gray-500 px-1 py-0.5 truncate flex justify-between items-center bg-gray-50 rounded">
+                        <div className="text-xs font-bold text-gray-500 px-1 py-0.5 truncate flex justify-between items-center bg-gray-50 rounded">
                           <span>↑{scrollOffset}件</span>
                           <span className="text-gray-400">•••</span>
                           <span>↓{hiddenSchedules}件</span>
@@ -784,14 +784,14 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                     } else if (scrollOffset > 0) {
                       // 上にのみ隠れた予定がある場合
                       return (
-                        <div className="text-xs text-gray-500 px-1 py-0.5 truncate text-center bg-gray-50 rounded">
+                        <div className="text-xs font-bold text-gray-500 px-1 py-0.5 truncate text-center bg-gray-50 rounded">
                           ↑ 他{scrollOffset}件
                         </div>
                       );
                     } else {
                       // 下にのみ隠れた予定がある場合
                       return (
-                        <div className="text-xs text-gray-500 px-1 py-0.5 truncate text-center bg-gray-50 rounded">
+                        <div className="text-xs font-bold text-gray-500 px-1 py-0.5 truncate text-center bg-gray-50 rounded">
                           ↓ 他{hiddenSchedules}件
                         </div>
                       );
@@ -826,7 +826,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
               {isAltPressed && (
                 <span className="mr-1 text-xs opacity-70">📋</span>
               )}
-              <span className="font-medium">
+              <span className="font-bold">
                 {draggedSchedule.allDay 
                   ? `${draggedSchedule.emoji || ''}${draggedSchedule.emoji ? ' ' : ''}${draggedSchedule.name}` 
                   : `${draggedSchedule.emoji || ''}${draggedSchedule.emoji ? ' ' : ''}${draggedSchedule.time} ${draggedSchedule.name}`}
