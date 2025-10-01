@@ -70,6 +70,28 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
     nameInputRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+
+      event.preventDefault();
+
+      if (showDeleteConfirm) {
+        setShowDeleteConfirm(false);
+        return;
+      }
+
+      if (onClose) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose, showDeleteConfirm]);
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
 
