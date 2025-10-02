@@ -20,14 +20,12 @@ const EMOJI_OPTIONS = [
 { value: '🏆', label: 'ゴール', emoji: '🏆' },
 { value: '🚩', label: 'チェック', emoji: '🚩' },
 // プライベート
+{ value: '👜', label: 'お出かけ', emoji: '👜' },
 { value: '🍺', label: '飲み会', emoji: '🍺' },
 { value: '🍽️', label: '食事', emoji: '🍽️' },
 { value: '🏥', label: '病院', emoji: '🏥' },
-{ value: '👜', label: 'お出かけ', emoji: '👜' },
 { value: '🎂', label: '誕生日', emoji: '🎂' },
 { value: '🎉', label: 'お祝い', emoji: '🎉' },
-{ value: '👪', label: '家族', emoji: '👪' },
-{ value: '🧑‍🤝‍🧑', label: '人との予定', emoji: '🧑‍🤝‍🧑' },
 { value: '🏖️', label: '休暇', emoji: '🏖️' },
 { value: '🏡', label: 'ホーム', emoji: '🏡' },
 ];
