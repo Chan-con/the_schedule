@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { toDateStrLocal } from '../utils/date';
 
 const EMOJI_OPTIONS = [
-// 仕事
+{ value: '', label: '-', emoji: '' },
+  // 仕事
 { value: '💼', label: '仕事', emoji: '💼' },
 { value: '🤝', label: '対面会議', emoji: '🤝' },
 { value: '📞', label: '電話会議', emoji: '📞' },
