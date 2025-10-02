@@ -12,8 +12,9 @@ const EMOJI_OPTIONS = [
 { value: '📚', label: '勉強/セミナー', emoji: '📚' },
 { value: '🧳', label: '出張先で仕事', emoji: '🧳' },
 { value: '🛫', label: '移動（飛行機）', emoji: '🛫' },
-{ value: '🚅', label: '移動（新幹線/電車）', emoji: '🚅' },
-{ value: '🚕', label: '移動（車/タクシー）', emoji: '🚕' },
+{ value: '🚅', label: '移動（新幹線）', emoji: '🚅' },
+{ value: '🚃', label: '移動（電車）', emoji: '🚃' },
+{ value: '🚕', label: '移動（車）', emoji: '🚕' },
 { value: '🏨', label: '宿泊', emoji: '🏨' },
 { value: '🏁', label: 'スタート', emoji: '🏁' },
 { value: '🏆', label: 'ゴール', emoji: '🏆' },
@@ -21,13 +22,14 @@ const EMOJI_OPTIONS = [
 // プライベート
 { value: '🍺', label: '飲み会', emoji: '🍺' },
 { value: '🍽️', label: '食事', emoji: '🍽️' },
+{ value: '🏥', label: '病院', emoji: '🏥' },
+{ value: '👜', label: 'お出かけ', emoji: '👜' },
 { value: '🎂', label: '誕生日', emoji: '🎂' },
-{ value: '🎉', label: 'イベント/お祝い', emoji: '🎉' },
+{ value: '🎉', label: 'お祝い', emoji: '🎉' },
 { value: '👪', label: '家族', emoji: '👪' },
 { value: '🧑‍🤝‍🧑', label: '人との予定', emoji: '🧑‍🤝‍🧑' },
-{ value: '🏖️', label: 'レジャー/休暇', emoji: '🏖️' },
-{ value: '🏡', label: '自宅/ホーム', emoji: '🏡' },
-{ value: '🏃‍♂️', label: '運動', emoji: '🏃‍♂️' },
+{ value: '🏖️', label: '休暇', emoji: '🏖️' },
+{ value: '🏡', label: 'ホーム', emoji: '🏡' },
 ];
 
 const MAX_NOTIFICATIONS = 3;
@@ -394,6 +396,10 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                     <button
                       key={option.value}
                       type="button"
+                      onMouseDown={(e) => {
+                        // マウスクリック時にフォーカスが当たって黒枠が出ないようにする
+                        e.preventDefault();
+                      }}
                       onClick={() =>
                         setFormData((prev) => ({
                           ...prev,
@@ -402,7 +408,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                       }
                       title={option.label}
                       className={`
-                        w-8 h-8 rounded-md border transition-all duration-200 flex items-center justify-center text-lg hover:scale-110 flex-shrink-0
+                        w-8 h-8 rounded-md border transition-all duration-200 flex items-center justify-center text-lg hover:scale-110 flex-shrink-0 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0
                         ${
                           formData.emoji === option.value
                             ? 'border-blue-500 bg-blue-100 shadow-md'
