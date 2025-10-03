@@ -7,6 +7,29 @@ let tray = null;
 let isQuitting = false;
 const protocolScheme = 'schedule-app';
 let pendingAuthUrl = null;
+let pendingSupabaseJobs = 0;
+let isWaitingForSupabaseToClose = false;
+const supabaseJobWaiters = [];
+
+const waitForSupabaseJobs = () => {
+  if (pendingSupabaseJobs <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    supabaseJobWaiters.push(resolve);
+  });
+};
+
+const resolveSupabaseJobWaiters = () => {
+  while (supabaseJobWaiters.length > 0) {
+    const resolve = supabaseJobWaiters.shift();
+    try {
+      resolve();
+    } catch (error) {
+      console.error('[SupabaseJob] Failed to resolve waiter:', error);
+    }
+  }
+};
 
 // 設定ファイルのパス
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
@@ -179,9 +202,38 @@ function createWindow() {
       event.preventDefault();
       mainWindow.hide();
       console.log('ウィンドウをトレイに最小化');
-    } else {
-      console.log('ウィンドウを閉じています');
+      return;
     }
+
+    if (pendingSupabaseJobs > 0) {
+      event.preventDefault();
+      if (!isWaitingForSupabaseToClose) {
+        isWaitingForSupabaseToClose = true;
+        console.log(`[SupabaseJob] ${pendingSupabaseJobs}件の通信が完了するまで終了を保留します。`);
+        waitForSupabaseJobs()
+          .then(() => {
+            isWaitingForSupabaseToClose = false;
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              console.log('[SupabaseJob] 通信が完了しました。アプリケーションを終了します。');
+              isQuitting = true;
+              mainWindow.close();
+            }
+          })
+          .catch((error) => {
+            isWaitingForSupabaseToClose = false;
+            console.error('[SupabaseJob] 通信完了待機中にエラーが発生しました:', error);
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              isQuitting = true;
+              mainWindow.close();
+            }
+          });
+      } else {
+        console.log('[SupabaseJob] 終了待機中です。');
+      }
+      return;
+    }
+
+    console.log('ウィンドウを閉じています');
   });
 
   // ウィンドウが破棄される直前の処理
@@ -230,16 +282,24 @@ function createTray() {
     },
     {
       label: '終了',
-      click: () => {
+      click: async () => {
         console.log('トレイメニューから終了が選択されました');
         isQuitting = true;
-        
+
         try {
-          // 安全な終了処理
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.close();
+          if (pendingSupabaseJobs > 0) {
+            console.log(`[SupabaseJob] ${pendingSupabaseJobs}件の通信完了を待ってから終了します。`);
+            await waitForSupabaseJobs();
           }
-          app.quit();
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.once('closed', () => {
+              app.quit();
+            });
+            mainWindow.close();
+          } else {
+            app.quit();
+          }
         } catch (error) {
           console.error('トレイメニュー終了処理中にエラー:', error);
           process.exit(1);
@@ -390,6 +450,25 @@ ipcMain.handle('save-settings', (event, settings) => {
     });
   }
   return success;
+});
+
+ipcMain.on('supabase-job-start', (_event, meta = {}) => {
+  pendingSupabaseJobs += 1;
+  console.log('[SupabaseJob] start', {
+    pendingSupabaseJobs,
+    meta,
+  });
+});
+
+ipcMain.on('supabase-job-end', (_event, meta = {}) => {
+  pendingSupabaseJobs = Math.max(0, pendingSupabaseJobs - 1);
+  console.log('[SupabaseJob] end', {
+    pendingSupabaseJobs,
+    meta,
+  });
+  if (pendingSupabaseJobs === 0) {
+    resolveSupabaseJobWaiters();
+  }
 });
 
 ipcMain.handle('register-global-shortcut', (event, accelerator) => {

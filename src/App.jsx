@@ -116,6 +116,29 @@ function App() {
   const [supabaseError, setSupabaseError] = useState(null);
   const schedulesRef = useRef(schedules);
   const hasFetchedRemoteRef = useRef(false);
+  const supabaseJobsRef = useRef(0);
+
+  const beginSupabaseJob = useCallback((meta = {}) => {
+    supabaseJobsRef.current += 1;
+    if (typeof window !== 'undefined' && window?.electronAPI?.supabaseJobStart) {
+      try {
+        window.electronAPI.supabaseJobStart(meta);
+      } catch (error) {
+        console.warn('[SupabaseJob] Failed to notify main process (start):', error);
+      }
+    }
+  }, []);
+
+  const endSupabaseJob = useCallback((meta = {}) => {
+    supabaseJobsRef.current = Math.max(0, supabaseJobsRef.current - 1);
+    if (typeof window !== 'undefined' && window?.electronAPI?.supabaseJobEnd) {
+      try {
+        window.electronAPI.supabaseJobEnd(meta);
+      } catch (error) {
+        console.warn('[SupabaseJob] Failed to notify main process (end):', error);
+      }
+    }
+  }, []);
 
   const commitSchedules = useCallback((nextSchedules, actionType = 'unknown') => {
     const normalized = normalizeSchedules(nextSchedules);
@@ -186,6 +209,7 @@ function App() {
         userId,
         timestamp: new Date().toISOString(),
       }));
+      beginSupabaseJob({ actionType, kind: 'fetchSchedules' });
       try {
         const remoteSchedules = await fetchSchedulesForUser(userId);
         if (isCancelledFn()) return;
@@ -220,6 +244,7 @@ function App() {
         }));
         throw error;
       } finally {
+        endSupabaseJob({ actionType, kind: 'fetchSchedules' });
         if (showSpinner && !isCancelledFn()) {
           setIsSupabaseSyncing(false);
         }
@@ -230,7 +255,7 @@ function App() {
         }));
       }
     },
-    [replaceState, userId]
+    [beginSupabaseJob, endSupabaseJob, replaceState, userId]
   );
 
   useEffect(() => {
@@ -469,8 +494,10 @@ function App() {
 
     if (!userId) return;
 
+    const jobMeta = { kind: 'deleteSchedule', scheduleId: id };
+    beginSupabaseJob(jobMeta);
+    const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
     try {
-      const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
       await deleteScheduleForUser(id, userId);
       setSupabaseError(null);
       console.info('[ScheduleDelete] synced', JSON.stringify({
@@ -487,8 +514,10 @@ function App() {
       if (throwOnError) {
         throw error;
       }
+    } finally {
+      endSupabaseJob(jobMeta);
     }
-  }, [cancelScheduleNotifications, commitSchedules, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, cancelScheduleNotifications, commitSchedules, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
 
   // 予定移動ハンドラー（ドラッグ&ドロップ用）
   const handleScheduleMove = useCallback((schedule, nextDate) => {
@@ -527,8 +556,10 @@ function App() {
 
     if (userId) {
       (async () => {
+        const jobMeta = { kind: 'updateSchedule', scheduleId: updated.id, action: 'move' };
+        beginSupabaseJob(jobMeta);
+        const syncStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
         try {
-          const syncStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
           const persisted = await updateScheduleForUser(updated, userId);
           let latest = schedulesRef.current;
           let synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
@@ -549,10 +580,12 @@ function App() {
           console.error('[Supabase] Failed to move schedule:', error);
           setSupabaseError(error.message || '予定の移動に失敗しました。');
           refreshFromSupabase('supabase_resync').catch(() => {});
+        } finally {
+          endSupabaseJob(jobMeta);
         }
       })();
     }
-  }, [commitSchedules, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
 
   // 予定コピー（ALTドラッグ複製など）
   const handleScheduleCopy = useCallback((schedule) => {
@@ -590,8 +623,10 @@ function App() {
 
     if (userId) {
       (async () => {
+        const jobMeta = { kind: 'createSchedule', tempId, action: 'copy' };
+        beginSupabaseJob(jobMeta);
+        const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
         try {
-          const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
           const payload = { ...placeholder };
           delete payload.id;
           const created = await createScheduleForUser(payload, userId);
@@ -619,10 +654,12 @@ function App() {
           console.error('[Supabase] Failed to copy schedule:', error);
           setSupabaseError(error.message || '予定のコピーに失敗しました。');
           refreshFromSupabase('supabase_resync').catch(() => {});
+        } finally {
+          endSupabaseJob(jobMeta);
         }
       })();
     }
-  }, [commitSchedules, handleScheduleMove, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, handleScheduleMove, refreshFromSupabase, setSupabaseError, userId]);
 
   // 予定更新ハンドラー（並び替え用）
   const handleScheduleUpdate = useCallback((updatedSchedule, actionType = 'schedule_reorder') => {
@@ -656,8 +693,10 @@ function App() {
 
     if (userId) {
       (async () => {
+        const jobMeta = { kind: 'upsertSchedules', actionType, count: normalizedUpdates.length };
+        beginSupabaseJob(jobMeta);
+        const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
         try {
-          const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
           const persisted = await upsertSchedulesForUser(normalizedUpdates, userId);
           if (Array.isArray(persisted) && persisted.length > 0) {
             let latest = schedulesRef.current;
@@ -684,10 +723,12 @@ function App() {
           console.error('[Supabase] Failed to update schedules:', error);
           setSupabaseError(error.message || '予定の更新に失敗しました。');
           refreshFromSupabase('supabase_resync').catch(() => {});
+        } finally {
+          endSupabaseJob(jobMeta);
         }
       })();
     }
-  }, [commitSchedules, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
 
   // タスクのチェック状態トグル
   const handleToggleTask = useCallback((id, completed) => {
@@ -710,8 +751,10 @@ function App() {
 
     if (userId) {
       (async () => {
+        const jobMeta = { kind: 'updateSchedule', scheduleId: id, action: 'task_toggle' };
+        beginSupabaseJob(jobMeta);
+        const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
         try {
-          const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
           const persisted = await updateScheduleForUser(updated, userId);
           let latest = schedulesRef.current;
           const synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
@@ -729,10 +772,12 @@ function App() {
           console.error('[Supabase] Failed to toggle task state:', error);
           setSupabaseError(error.message || 'タスク状態の更新に失敗しました。');
           refreshFromSupabase('supabase_resync').catch(() => {});
+        } finally {
+          endSupabaseJob(jobMeta);
         }
       })();
     }
-  }, [commitSchedules, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
   const handleAdd = (targetDate = null) => {
     // ターゲット日付が指定されていればその日付を使用、なければ選択中の日付を使用
     const dateToUse = targetDate || selectedDate;
@@ -784,6 +829,8 @@ function App() {
       }));
 
       if (userId) {
+        const jobMeta = { kind: 'updateSchedule', scheduleId: updated.id, action: 'save' };
+        beginSupabaseJob(jobMeta);
         try {
           const persisted = await updateScheduleForUser(updated, userId);
           let latest = schedulesRef.current;
@@ -806,6 +853,8 @@ function App() {
           setSupabaseError(error.message || '予定の更新に失敗しました。');
           refreshFromSupabase('supabase_resync').catch(() => {});
           throw error;
+        } finally {
+          endSupabaseJob(jobMeta);
         }
       }
     } else {
@@ -832,10 +881,13 @@ function App() {
       }));
 
       if (userId) {
+        const jobMeta = { kind: 'createSchedule', tempId, action: 'save' };
+        beginSupabaseJob(jobMeta);
         try {
           const payload = { ...baseSchedule };
           delete payload.id;
           const created = await createScheduleForUser(payload, userId);
+          jobMeta.scheduleId = created.id;
 
           let latest = schedulesRef.current;
           let replaced = latest.map((item) => (item.id === tempId ? created : item));
@@ -860,12 +912,14 @@ function App() {
           setSupabaseError(error.message || '予定の作成に失敗しました。');
           refreshFromSupabase('supabase_resync').catch(() => {});
           throw error;
+        } finally {
+          endSupabaseJob(jobMeta);
         }
       }
     }
 
     setShowForm(false);
-  }, [commitSchedules, refreshFromSupabase, setShowForm, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, refreshFromSupabase, setShowForm, setSupabaseError, userId]);
 
   // 予定削除ハンドラー（フォーム用）
   const handleDelete = useCallback(async (id) => {

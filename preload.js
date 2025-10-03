@@ -39,4 +39,6 @@ window.electronAPI = {
     };
   },
   getPendingAuthUrl: () => ipcRenderer.invoke('get-pending-auth-url'),
+  supabaseJobStart: (meta) => ipcRenderer.send('supabase-job-start', meta),
+  supabaseJobEnd: (meta) => ipcRenderer.send('supabase-job-end', meta),
 };
