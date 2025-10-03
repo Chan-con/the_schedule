@@ -382,7 +382,17 @@ function App() {
   }, []);
   
   // マウスダウンハンドラー
-  const handleMouseDown = useCallback(() => {
+  const handleMouseDown = useCallback((event) => {
+    if (!event || event.button !== 0) {
+      return;
+    }
+
+    const target = event.target;
+    if (!target || !target.closest('[data-layout-handle]')) {
+      return;
+    }
+
+    event.preventDefault();
     setIsDragging(true);
   }, []);
   
@@ -1159,7 +1169,9 @@ function App() {
                 <div className={`
                   w-1 h-12 rounded-full transition-colors duration-200
                   ${isDragging ? 'bg-indigo-500' : 'bg-gray-400 hover:bg-indigo-400'}
-                `}></div>
+                `}
+                data-layout-handle
+                ></div>
               </div>
             </div>
             
