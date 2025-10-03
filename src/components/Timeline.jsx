@@ -198,9 +198,7 @@ const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate, on
     
     // 親コンポーネントに更新を通知
     if (onScheduleUpdate) {
-      updatedSchedules.forEach(schedule => {
-        onScheduleUpdate(schedule);
-      });
+      onScheduleUpdate(updatedSchedules, 'schedule_reorder_all_day');
     }
     
     console.log('📋 All-day schedules reordered:', {

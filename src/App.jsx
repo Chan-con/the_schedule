@@ -280,11 +280,16 @@ function App() {
   };
 
   // 予定更新ハンドラー（並び替え用）
-  const handleScheduleUpdate = (updatedSchedule) => {
+  const handleScheduleUpdate = (updatedSchedule, actionType = 'schedule_reorder') => {
+    const updates = Array.isArray(updatedSchedule) ? updatedSchedule : [updatedSchedule];
+    if (updates.length === 0) return;
+
+    const updateMap = new Map(updates.map(s => [s.id, s]));
     const newSchedules = schedules.map(s => 
-      s.id === updatedSchedule.id ? updatedSchedule : s
+      updateMap.has(s.id) ? { ...s, ...updateMap.get(s.id) } : s
     );
-    setSchedules(newSchedules, 'schedule_reorder');
+
+    setSchedules(newSchedules, actionType);
   };
 
   // タスクのチェック状態トグル
