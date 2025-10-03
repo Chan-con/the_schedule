@@ -32,11 +32,12 @@ const shouldDimForTask = (schedule) => {
   return true;
 };
 
-const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onAdd, onEdit, onToggleTask }) => {
+const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onAdd, onEdit, onToggleTask, onScheduleUpdate }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [isAltPressed, setIsAltPressed] = useState(false);
   const [dragOverDate, setDragOverDate] = useState(null);
+  const [dragOverScheduleInfo, setDragOverScheduleInfo] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isCustomDragging, setIsCustomDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -285,55 +286,128 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
             });
             
             setDragOverDate(hoveredDate);
+
+            if (draggedSchedule?.allDay) {
+              let hoverInfo = null;
+              if (hoveredDate) {
+                const element = document.elementFromPoint(e.clientX, e.clientY);
+                const scheduleElement = element?.closest('.schedule-item[data-schedule-id]');
+                if (scheduleElement) {
+                  const isAllDayTarget = scheduleElement.getAttribute('data-all-day') === 'true';
+                  const scheduleDate = scheduleElement.closest('button[data-date]')?.getAttribute('data-date');
+                  if (isAllDayTarget && scheduleDate) {
+                    const rectSchedule = scheduleElement.getBoundingClientRect();
+                    const position = e.clientY < rectSchedule.top + rectSchedule.height / 2 ? 'before' : 'after';
+                    const scheduleId = Number(scheduleElement.getAttribute('data-schedule-id'));
+                    hoverInfo = { scheduleId, position, date: scheduleDate };
+                  }
+                }
+                if (!hoverInfo) {
+                  hoverInfo = { scheduleId: null, position: 'after', date: hoveredDate };
+                }
+              }
+              setDragOverScheduleInfo(hoverInfo);
+            } else {
+              setDragOverScheduleInfo(null);
+            }
           }
         }
       }
+    };
+
+    if (!isCustomDragging) {
+      setDragOverScheduleInfo(null);
     };
     
     const handleMouseUp = () => {
       if (isCustomDragging) {
         console.log('🏁 Custom drag ended');
         
-        if (dragOverDate && draggedSchedule && dragOverDate !== draggedSchedule.date) {
-          if (isAltPressed && onScheduleCopy) {
-            // ALTキー押下時: コピー（新しいIDで複製）
-            const newSchedule = {
-              ...draggedSchedule,
-              date: dragOverDate,
-              id: Date.now(), // 新しいIDでコピー
-              notificationSettings: null // 通知設定をリセット（コピー時は通知設定も複製しない）
-            };
-            console.log('📋 Copying schedule to new date:', { 
-              originalId: draggedSchedule.id, 
-              newId: newSchedule.id, 
-              newDate: dragOverDate,
-              notificationReset: true
-            });
-            onScheduleCopy(newSchedule);
-          } else if (onScheduleCopy && onScheduleDelete) {
-            // 通常のドラッグ: 移動（元の予定を削除して同じIDで新しい日付に作成）
-            console.log('🚚 Moving schedule to new date:', { 
-              scheduleId: draggedSchedule.id, 
-              fromDate: draggedSchedule.date, 
-              toDate: dragOverDate 
-            });
-            
-            // 1. 元の予定を削除
-            onScheduleDelete(draggedSchedule.id);
-            
-            // 2. 新しい日付で同じIDの予定を作成（移動）
-            const movedSchedule = {
-              ...draggedSchedule,
-              date: dragOverDate
-              // IDは変更しない（移動なので）
-            };
-            onScheduleCopy(movedSchedule);
+        if (dragOverDate && draggedSchedule) {
+          if (dragOverDate !== draggedSchedule.date) {
+            if (isAltPressed && onScheduleCopy) {
+              // ALTキー押下時: コピー（新しいIDで複製）
+              const newSchedule = {
+                ...draggedSchedule,
+                date: dragOverDate,
+                id: Date.now(), // 新しいIDでコピー
+                notificationSettings: null // 通知設定をリセット（コピー時は通知設定も複製しない）
+              };
+              console.log('📋 Copying schedule to new date:', { 
+                originalId: draggedSchedule.id, 
+                newId: newSchedule.id, 
+                newDate: dragOverDate,
+                notificationReset: true
+              });
+              onScheduleCopy(newSchedule);
+            } else if (onScheduleCopy && onScheduleDelete) {
+              // 通常のドラッグ: 移動（元の予定を削除して同じIDで新しい日付に作成）
+              console.log('🚚 Moving schedule to new date:', { 
+                scheduleId: draggedSchedule.id, 
+                fromDate: draggedSchedule.date, 
+                toDate: dragOverDate 
+              });
+              
+              // 1. 元の予定を削除
+              onScheduleDelete(draggedSchedule.id);
+              
+              // 2. 新しい日付で同じIDの予定を作成（移動）
+              const movedSchedule = {
+                ...draggedSchedule,
+                date: dragOverDate
+                // IDは変更しない（移動なので）
+              };
+              onScheduleCopy(movedSchedule);
+            }
+          } else if (draggedSchedule.allDay && dragOverScheduleInfo?.date === draggedSchedule.date) {
+            const dayAllDaySchedules = schedules
+              .filter(s => s.date === draggedSchedule.date && s.allDay);
+            if (dayAllDaySchedules.length > 1 && onScheduleUpdate) {
+              const sortedAllDay = [...dayAllDaySchedules].sort((a, b) => {
+                const orderDiff = (a.allDayOrder || 0) - (b.allDayOrder || 0);
+                if (orderDiff !== 0) return orderDiff;
+                return String(a.id).localeCompare(String(b.id));
+              });
+
+              const originalOrderIds = sortedAllDay.map(s => s.id);
+              const withoutDragged = sortedAllDay.filter(s => s.id !== draggedSchedule.id);
+
+              let insertionIndex = withoutDragged.length;
+
+              if (dragOverScheduleInfo.scheduleId && dragOverScheduleInfo.scheduleId !== draggedSchedule.id) {
+                const targetIndex = withoutDragged.findIndex(s => s.id === dragOverScheduleInfo.scheduleId);
+                if (targetIndex !== -1) {
+                  insertionIndex = dragOverScheduleInfo.position === 'before' ? targetIndex : targetIndex + 1;
+                }
+              } else if (!dragOverScheduleInfo.scheduleId) {
+                insertionIndex = dragOverScheduleInfo.position === 'before' ? 0 : withoutDragged.length;
+              }
+
+              insertionIndex = Math.max(0, Math.min(insertionIndex, withoutDragged.length));
+
+              const reordered = [...withoutDragged];
+              reordered.splice(insertionIndex, 0, draggedSchedule);
+
+              const newOrderIds = reordered.map(s => s.id);
+              const orderChanged = originalOrderIds.length !== newOrderIds.length ||
+                originalOrderIds.some((id, index) => id !== newOrderIds[index]);
+
+              if (orderChanged) {
+                const updatedSchedules = reordered.map((schedule, index) => ({
+                  ...schedule,
+                  allDayOrder: index
+                }));
+
+                onScheduleUpdate(updatedSchedules, 'schedule_reorder_all_day_calendar');
+              }
+            }
           }
         }
         
         setIsCustomDragging(false);
         setDraggedSchedule(null);
         setDragOverDate(null);
+        setDragOverScheduleInfo(null);
         setIsDragging(false);
       }
     };
@@ -491,7 +565,21 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('wheel', handleWheel);
     };
-  }, [isCustomDragging, dragOverDate, draggedSchedule, isAltPressed, onScheduleCopy, onScheduleDelete, month, year, prevMonth, nextMonth]);
+  }, [
+    isCustomDragging,
+    dragOverDate,
+    draggedSchedule,
+    dragOverScheduleInfo,
+    isAltPressed,
+    onScheduleCopy,
+    onScheduleDelete,
+    onScheduleUpdate,
+    schedules,
+    month,
+    year,
+    prevMonth,
+    nextMonth
+  ]);
 
   // カレンダーグリッドを6週間分（42日）で構築
   const getCalendarDays = () => {
@@ -706,12 +794,22 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                     // 予定が過去かどうかを判定
                     const isPast = isSchedulePast(schedule);
                     const isDimTask = shouldDimForTask(schedule);
+                      const isHoverTarget = isCustomDragging && draggedSchedule?.allDay && schedule.allDay &&
+                        dragOverScheduleInfo?.date === dateStr && dragOverScheduleInfo?.scheduleId === schedule.id;
+                      const hoverPosition = dragOverScheduleInfo?.position;
+                      const hoverStyle = isHoverTarget
+                        ? (hoverPosition === 'before'
+                          ? { boxShadow: 'inset 0 3px 0 0 rgba(34,197,94,0.7)' }
+                          : { boxShadow: 'inset 0 -3px 0 0 rgba(34,197,94,0.7)' })
+                        : undefined;
                     
                     return (
                     <div 
                       key={i}
                       // カスタムドラッグシステムのみ使用
                       draggable={false}
+                        data-schedule-id={schedule.id}
+                        data-all-day={schedule.allDay ? 'true' : 'false'}
                       className={`
                         schedule-item text-xs px-1 py-0.5 rounded truncate w-full leading-tight select-none
                         ${schedule.allDay ? 
@@ -722,9 +820,11 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                         ${isPast || isDimTask ? 'opacity-60' : ''}
                         ${draggedSchedule?.id === schedule.id ? 'opacity-50' : ''}
                         ${isCustomDragging && draggedSchedule?.id === schedule.id ? 'opacity-30 transform scale-95' : ''}
+                        ${isHoverTarget ? 'ring-2 ring-green-400 ring-offset-1 ring-offset-white relative' : ''}
                         transition-all duration-150
                       `}
                       title={displayText}
+                      style={hoverStyle}
                       onMouseDown={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -796,6 +896,12 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                   );
                 });
                 })()}
+
+                {isCustomDragging && draggedSchedule?.allDay && dragOverScheduleInfo?.date === dateStr && dragOverScheduleInfo?.scheduleId === null && (
+                  <div className="mt-0.5 h-4 rounded border-2 border-dashed border-green-400 text-[10px] font-semibold text-green-600 flex items-center justify-center">
+                    ここに配置
+                  </div>
+                )}
                 
                 {(() => {
                   const scrollOffset = parseInt(document.querySelector(`[data-date="${dateStr}"]`)?.getAttribute('data-scroll-offset') || '0');
