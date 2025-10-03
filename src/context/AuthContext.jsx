@@ -5,11 +5,33 @@ import { AuthContext } from './AuthContextBase.js';
 const isBrowser = typeof window !== 'undefined';
 const isElectron = isBrowser && !!window.electronAPI;
 
+const isLocalhost = (hostname) => ['localhost', '127.0.0.1'].includes(hostname);
+
 const getWebRedirectUrl = () => {
   if (!isBrowser) return undefined;
-  const envRedirect = import.meta.env.VITE_SUPABASE_REDIRECT_URL;
-  if (envRedirect) return envRedirect;
+
   const origin = window.location.origin || '';
+  const envRedirect = import.meta.env.VITE_SUPABASE_REDIRECT_URL;
+
+  if (envRedirect) {
+    try {
+      const configuredUrl = new URL(envRedirect, origin);
+      const configuredHostname = configuredUrl.hostname;
+      const currentHostname = window.location.hostname;
+
+      const envIsLocal = isLocalhost(configuredHostname);
+      const currentIsLocal = isLocalhost(currentHostname);
+
+      if (envIsLocal && !currentIsLocal) {
+        console.warn('[Auth] VITE_SUPABASE_REDIRECT_URL points to localhost while running on a remote origin. Falling back to window.location origin.');
+      } else {
+        return configuredUrl.toString();
+      }
+    } catch (error) {
+      console.warn('[Auth] Failed to parse VITE_SUPABASE_REDIRECT_URL. Falling back to window.location origin.', error);
+    }
+  }
+
   return `${origin.replace(/\/$/, '')}/auth/callback`;
 };
 
