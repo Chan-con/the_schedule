@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { AuthContext } from './AuthContextBase.js';
 
@@ -70,6 +70,28 @@ export function AuthProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [authError, setAuthError] = useState(null);
+  const authPopupRef = useRef(null);
+  const popupMonitorRef = useRef(null);
+
+  const stopPopupMonitor = useCallback(() => {
+    if (popupMonitorRef.current) {
+      clearInterval(popupMonitorRef.current);
+      popupMonitorRef.current = null;
+    }
+  }, []);
+
+  const startPopupMonitor = useCallback(() => {
+    stopPopupMonitor();
+    if (typeof window === 'undefined') return;
+    popupMonitorRef.current = window.setInterval(() => {
+      const popup = authPopupRef.current;
+      if (!popup || popup.closed) {
+        stopPopupMonitor();
+        authPopupRef.current = null;
+        setIsProcessing(false);
+      }
+    }, 500);
+  }, [stopPopupMonitor]);
 
   const finishProcessing = useCallback(() => {
     setIsProcessing(false);
@@ -85,7 +107,10 @@ export function AuthProvider({ children }) {
       refreshToken,
       expiresIn,
       tokenType,
+      url: parsedUrl,
     } = parseOAuthParams(url);
+
+    const urlForMessage = typeof parsedUrl === 'string' ? parsedUrl : parsedUrl?.toString?.() || url;
 
     if (error) {
       const decoded = decodeURIComponent(error);
@@ -103,9 +128,26 @@ export function AuthProvider({ children }) {
           setAuthError(exchangeError.message);
         } else {
           setAuthError(null);
+          if (isBrowser && window.opener && window.opener !== window) {
+            try {
+              window.opener.postMessage({ type: 'supabase-auth', url: urlForMessage }, window.location.origin);
+            } catch (postMessageError) {
+              console.warn('[Auth] Failed to post message to opener:', postMessageError);
+            }
+            setTimeout(() => {
+              window.close();
+            }, 100);
+          }
+
           if (!isElectron && isBrowser) {
-            window.location.replace('/');
-            return;
+            const shouldResetLocation = window.location.pathname.startsWith('/auth/callback')
+              || window.location.href.includes('auth/callback')
+              || window.location.href.includes('access_token=')
+              || window.location.href.includes('code=');
+            if (shouldResetLocation) {
+              window.location.replace('/');
+              return;
+            }
           }
         }
       } catch (exchangeError) {
@@ -130,9 +172,26 @@ export function AuthProvider({ children }) {
           setAuthError(setSessionError.message);
         } else {
           setAuthError(null);
+          if (isBrowser && window.opener && window.opener !== window) {
+            try {
+              window.opener.postMessage({ type: 'supabase-auth', url: urlForMessage }, window.location.origin);
+            } catch (postMessageError) {
+              console.warn('[Auth] Failed to post message to opener:', postMessageError);
+            }
+            setTimeout(() => {
+              window.close();
+            }, 100);
+          }
+
           if (!isElectron && isBrowser) {
-            window.location.replace('/');
-            return;
+            const shouldResetLocation = window.location.pathname.startsWith('/auth/callback')
+              || window.location.href.includes('auth/callback')
+              || window.location.href.includes('access_token=')
+              || window.location.href.includes('code=');
+            if (shouldResetLocation) {
+              window.location.replace('/');
+              return;
+            }
           }
         }
       } catch (hashError) {
@@ -161,18 +220,43 @@ export function AuthProvider({ children }) {
 
     setIsProcessing(true);
 
+    let popup = null;
+    let usePopupFlow = false;
+
+    if (!isElectron) {
+      try {
+        popup = window.open('', 'schedule-auth', 'width=600,height=720,menubar=no,toolbar=no,location=no,status=no');
+        if (popup) {
+          popup.document.write('<!doctype html><title>認証中…</title><p style="font-family:sans-serif;padding:1rem;">Googleでログインしています…</p>');
+          popup.focus();
+          authPopupRef.current = popup;
+          usePopupFlow = true;
+          startPopupMonitor();
+        }
+      } catch (popupError) {
+        console.warn('[Auth] Failed to open auth popup. Falling back to redirect flow.', popupError);
+        authPopupRef.current = null;
+        stopPopupMonitor();
+      }
+    }
+
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo,
-          skipBrowserRedirect: isElectron,
+          skipBrowserRedirect: isElectron || usePopupFlow,
         },
       });
 
       if (error) {
         console.error('[Auth] Google sign-in failed:', error);
         setAuthError(error.message);
+        if (authPopupRef.current && !authPopupRef.current.closed) {
+          authPopupRef.current.close();
+        }
+        authPopupRef.current = null;
+        stopPopupMonitor();
         setIsProcessing(false);
         throw error;
       }
@@ -184,28 +268,47 @@ export function AuthProvider({ children }) {
             const err = new Error(result.error || '外部ブラウザを起動できませんでした。');
             setAuthError(err.message);
             setIsProcessing(false);
+            stopPopupMonitor();
             throw err;
           }
         } else {
           const fallbackError = new Error('Supabaseから認証URLを取得できませんでした。');
           setAuthError(fallbackError.message);
           setIsProcessing(false);
+          stopPopupMonitor();
           throw fallbackError;
         }
+      } else if (usePopupFlow) {
+        if (data?.url && authPopupRef.current && !authPopupRef.current.closed) {
+          authPopupRef.current.location.replace(data.url);
+        } else {
+          if (authPopupRef.current && !authPopupRef.current.closed) {
+            authPopupRef.current.close();
+          }
+          authPopupRef.current = null;
+          stopPopupMonitor();
+          window.location.assign(data?.url || redirectTo);
+        }
+      } else if (!usePopupFlow && data?.url) {
+        window.location.assign(data.url);
       }
     } catch (error) {
+      if (authPopupRef.current && !authPopupRef.current.closed) {
+        authPopupRef.current.close();
+      }
+      authPopupRef.current = null;
+      stopPopupMonitor();
       if (!isElectron) {
-        // Webでは即座にローディングを解除する
         setIsProcessing(false);
       }
       throw error;
     }
 
-    if (!isElectron) {
-      // Web環境ではリダイレクト前にローディングを解除
+    if (isElectron || !usePopupFlow) {
       setIsProcessing(false);
+      stopPopupMonitor();
     }
-  }, []);
+  }, [startPopupMonitor, stopPopupMonitor]);
 
   const signOut = useCallback(async () => {
     setAuthError(null);
@@ -268,12 +371,53 @@ export function AuthProvider({ children }) {
   }, [finishProcessing]);
 
   useEffect(() => {
+    if (!isBrowser) return undefined;
+
+    const handleMessage = (event) => {
+      if (event.origin !== window.location.origin) return;
+      const payload = event.data;
+      if (!payload || payload.type !== 'supabase-auth' || !payload.url) return;
+
+      handleOAuthResult(payload.url);
+
+      if (authPopupRef.current && !authPopupRef.current.closed) {
+        authPopupRef.current.close();
+      }
+      authPopupRef.current = null;
+      stopPopupMonitor();
+
+      try {
+        window.focus();
+      } catch (focusError) {
+        console.warn('[Auth] Failed to focus main window after OAuth:', focusError);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [handleOAuthResult, stopPopupMonitor]);
+
+  useEffect(() => {
     if (!isBrowser) return;
 
     const currentUrl = window.location.href;
     const hasOAuthParams = currentUrl.includes('auth/callback') || currentUrl.includes('access_token=') || currentUrl.includes('code=');
 
     if (hasOAuthParams) {
+      if (window.opener && window.opener !== window) {
+        try {
+          window.opener.postMessage({ type: 'supabase-auth', url: currentUrl }, window.location.origin);
+        } catch (postMessageError) {
+          console.warn('[Auth] Failed to notify opener about OAuth callback:', postMessageError);
+        }
+        setTimeout(() => {
+          window.close();
+        }, 100);
+        return;
+      }
+
       handleOAuthResult(currentUrl).finally(() => {
         try {
           const basePath = window.location.pathname.startsWith('/auth/callback') ? '/' : window.location.pathname;
@@ -321,6 +465,14 @@ export function AuthProvider({ children }) {
       }
     };
   }, [handleOAuthResult]);
+
+  useEffect(() => () => {
+    stopPopupMonitor();
+    if (authPopupRef.current && !authPopupRef.current.closed) {
+      authPopupRef.current.close();
+    }
+    authPopupRef.current = null;
+  }, [stopPopupMonitor]);
 
   const value = useMemo(() => ({
     supabase,
