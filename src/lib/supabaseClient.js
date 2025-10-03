@@ -18,4 +18,8 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
   },
 });
 
+if (supabaseUrl) {
+  console.info('[Supabase] Client configured', JSON.stringify({ url: supabaseUrl }));
+}
+
 export default supabase;

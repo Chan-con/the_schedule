@@ -180,12 +180,12 @@ function App() {
       }
 
       const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-      console.info('[SupabaseSync] start', {
+      console.info('[SupabaseSync] start', JSON.stringify({
         actionType,
         showSpinner,
         userId,
         timestamp: new Date().toISOString(),
-      });
+      }));
       try {
         const remoteSchedules = await fetchSchedulesForUser(userId);
         if (isCancelledFn()) return;
@@ -193,37 +193,41 @@ function App() {
         replaceState(remoteSchedules, actionType);
         setSupabaseError(null);
         hasFetchedRemoteRef.current = true;
-        console.info('[SupabaseSync] success', {
+        console.info('[SupabaseSync] payload', JSON.stringify({
+          actionType,
+          schedules: remoteSchedules.slice(0, 10),
+        }));
+        console.info('[SupabaseSync] success', JSON.stringify({
           actionType,
           count: remoteSchedules.length,
           durationMs:
             (typeof performance !== 'undefined' && typeof performance.now === 'function'
               ? Math.round(performance.now() - startedAt)
               : Math.round(Date.now() - startedAt)),
-        });
+        }));
       } catch (error) {
         if (isCancelledFn()) return;
 
         console.error('[Supabase] Failed to synchronise schedules:', error);
         setSupabaseError(error.message || 'Supabaseとの同期に失敗しました。');
-        console.error('[SupabaseSync] error', {
+        console.error('[SupabaseSync] error', JSON.stringify({
           actionType,
           durationMs:
             (typeof performance !== 'undefined' && typeof performance.now === 'function'
               ? Math.round(performance.now() - startedAt)
               : Math.round(Date.now() - startedAt)),
           message: error.message,
-        });
+        }));
         throw error;
       } finally {
         if (showSpinner && !isCancelledFn()) {
           setIsSupabaseSyncing(false);
         }
-        console.info('[SupabaseSync] finished', {
+        console.info('[SupabaseSync] finished', JSON.stringify({
           actionType,
           showSpinner,
           cancelled: isCancelledFn(),
-        });
+        }));
       }
     },
     [replaceState, userId]
@@ -450,18 +454,18 @@ function App() {
 
     const { throwOnError = false } = options;
 
-    console.info('[ScheduleDelete] request', {
+    console.info('[ScheduleDelete] request', JSON.stringify({
       scheduleId: id,
       timestamp: new Date().toISOString(),
-    });
+    }));
     cancelScheduleNotifications(id);
     const current = schedulesRef.current;
     const optimistic = current.filter((item) => item.id !== id);
     commitSchedules(optimistic, 'schedule_delete');
-    console.info('[ScheduleDelete] optimistic applied', {
+    console.info('[ScheduleDelete] optimistic applied', JSON.stringify({
       scheduleId: id,
       remainingCount: optimistic.length,
-    });
+    }));
 
     if (!userId) return;
 
@@ -469,13 +473,13 @@ function App() {
       const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
       await deleteScheduleForUser(id, userId);
       setSupabaseError(null);
-      console.info('[ScheduleDelete] synced', {
+      console.info('[ScheduleDelete] synced', JSON.stringify({
         scheduleId: id,
         durationMs:
           (typeof performance !== 'undefined' && typeof performance.now === 'function'
             ? Math.round(performance.now() - startedAt)
             : Math.round(Date.now() - startedAt)),
-      });
+      }));
     } catch (error) {
       console.error('[Supabase] Failed to delete schedule:', error);
       setSupabaseError(error.message || '予定の削除に失敗しました。');
@@ -495,13 +499,13 @@ function App() {
     if (!existing) return;
 
     const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-    console.info('[ScheduleMove] request', {
+    console.info('[ScheduleMove] request', JSON.stringify({
       scheduleId: schedule.id,
       fromDate: existing.date,
       toDate: nextDate,
       allDay: existing.allDay,
       timestamp: new Date().toISOString(),
-    });
+    }));
 
     const previousDate = existing.date;
     const updated = normalizeSchedule({ ...existing, ...schedule, date: nextDate });
@@ -512,14 +516,14 @@ function App() {
     }
 
     commitSchedules(optimistic, 'schedule_move');
-    console.info('[ScheduleMove] optimistic applied', {
+    console.info('[ScheduleMove] optimistic applied', JSON.stringify({
       scheduleId: updated.id,
       toDate: updated.date,
       durationMs:
         (typeof performance !== 'undefined' && typeof performance.now === 'function'
           ? Math.round(performance.now() - startedAt)
           : Math.round(Date.now() - startedAt)),
-    });
+    }));
 
     if (userId) {
       (async () => {
@@ -533,14 +537,14 @@ function App() {
           }
           commitSchedules(synced, 'schedule_move_sync');
           setSupabaseError(null);
-          console.info('[ScheduleMove] synced', {
+          console.info('[ScheduleMove] synced', JSON.stringify({
             scheduleId: persisted.id,
             toDate: persisted.date,
             durationMs:
               (typeof performance !== 'undefined' && typeof performance.now === 'function'
                 ? Math.round(performance.now() - syncStartedAt)
                 : Math.round(Date.now() - syncStartedAt)),
-          });
+          }));
         } catch (error) {
           console.error('[Supabase] Failed to move schedule:', error);
           setSupabaseError(error.message || '予定の移動に失敗しました。');
@@ -557,12 +561,12 @@ function App() {
     const normalized = normalizeSchedule(schedule);
     const latest = schedulesRef.current;
 
-    console.info('[ScheduleCopy] request', {
+    console.info('[ScheduleCopy] request', JSON.stringify({
       originalId: schedule.id,
       normalizedId: normalized.id,
       date: normalized.date,
       timestamp: new Date().toISOString(),
-    });
+    }));
 
     if (normalized.id && latest.some((item) => item.id === normalized.id)) {
       handleScheduleMove(normalized, normalized.date);
@@ -578,11 +582,11 @@ function App() {
     }
 
     commitSchedules(optimistic, 'schedule_copy');
-    console.info('[ScheduleCopy] optimistic applied', {
+    console.info('[ScheduleCopy] optimistic applied', JSON.stringify({
       tempId: tempId,
       date: placeholder.date,
       isAllDay: placeholder.allDay,
-    });
+    }));
 
     if (userId) {
       (async () => {
@@ -603,14 +607,14 @@ function App() {
 
           commitSchedules(replaced, 'schedule_copy_sync');
           setSupabaseError(null);
-          console.info('[ScheduleCopy] synced', {
+          console.info('[ScheduleCopy] synced', JSON.stringify({
             createdId: created.id,
             date: created.date,
             durationMs:
               (typeof performance !== 'undefined' && typeof performance.now === 'function'
                 ? Math.round(performance.now() - startedAt)
                 : Math.round(Date.now() - startedAt)),
-          });
+          }));
         } catch (error) {
           console.error('[Supabase] Failed to copy schedule:', error);
           setSupabaseError(error.message || '予定のコピーに失敗しました。');
@@ -626,12 +630,12 @@ function App() {
     if (updates.length === 0) return;
 
     const normalizedUpdates = updates.map(normalizeSchedule);
-    console.info('[ScheduleUpdate] request', {
+    console.info('[ScheduleUpdate] request', JSON.stringify({
       actionType,
       count: normalizedUpdates.length,
       ids: normalizedUpdates.map((item) => item.id),
       timestamp: new Date().toISOString(),
-    });
+    }));
     const current = schedulesRef.current;
     const updateMap = new Map(normalizedUpdates.map((item) => [item.id, item]));
 
@@ -645,10 +649,10 @@ function App() {
     }
 
     commitSchedules(optimistic, actionType);
-    console.info('[ScheduleUpdate] optimistic applied', {
+    console.info('[ScheduleUpdate] optimistic applied', JSON.stringify({
       actionType,
       count: normalizedUpdates.length,
-    });
+    }));
 
     if (userId) {
       (async () => {
@@ -668,14 +672,14 @@ function App() {
             commitSchedules(synced, `${actionType}_sync`);
           }
           setSupabaseError(null);
-          console.info('[ScheduleUpdate] synced', {
+          console.info('[ScheduleUpdate] synced', JSON.stringify({
             actionType,
             count: Array.isArray(persisted) ? persisted.length : 0,
             durationMs:
               (typeof performance !== 'undefined' && typeof performance.now === 'function'
                 ? Math.round(performance.now() - startedAt)
                 : Math.round(Date.now() - startedAt)),
-          });
+          }));
         } catch (error) {
           console.error('[Supabase] Failed to update schedules:', error);
           setSupabaseError(error.message || '予定の更新に失敗しました。');
@@ -691,18 +695,18 @@ function App() {
     const target = current.find((item) => item.id === id);
     if (!target) return;
 
-    console.info('[TaskToggle] request', {
+    console.info('[TaskToggle] request', JSON.stringify({
       scheduleId: id,
       completed,
       timestamp: new Date().toISOString(),
-    });
+    }));
     const updated = { ...target, completed, isTask: true };
     const optimistic = current.map((item) => (item.id === id ? updated : item));
     commitSchedules(optimistic, 'task_toggle');
-    console.info('[TaskToggle] optimistic applied', {
+    console.info('[TaskToggle] optimistic applied', JSON.stringify({
       scheduleId: id,
       completed,
-    });
+    }));
 
     if (userId) {
       (async () => {
@@ -713,14 +717,14 @@ function App() {
           const synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
           commitSchedules(synced, 'task_toggle_sync');
           setSupabaseError(null);
-          console.info('[TaskToggle] synced', {
+          console.info('[TaskToggle] synced', JSON.stringify({
             scheduleId: persisted.id,
             completed: persisted.completed,
             durationMs:
               (typeof performance !== 'undefined' && typeof performance.now === 'function'
                 ? Math.round(performance.now() - startedAt)
                 : Math.round(Date.now() - startedAt)),
-          });
+          }));
         } catch (error) {
           console.error('[Supabase] Failed to toggle task state:', error);
           setSupabaseError(error.message || 'タスク状態の更新に失敗しました。');
@@ -761,12 +765,12 @@ function App() {
       }
 
       const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-      console.info('[ScheduleSave] update request', {
+      console.info('[ScheduleSave] update request', JSON.stringify({
         scheduleId: schedule.id,
         originalDate: existing.date,
         nextDate: schedule.date,
         timestamp: new Date().toISOString(),
-      });
+      }));
       const updated = normalizeSchedule({ ...existing, ...schedule });
 
       let optimistic = current.map((item) => (item.id === updated.id ? updated : item));
@@ -774,10 +778,10 @@ function App() {
         optimistic = rebalanceAllDayOrdersForDates(optimistic, [updated.date]);
       }
       commitSchedules(optimistic, 'schedule_edit');
-      console.info('[ScheduleSave] update optimistic applied', {
+      console.info('[ScheduleSave] update optimistic applied', JSON.stringify({
         scheduleId: updated.id,
         date: updated.date,
-      });
+      }));
 
       if (userId) {
         try {
@@ -789,14 +793,14 @@ function App() {
           }
           commitSchedules(synced, 'schedule_edit_sync');
           setSupabaseError(null);
-          console.info('[ScheduleSave] update synced', {
+          console.info('[ScheduleSave] update synced', JSON.stringify({
             scheduleId: persisted.id,
             date: persisted.date,
             durationMs:
               (typeof performance !== 'undefined' && typeof performance.now === 'function'
                 ? Math.round(performance.now() - startedAt)
                 : Math.round(Date.now() - startedAt)),
-          });
+          }));
         } catch (error) {
           console.error('[Supabase] Failed to update schedule:', error);
           setSupabaseError(error.message || '予定の更新に失敗しました。');
@@ -810,22 +814,22 @@ function App() {
       const placeholder = { ...baseSchedule, id: tempId };
 
       const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-      console.info('[ScheduleSave] create request', {
+      console.info('[ScheduleSave] create request', JSON.stringify({
         targetDate: baseSchedule.date,
         isAllDay: baseSchedule.allDay,
         tempId,
         timestamp: new Date().toISOString(),
-      });
+      }));
 
       let optimistic = [...schedulesRef.current, placeholder];
       if (placeholder.allDay) {
         optimistic = rebalanceAllDayOrdersForDates(optimistic, [placeholder.date]);
       }
       commitSchedules(optimistic, 'schedule_create');
-      console.info('[ScheduleSave] create optimistic applied', {
+      console.info('[ScheduleSave] create optimistic applied', JSON.stringify({
         tempId,
         date: placeholder.date,
-      });
+      }));
 
       if (userId) {
         try {
@@ -843,14 +847,14 @@ function App() {
           }
           commitSchedules(replaced, 'schedule_create_sync');
           setSupabaseError(null);
-          console.info('[ScheduleSave] create synced', {
+          console.info('[ScheduleSave] create synced', JSON.stringify({
             scheduleId: created.id,
             date: created.date,
             durationMs:
               (typeof performance !== 'undefined' && typeof performance.now === 'function'
                 ? Math.round(performance.now() - startedAt)
                 : Math.round(Date.now() - startedAt)),
-          });
+          }));
         } catch (error) {
           console.error('[Supabase] Failed to create schedule:', error);
           setSupabaseError(error.message || '予定の作成に失敗しました。');

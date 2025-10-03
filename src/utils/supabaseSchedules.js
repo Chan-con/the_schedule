@@ -8,10 +8,11 @@ const logSupabase = (action, phase, detail = {}) => {
     ...detail,
   };
   const message = `[Supabase:${action}] ${phase}`;
+  const body = JSON.stringify(payload, null, 2);
   if (phase === 'error') {
-    console.error(message, payload);
+    console.error(`${message} ${body}`);
   } else {
-    console.info(message, payload);
+    console.info(`${message} ${body}`);
   }
 };
 
