@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toDateStrLocal } from '../utils/date';
 import { isJapaneseHoliday, getJapaneseHolidayName } from '../utils/holidays';
 
@@ -48,6 +48,35 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
   // 終日予定の並び替え用（未使用のため削除）
   
   const calendarRef = useRef(null);
+
+  const adjustDateCellScroll = useCallback((dateCell, deltaY) => {
+    if (!dateCell) return false;
+    const dateStr = dateCell.getAttribute('data-date');
+    if (!dateStr) return false;
+
+    const daySchedules = schedules.filter(s => s.date === dateStr);
+    if (daySchedules.length <= maxSchedulesPerCell) {
+      return false;
+    }
+
+    const currentOffset = parseInt(dateCell.getAttribute('data-scroll-offset') || '0', 10);
+    const maxOffset = Math.max(0, daySchedules.length - maxSchedulesPerCell);
+    let newOffset = currentOffset;
+
+    if (deltaY < 0) {
+      newOffset = Math.max(0, currentOffset - 1);
+    } else {
+      newOffset = Math.min(maxOffset, currentOffset + 1);
+    }
+
+    if (newOffset !== currentOffset) {
+      dateCell.setAttribute('data-scroll-offset', newOffset.toString());
+      setScrollTrigger(prev => prev + 1);
+      return true;
+    }
+
+    return false;
+  }, [schedules, maxSchedulesPerCell]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -214,10 +243,15 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
           const daySchedules = schedules.filter(s => s.date === dateStr);
           const isScrollable = daySchedules.length > maxSchedulesPerCell;
           if (isScrollable) {
+            const scrolled = adjustDateCellScroll(hoveredCell, e.deltaY);
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-            console.log('🚫 Month navigation disabled during drag: cell is scrollable');
+            if (scrolled) {
+              console.log('🌀 Drag scrolling within date cell');
+            } else {
+              console.log('🚫 Month navigation disabled during drag: cell is scrollable but at limit');
+            }
             return;
           }
         }
@@ -259,7 +293,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         });
       };
     }
-  }, [draggedSchedule, month, year, schedules, maxSchedulesPerCell]);
+  }, [draggedSchedule, month, year, schedules, maxSchedulesPerCell, adjustDateCellScroll]);
 
   // カスタムドラッグのマウスイベント処理とwheelイベント統合
   useEffect(() => {
@@ -475,10 +509,12 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         const isScrollable = daySchedules.length > maxSchedulesPerCell;
 
         if (isScrollable) {
-          // セル内スクロールを試行（上端/下端でも月切替にはフォールバックしない）
-          handleDateCellScroll(e, schedulesContainer, dateCell);
+          const scrolled = adjustDateCellScroll(dateCell, e.deltaY);
           e.preventDefault();
           e.stopPropagation();
+          if (scrolled) {
+            console.log('📅 Cell scroll via wheel during drag or hover');
+          }
           return;
         }
 
@@ -488,50 +524,6 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         // 日付枠外での月切り替え処理
         handleMonthNavigation(e);
       }
-    };
-
-    // 日付セル内の予定スクロール処理
-    const handleDateCellScroll = (e, schedulesContainer, dateCell) => {
-      const dateStr = dateCell.getAttribute('data-date');
-      const daySchedules = schedules.filter(s => s.date === dateStr);
-      
-      // 表示可能な予定数より多い場合のみスクロールを許可
-      if (daySchedules.length <= maxSchedulesPerCell) {
-        console.log('📅 Cell scroll: not enough schedules to scroll');
-        return false; // スクロールしなかったことを示す
-      }
-
-      // 現在の表示オフセットを取得（データ属性から）
-      let currentOffset = parseInt(dateCell.getAttribute('data-scroll-offset') || '0');
-      const maxOffset = Math.max(0, daySchedules.length - maxSchedulesPerCell);
-      
-      let newOffset = currentOffset;
-      
-      // スクロール方向に応じてオフセットを調整
-      if (e.deltaY < 0) {
-        // 上スクロール: 前の予定を表示
-        newOffset = Math.max(0, currentOffset - 1);
-        console.log('📅 Cell scroll up: offset', newOffset);
-      } else {
-        // 下スクロール: 次の予定を表示
-        newOffset = Math.min(maxOffset, currentOffset + 1);
-        console.log('📅 Cell scroll down: offset', newOffset);
-      }
-      
-      // オフセットが変更された場合のみ処理
-      if (newOffset !== currentOffset) {
-        // オフセットを保存
-        dateCell.setAttribute('data-scroll-offset', newOffset.toString());
-        
-        // 再レンダリングをトリガー
-        setScrollTrigger(prev => prev + 1);
-        
-        e.preventDefault();
-        e.stopPropagation();
-        return true; // スクロールしたことを示す
-      }
-      
-      return false; // スクロールしなかったことを示す
     };
 
     // 月切り替え処理
@@ -578,7 +570,8 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
     month,
     year,
     prevMonth,
-    nextMonth
+    nextMonth,
+    adjustDateCellScroll
   ]);
 
   // カレンダーグリッドを6週間分（42日）で構築
