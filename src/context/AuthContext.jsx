@@ -103,6 +103,10 @@ export function AuthProvider({ children }) {
           setAuthError(exchangeError.message);
         } else {
           setAuthError(null);
+          if (!isElectron && isBrowser) {
+            window.location.replace('/');
+            return;
+          }
         }
       } catch (exchangeError) {
         console.error('[Auth] Exception during code exchange:', exchangeError);
@@ -126,6 +130,10 @@ export function AuthProvider({ children }) {
           setAuthError(setSessionError.message);
         } else {
           setAuthError(null);
+          if (!isElectron && isBrowser) {
+            window.location.replace('/');
+            return;
+          }
         }
       } catch (hashError) {
         console.error('[Auth] Exception while setting session from hash params:', hashError);
