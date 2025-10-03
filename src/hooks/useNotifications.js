@@ -173,7 +173,7 @@ export const useNotifications = (schedules) => {
     return () => {
       clearTimeout(debounceTimer);
     };
-  }, [schedules]);
+  }, [scheduleAllNotifications]);
 
   return {
     scheduleAllNotifications,

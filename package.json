@@ -22,6 +22,7 @@
     "package:linux": "vite build && electron-builder --linux"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.48.0",
     "japanese-holidays": "^1.0.10",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
@@ -47,6 +48,14 @@
   "build": {
     "appId": "com.schedule.app",
     "productName": "スケジュール帳",
+    "protocols": [
+      {
+        "name": "Schedule App Auth",
+        "schemes": [
+          "schedule-app"
+        ]
+      }
+    ],
     "directories": {
       "output": "dist-electron",
       "buildResources": "build"

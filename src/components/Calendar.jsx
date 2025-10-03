@@ -32,7 +32,7 @@ const shouldDimForTask = (schedule) => {
   return true;
 };
 
-const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onAdd, onEdit, onToggleTask, onScheduleUpdate }) => {
+const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onScheduleMove, onAdd, onEdit, onToggleTask, onScheduleUpdate }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [isAltPressed, setIsAltPressed] = useState(false);
@@ -125,25 +125,8 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
     };
   }, []);
 
-  // 月の移動関数
-  const prevMonth = () => {
-    const newDate = new Date(currentDate);
-    newDate.setMonth(newDate.getMonth() - 1);
-    setCurrentDate(newDate);
-    // スクロールオフセットをリセット
-    resetAllScrollOffsets();
-  };
-
-  const nextMonth = () => {
-    const newDate = new Date(currentDate);
-    newDate.setMonth(newDate.getMonth() + 1);
-    setCurrentDate(newDate);
-    // スクロールオフセットをリセット
-    resetAllScrollOffsets();
-  };
-
   // 全ての日付セルのスクロールオフセットをリセット
-  const resetAllScrollOffsets = () => {
+  const resetAllScrollOffsets = useCallback(() => {
     setTimeout(() => {
       const dateCells = document.querySelectorAll('.date-cell');
       dateCells.forEach(cell => {
@@ -151,10 +134,29 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       });
       console.log('📅 Reset all scroll offsets');
     }, 50); // 少し遅延させてDOMの更新を待つ
-  };
+  }, []);
+
+  // 月の移動関数
+  const prevMonth = useCallback(() => {
+    setCurrentDate((prev) => {
+      const newDate = new Date(prev);
+      newDate.setMonth(newDate.getMonth() - 1);
+      return newDate;
+    });
+    resetAllScrollOffsets();
+  }, [resetAllScrollOffsets]);
+
+  const nextMonth = useCallback(() => {
+    setCurrentDate((prev) => {
+      const newDate = new Date(prev);
+      newDate.setMonth(newDate.getMonth() + 1);
+      return newDate;
+    });
+    resetAllScrollOffsets();
+  }, [resetAllScrollOffsets]);
 
   // 今月に戻る関数
-  const goToCurrentMonth = () => {
+  const goToCurrentMonth = useCallback(() => {
     const today = new Date();
     setCurrentDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
     // スクロールオフセットをリセット
@@ -163,7 +165,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       year: today.getFullYear(),
       month: today.getMonth() + 1
     });
-  };
+  }, [resetAllScrollOffsets]);
 
   // 中ボタンクリック（今日にジャンプ）
   const handleMiddleClick = (e) => {
@@ -293,7 +295,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         });
       };
     }
-  }, [draggedSchedule, month, year, schedules, maxSchedulesPerCell, adjustDateCellScroll]);
+  }, [adjustDateCellScroll, draggedSchedule, maxSchedulesPerCell, month, nextMonth, prevMonth, schedules, year]);
 
   // カスタムドラッグのマウスイベント処理とwheelイベント統合
   useEffect(() => {
@@ -374,24 +376,19 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                 notificationReset: true
               });
               onScheduleCopy(newSchedule);
-            } else if (onScheduleCopy && onScheduleDelete) {
-              // 通常のドラッグ: 移動（元の予定を削除して同じIDで新しい日付に作成）
+            } else if (onScheduleMove) {
+              // 通常のドラッグ: 移動（同じIDで日付を更新）
               console.log('🚚 Moving schedule to new date:', { 
                 scheduleId: draggedSchedule.id, 
                 fromDate: draggedSchedule.date, 
                 toDate: dragOverDate 
               });
-              
-              // 1. 元の予定を削除
-              onScheduleDelete(draggedSchedule.id);
-              
-              // 2. 新しい日付で同じIDの予定を作成（移動）
+
               const movedSchedule = {
                 ...draggedSchedule,
                 date: dragOverDate
-                // IDは変更しない（移動なので）
               };
-              onScheduleCopy(movedSchedule);
+              onScheduleMove(movedSchedule, dragOverDate);
             }
           } else if (draggedSchedule.allDay && dragOverScheduleInfo?.date === draggedSchedule.date) {
             const dayAllDaySchedules = schedules
@@ -559,19 +556,22 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
     };
   }, [
     isCustomDragging,
+    isDragging,
     dragOverDate,
     draggedSchedule,
     dragOverScheduleInfo,
     isAltPressed,
-    onScheduleCopy,
-    onScheduleDelete,
-    onScheduleUpdate,
+  onScheduleCopy,
+  onScheduleDelete,
+  onScheduleMove,
+  onScheduleUpdate,
     schedules,
     month,
     year,
     prevMonth,
     nextMonth,
-    adjustDateCellScroll
+    adjustDateCellScroll,
+    maxSchedulesPerCell
   ]);
 
   // カレンダーグリッドを6週間分（42日）で構築

@@ -5,6 +5,8 @@ const fs = require('fs');
 let mainWindow;
 let tray = null;
 let isQuitting = false;
+const protocolScheme = 'schedule-app';
+let pendingAuthUrl = null;
 
 // 設定ファイルのパス
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
@@ -54,6 +56,67 @@ function saveSettings(settings) {
   }
 }
 
+const deepLinkMatcher = new RegExp(`^${protocolScheme}://`, 'i');
+
+const extractDeepLinkFromArgs = (argv = []) => {
+  if (!Array.isArray(argv)) return null;
+  return argv.find((arg) => typeof arg === 'string' && deepLinkMatcher.test(arg)) || null;
+};
+
+const dispatchAuthCallback = (url) => {
+  if (!url) return;
+  try {
+    console.log('[Auth] Dispatching Supabase OAuth callback URL:', url);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.webContents.isLoading()) {
+        pendingAuthUrl = url;
+        return;
+      }
+      mainWindow.webContents.send('supabase-auth-callback', url);
+      if (!mainWindow.isVisible()) {
+        mainWindow.show();
+      }
+      mainWindow.focus();
+    } else {
+      pendingAuthUrl = url;
+    }
+  } catch (error) {
+    console.error('[Auth] Failed to dispatch OAuth callback:', error);
+    pendingAuthUrl = url;
+  }
+};
+
+const handleDeepLink = (url) => {
+  if (!url) return;
+  if (!deepLinkMatcher.test(url)) return;
+  console.log('[Auth] Received deep link:', url);
+  dispatchAuthCallback(url);
+};
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+    app.on('second-instance', (_event, argv) => {
+      const url = extractDeepLinkFromArgs(argv);
+      if (url) {
+        handleDeepLink(url);
+      }
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) {
+          mainWindow.restore();
+        }
+        showWindow();
+      }
+    });
+}
+
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleDeepLink(url);
+});
+
 // 開発環境かプロダクション環境かを判定
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -96,6 +159,17 @@ function createWindow() {
   // デバッグ用：読み込み失敗時のエラー表示
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Failed to load:', errorCode, errorDescription);
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (pendingAuthUrl) {
+      try {
+        mainWindow.webContents.send('supabase-auth-callback', pendingAuthUrl);
+        pendingAuthUrl = null;
+      } catch (error) {
+        console.error('[Auth] Failed to deliver pending auth URL:', error);
+      }
+    }
   });
 
   // ウィンドウのクローズ動作をカスタマイズ
@@ -360,6 +434,12 @@ ipcMain.handle('open-url', (event, url) => {
   }
 });
 
+ipcMain.handle('get-pending-auth-url', () => {
+  const url = pendingAuthUrl;
+  pendingAuthUrl = null;
+  return url;
+});
+
 // 通知関連のIPC
 ipcMain.handle('show-notification', (event, options) => {
   try {
@@ -523,6 +603,18 @@ app.whenReady().then(() => {
     
     // アプリのアイコンを設定
     app.setAppUserModelId('com.schedule.app');
+
+    if (process.platform === 'win32') {
+      if (process.defaultApp) {
+        if (process.argv.length >= 2) {
+          app.setAsDefaultProtocolClient(protocolScheme, process.execPath, [path.resolve(process.argv[1])]);
+        }
+      } else {
+        app.setAsDefaultProtocolClient(protocolScheme);
+      }
+    } else {
+      app.setAsDefaultProtocolClient(protocolScheme);
+    }
     
     createWindow();
     createTray();
@@ -533,6 +625,11 @@ app.whenReady().then(() => {
       registerGlobalShortcut(settings.hotkey);
     } else {
       console.log('起動時ホットキー未設定');
+    }
+
+    const initialDeepLink = extractDeepLinkFromArgs(process.argv);
+    if (initialDeepLink) {
+      handleDeepLink(initialDeepLink);
     }
     
     console.log('アプリケーション起動完了');

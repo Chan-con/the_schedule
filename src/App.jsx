@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useContext, useMemo } from 'react';
 import { toDateStrLocal } from './utils/date';
 
 import Calendar from './components/Calendar';
@@ -10,6 +10,14 @@ import TitleBar from './components/TitleBar';
 import SettingsModal from './components/SettingsModal';
 import { useNotifications } from './hooks/useNotifications';
 import { useHistory } from './hooks/useHistory';
+import { AuthContext } from './context/AuthContextBase';
+import {
+  fetchSchedulesForUser,
+  createScheduleForUser,
+  updateScheduleForUser,
+  deleteScheduleForUser,
+  upsertSchedulesForUser,
+} from './utils/supabaseSchedules';
 
 // サンプルデータ - 今日の日付に合わせて調整
 const getTodayDateStr = () => toDateStrLocal(new Date());
@@ -19,20 +27,80 @@ const initialSchedules = [
   { id: 2, date: getTodayDateStr(), time: '', name: '終日イベント', memo: '終日エリアに表示', allDay: true, allDayOrder: 0, isTask: false, completed: false },
 ];
 
+const normalizeSchedule = (schedule) => ({
+  ...schedule,
+  isTask: schedule?.isTask ?? false,
+  completed: schedule?.completed ?? false,
+});
+
+const normalizeSchedules = (schedules) => {
+  if (!Array.isArray(schedules)) return [];
+  return schedules.map(normalizeSchedule);
+};
+
+const createTempId = () => Date.now();
+
+const rebalanceAllDayOrdersForDates = (schedules, dates) => {
+  if (!Array.isArray(schedules)) return [];
+  const uniqueDates = Array.from(new Set((dates || []).filter(Boolean)));
+  if (uniqueDates.length === 0) {
+    return schedules;
+  }
+
+  const allDayOrderMap = new Map();
+  uniqueDates.forEach((date) => {
+    const sorted = schedules
+      .filter((schedule) => schedule.allDay && schedule.date === date)
+      .sort((a, b) => {
+        const orderDiff = (a.allDayOrder || 0) - (b.allDayOrder || 0);
+        if (orderDiff !== 0) return orderDiff;
+        return String(a.id).localeCompare(String(b.id));
+      });
+
+    sorted.forEach((schedule, index) => {
+      allDayOrderMap.set(schedule.id, index);
+    });
+  });
+
+  if (allDayOrderMap.size === 0) {
+    return schedules;
+  }
+
+  return schedules.map((schedule) => {
+    if (!schedule.allDay) return schedule;
+    if (!allDayOrderMap.has(schedule.id)) return schedule;
+    return {
+      ...schedule,
+      allDayOrder: allDayOrderMap.get(schedule.id),
+    };
+  });
+};
+
 function App() {
-  // ローカルストレージから予定を読み込む
-  const savedSchedules = localStorage.getItem('schedules');
-  const loadedSchedules = (savedSchedules ? JSON.parse(savedSchedules) : initialSchedules).map(s => ({
-    ...s,
-    // 既存データにプロパティがなければ既定値
-    isTask: s.isTask ?? false,
-    completed: s.completed ?? false,
-  }));
+  const loadLocalSchedules = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return normalizeSchedules(initialSchedules);
+    }
+
+    try {
+      const stored = window.localStorage.getItem('schedules');
+      if (stored) {
+        return normalizeSchedules(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to parse schedules from localStorage:', error);
+    }
+
+    return normalizeSchedules(initialSchedules);
+  }, []);
+
+  const initialLoadedSchedules = useMemo(() => loadLocalSchedules(), [loadLocalSchedules]);
   
   // 履歴管理機能付きの予定状態
   const {
     state: schedules,
     setState: setSchedules,
+    replaceState,
     undo,
     redo,
     canUndo,
@@ -40,7 +108,39 @@ function App() {
     historyLength,
     currentIndex,
     lastActionType
-  } = useHistory(loadedSchedules, 100);
+  } = useHistory(initialLoadedSchedules, 100);
+
+  const auth = useContext(AuthContext);
+  const userId = auth?.user?.id || null;
+  const [isSupabaseSyncing, setIsSupabaseSyncing] = useState(false);
+  const [supabaseError, setSupabaseError] = useState(null);
+  const schedulesRef = useRef(schedules);
+  const hasFetchedRemoteRef = useRef(false);
+
+  const commitSchedules = useCallback((nextSchedules, actionType = 'unknown') => {
+    const normalized = normalizeSchedules(nextSchedules);
+    schedulesRef.current = normalized;
+    setSchedules(normalized, actionType);
+  }, [setSchedules]);
+
+  useEffect(() => {
+    schedulesRef.current = schedules;
+  }, [schedules]);
+
+  const authUser = auth?.user ?? null;
+  const isAuthLoading = auth?.isLoading ?? false;
+  const isAuthProcessing = auth?.isProcessing ?? false;
+  const authLogin = auth?.signInWithGoogle;
+  const authLogout = auth?.signOut;
+  const isAuthenticated = !!userId;
+
+  const titleBarAuth = useMemo(() => ({
+    user: authUser,
+    isLoading: isAuthLoading,
+    isProcessing: isAuthProcessing,
+    onLogin: authLogin,
+    onLogout: authLogout,
+  }), [authLogin, authLogout, authUser, isAuthLoading, isAuthProcessing]);
   
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingSchedule, setEditingSchedule] = useState(null);
@@ -51,6 +151,7 @@ function App() {
   const [splitRatio, setSplitRatio] = useState(50);
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const layoutContainerRef = useRef(null);
   
   // モバイル表示の状態管理
   const [isMobile, setIsMobile] = useState(false);
@@ -66,6 +167,89 @@ function App() {
   
   // 通知システム
   const { cancelScheduleNotifications, sendTestNotification } = useNotifications(schedules);
+
+  const refreshFromSupabase = useCallback(
+    async (actionType = 'supabase_resync', options = {}) => {
+      if (!userId) return;
+
+      const { showSpinner = false, isCancelled } = options;
+      const isCancelledFn = typeof isCancelled === 'function' ? isCancelled : () => false;
+
+      if (showSpinner) {
+        setIsSupabaseSyncing(true);
+      }
+
+      const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+      console.info('[SupabaseSync] start', {
+        actionType,
+        showSpinner,
+        userId,
+        timestamp: new Date().toISOString(),
+      });
+      try {
+        const remoteSchedules = await fetchSchedulesForUser(userId);
+        if (isCancelledFn()) return;
+
+        replaceState(remoteSchedules, actionType);
+        setSupabaseError(null);
+        hasFetchedRemoteRef.current = true;
+        console.info('[SupabaseSync] success', {
+          actionType,
+          count: remoteSchedules.length,
+          durationMs:
+            (typeof performance !== 'undefined' && typeof performance.now === 'function'
+              ? Math.round(performance.now() - startedAt)
+              : Math.round(Date.now() - startedAt)),
+        });
+      } catch (error) {
+        if (isCancelledFn()) return;
+
+        console.error('[Supabase] Failed to synchronise schedules:', error);
+        setSupabaseError(error.message || 'Supabaseとの同期に失敗しました。');
+        console.error('[SupabaseSync] error', {
+          actionType,
+          durationMs:
+            (typeof performance !== 'undefined' && typeof performance.now === 'function'
+              ? Math.round(performance.now() - startedAt)
+              : Math.round(Date.now() - startedAt)),
+          message: error.message,
+        });
+        throw error;
+      } finally {
+        if (showSpinner && !isCancelledFn()) {
+          setIsSupabaseSyncing(false);
+        }
+        console.info('[SupabaseSync] finished', {
+          actionType,
+          showSpinner,
+          cancelled: isCancelledFn(),
+        });
+      }
+    },
+    [replaceState, userId]
+  );
+
+  useEffect(() => {
+    if (auth?.isLoading) return;
+
+    if (!userId) {
+      hasFetchedRemoteRef.current = false;
+      setSupabaseError(null);
+      setIsSupabaseSyncing(false);
+      replaceState(loadLocalSchedules(), 'local_restore');
+      return;
+    }
+
+    let cancelled = false;
+    refreshFromSupabase('supabase_initial_sync', {
+      showSpinner: true,
+      isCancelled: () => cancelled,
+    }).catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auth?.isLoading, userId, loadLocalSchedules, refreshFromSupabase, replaceState]);
   
   // メニュー外クリックでメニューを閉じる
   useEffect(() => {
@@ -148,28 +332,30 @@ function App() {
   }, [splitRatio, layoutLoaded]);
   
   // マウス移動ハンドラー
-  const handleMouseMove = (e) => {
+  const handleMouseMove = useCallback((event) => {
     if (!isDragging) return;
-    
-    const container = e.currentTarget;
+
+    const container = layoutContainerRef.current;
+    if (!container) return;
+
     const rect = container.getBoundingClientRect();
-    const newRatio = ((e.clientX - rect.left) / rect.width) * 100;
-    
+    const newRatio = ((event.clientX - rect.left) / rect.width) * 100;
+
     // 20%〜80%の範囲に制限
     if (newRatio >= 20 && newRatio <= 80) {
       setSplitRatio(newRatio);
     }
-  };
+  }, [isDragging]);
   
   // マウスアップハンドラー
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     setIsDragging(false);
-  };
+  }, []);
   
   // マウスダウンハンドラー
-  const handleMouseDown = () => {
+  const handleMouseDown = useCallback(() => {
     setIsDragging(true);
-  };
+  }, []);
   
   // タイムライン開閉ハンドラー
   const closeTimeline = () => {
@@ -227,15 +413,18 @@ function App() {
     setIsMouseDown(false);
   };  // グローバルマウスイベントの設定
   useEffect(() => {
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [isDragging]);
+    if (!isDragging) return undefined;
+
+    const onMouseMove = (event) => handleMouseMove(event);
+    const onMouseUp = () => handleMouseUp();
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [handleMouseMove, handleMouseUp, isDragging]);
 
   // 日付クリック時の処理
   const handleDateClick = (date) => {
@@ -255,50 +444,291 @@ function App() {
     console.log('🔧 Edit form should now be visible');
   };
 
-  // 予定コピー/移動ハンドラー
-  const handleScheduleCopy = (schedule) => {
-    const existingScheduleIndex = schedules.findIndex(s => s.id === schedule.id);
-    
-    if (existingScheduleIndex !== -1) {
-      // 既存のスケジュールが見つかった場合（移動）
-      const updatedSchedules = [...schedules];
-      updatedSchedules[existingScheduleIndex] = schedule;
-      setSchedules(updatedSchedules, 'schedule_move');
-      console.log('📝 Schedule updated (moved):', { id: schedule.id, newDate: schedule.date });
-    } else {
-      // 新しいスケジュール（コピー）
-      setSchedules([...schedules, schedule], 'schedule_copy');
-      console.log('➕ Schedule added (copied):', { id: schedule.id, date: schedule.date });
-    }
-  };
-
   // 予定削除ハンドラー（ドラッグ&ドロップやAlt+右クリック用）
-  const handleScheduleDelete = (id) => {
-    // 通知もキャンセル
+  const handleScheduleDelete = useCallback(async (id, options = {}) => {
+    if (!id) return;
+
+    const { throwOnError = false } = options;
+
+    console.info('[ScheduleDelete] request', {
+      scheduleId: id,
+      timestamp: new Date().toISOString(),
+    });
     cancelScheduleNotifications(id);
-    setSchedules(schedules.filter(s => s.id !== id), 'schedule_delete');
-  };
+    const current = schedulesRef.current;
+    const optimistic = current.filter((item) => item.id !== id);
+    commitSchedules(optimistic, 'schedule_delete');
+    console.info('[ScheduleDelete] optimistic applied', {
+      scheduleId: id,
+      remainingCount: optimistic.length,
+    });
+
+    if (!userId) return;
+
+    try {
+      const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+      await deleteScheduleForUser(id, userId);
+      setSupabaseError(null);
+      console.info('[ScheduleDelete] synced', {
+        scheduleId: id,
+        durationMs:
+          (typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? Math.round(performance.now() - startedAt)
+            : Math.round(Date.now() - startedAt)),
+      });
+    } catch (error) {
+      console.error('[Supabase] Failed to delete schedule:', error);
+      setSupabaseError(error.message || '予定の削除に失敗しました。');
+      refreshFromSupabase('supabase_resync').catch(() => {});
+      if (throwOnError) {
+        throw error;
+      }
+    }
+  }, [cancelScheduleNotifications, commitSchedules, refreshFromSupabase, setSupabaseError, userId]);
+
+  // 予定移動ハンドラー（ドラッグ&ドロップ用）
+  const handleScheduleMove = useCallback((schedule, nextDate) => {
+    if (!schedule?.id || !nextDate) return;
+
+    const current = schedulesRef.current;
+    const existing = current.find((item) => item.id === schedule.id);
+    if (!existing) return;
+
+    const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+    console.info('[ScheduleMove] request', {
+      scheduleId: schedule.id,
+      fromDate: existing.date,
+      toDate: nextDate,
+      allDay: existing.allDay,
+      timestamp: new Date().toISOString(),
+    });
+
+    const previousDate = existing.date;
+    const updated = normalizeSchedule({ ...existing, ...schedule, date: nextDate });
+
+    let optimistic = current.map((item) => (item.id === updated.id ? updated : item));
+    if (updated.allDay) {
+      optimistic = rebalanceAllDayOrdersForDates(optimistic, [previousDate, updated.date]);
+    }
+
+    commitSchedules(optimistic, 'schedule_move');
+    console.info('[ScheduleMove] optimistic applied', {
+      scheduleId: updated.id,
+      toDate: updated.date,
+      durationMs:
+        (typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? Math.round(performance.now() - startedAt)
+          : Math.round(Date.now() - startedAt)),
+    });
+
+    if (userId) {
+      (async () => {
+        try {
+          const syncStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+          const persisted = await updateScheduleForUser(updated, userId);
+          let latest = schedulesRef.current;
+          let synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
+          if (persisted.allDay) {
+            synced = rebalanceAllDayOrdersForDates(synced, [previousDate, persisted.date]);
+          }
+          commitSchedules(synced, 'schedule_move_sync');
+          setSupabaseError(null);
+          console.info('[ScheduleMove] synced', {
+            scheduleId: persisted.id,
+            toDate: persisted.date,
+            durationMs:
+              (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                ? Math.round(performance.now() - syncStartedAt)
+                : Math.round(Date.now() - syncStartedAt)),
+          });
+        } catch (error) {
+          console.error('[Supabase] Failed to move schedule:', error);
+          setSupabaseError(error.message || '予定の移動に失敗しました。');
+          refreshFromSupabase('supabase_resync').catch(() => {});
+        }
+      })();
+    }
+  }, [commitSchedules, refreshFromSupabase, setSupabaseError, userId]);
+
+  // 予定コピー（ALTドラッグ複製など）
+  const handleScheduleCopy = useCallback((schedule) => {
+    if (!schedule) return;
+
+    const normalized = normalizeSchedule(schedule);
+    const latest = schedulesRef.current;
+
+    console.info('[ScheduleCopy] request', {
+      originalId: schedule.id,
+      normalizedId: normalized.id,
+      date: normalized.date,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (normalized.id && latest.some((item) => item.id === normalized.id)) {
+      handleScheduleMove(normalized, normalized.date);
+      return;
+    }
+
+    const tempId = normalized.id || createTempId();
+    const placeholder = { ...normalized, id: tempId };
+
+    let optimistic = [...latest, placeholder];
+    if (placeholder.allDay) {
+      optimistic = rebalanceAllDayOrdersForDates(optimistic, [placeholder.date]);
+    }
+
+    commitSchedules(optimistic, 'schedule_copy');
+    console.info('[ScheduleCopy] optimistic applied', {
+      tempId: tempId,
+      date: placeholder.date,
+      isAllDay: placeholder.allDay,
+    });
+
+    if (userId) {
+      (async () => {
+        try {
+          const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+          const payload = { ...placeholder };
+          delete payload.id;
+          const created = await createScheduleForUser(payload, userId);
+
+          let latestState = schedulesRef.current;
+          let replaced = latestState.map((item) => (item.id === tempId ? created : item));
+          if (!replaced.some((item) => item.id === created.id)) {
+            replaced = [...latestState.filter((item) => item.id !== tempId), created];
+          }
+          if (created.allDay) {
+            replaced = rebalanceAllDayOrdersForDates(replaced, [created.date]);
+          }
+
+          commitSchedules(replaced, 'schedule_copy_sync');
+          setSupabaseError(null);
+          console.info('[ScheduleCopy] synced', {
+            createdId: created.id,
+            date: created.date,
+            durationMs:
+              (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                ? Math.round(performance.now() - startedAt)
+                : Math.round(Date.now() - startedAt)),
+          });
+        } catch (error) {
+          console.error('[Supabase] Failed to copy schedule:', error);
+          setSupabaseError(error.message || '予定のコピーに失敗しました。');
+          refreshFromSupabase('supabase_resync').catch(() => {});
+        }
+      })();
+    }
+  }, [commitSchedules, handleScheduleMove, refreshFromSupabase, setSupabaseError, userId]);
 
   // 予定更新ハンドラー（並び替え用）
-  const handleScheduleUpdate = (updatedSchedule, actionType = 'schedule_reorder') => {
+  const handleScheduleUpdate = useCallback((updatedSchedule, actionType = 'schedule_reorder') => {
     const updates = Array.isArray(updatedSchedule) ? updatedSchedule : [updatedSchedule];
     if (updates.length === 0) return;
 
-    const updateMap = new Map(updates.map(s => [s.id, s]));
-    const newSchedules = schedules.map(s => 
-      updateMap.has(s.id) ? { ...s, ...updateMap.get(s.id) } : s
+    const normalizedUpdates = updates.map(normalizeSchedule);
+    console.info('[ScheduleUpdate] request', {
+      actionType,
+      count: normalizedUpdates.length,
+      ids: normalizedUpdates.map((item) => item.id),
+      timestamp: new Date().toISOString(),
+    });
+    const current = schedulesRef.current;
+    const updateMap = new Map(normalizedUpdates.map((item) => [item.id, item]));
+
+    let optimistic = current.map((schedule) =>
+      updateMap.has(schedule.id) ? { ...schedule, ...updateMap.get(schedule.id) } : schedule
     );
 
-    setSchedules(newSchedules, actionType);
-  };
+    const affectedDates = normalizedUpdates.filter((item) => item.allDay).map((item) => item.date);
+    if (affectedDates.length > 0) {
+      optimistic = rebalanceAllDayOrdersForDates(optimistic, affectedDates);
+    }
+
+    commitSchedules(optimistic, actionType);
+    console.info('[ScheduleUpdate] optimistic applied', {
+      actionType,
+      count: normalizedUpdates.length,
+    });
+
+    if (userId) {
+      (async () => {
+        try {
+          const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+          const persisted = await upsertSchedulesForUser(normalizedUpdates, userId);
+          if (Array.isArray(persisted) && persisted.length > 0) {
+            let latest = schedulesRef.current;
+            const persistedMap = new Map(persisted.map((item) => [item.id, item]));
+            let synced = latest.map((schedule) =>
+              persistedMap.has(schedule.id) ? persistedMap.get(schedule.id) : schedule
+            );
+            const persistedDates = persisted.filter((item) => item.allDay).map((item) => item.date);
+            if (persistedDates.length > 0) {
+              synced = rebalanceAllDayOrdersForDates(synced, persistedDates);
+            }
+            commitSchedules(synced, `${actionType}_sync`);
+          }
+          setSupabaseError(null);
+          console.info('[ScheduleUpdate] synced', {
+            actionType,
+            count: Array.isArray(persisted) ? persisted.length : 0,
+            durationMs:
+              (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                ? Math.round(performance.now() - startedAt)
+                : Math.round(Date.now() - startedAt)),
+          });
+        } catch (error) {
+          console.error('[Supabase] Failed to update schedules:', error);
+          setSupabaseError(error.message || '予定の更新に失敗しました。');
+          refreshFromSupabase('supabase_resync').catch(() => {});
+        }
+      })();
+    }
+  }, [commitSchedules, refreshFromSupabase, setSupabaseError, userId]);
 
   // タスクのチェック状態トグル
-  const handleToggleTask = (id, completed) => {
-    const newSchedules = schedules.map(s => s.id === id ? { ...s, completed, isTask: true } : s);
-    setSchedules(newSchedules, 'task_toggle');
-  };
+  const handleToggleTask = useCallback((id, completed) => {
+    const current = schedulesRef.current;
+    const target = current.find((item) => item.id === id);
+    if (!target) return;
 
-  // 予定追加ハンドラー
+    console.info('[TaskToggle] request', {
+      scheduleId: id,
+      completed,
+      timestamp: new Date().toISOString(),
+    });
+    const updated = { ...target, completed, isTask: true };
+    const optimistic = current.map((item) => (item.id === id ? updated : item));
+    commitSchedules(optimistic, 'task_toggle');
+    console.info('[TaskToggle] optimistic applied', {
+      scheduleId: id,
+      completed,
+    });
+
+    if (userId) {
+      (async () => {
+        try {
+          const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+          const persisted = await updateScheduleForUser(updated, userId);
+          let latest = schedulesRef.current;
+          const synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
+          commitSchedules(synced, 'task_toggle_sync');
+          setSupabaseError(null);
+          console.info('[TaskToggle] synced', {
+            scheduleId: persisted.id,
+            completed: persisted.completed,
+            durationMs:
+              (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                ? Math.round(performance.now() - startedAt)
+                : Math.round(Date.now() - startedAt)),
+          });
+        } catch (error) {
+          console.error('[Supabase] Failed to toggle task state:', error);
+          setSupabaseError(error.message || 'タスク状態の更新に失敗しました。');
+          refreshFromSupabase('supabase_resync').catch(() => {});
+        }
+      })();
+    }
+  }, [commitSchedules, refreshFromSupabase, setSupabaseError, userId]);
   const handleAdd = (targetDate = null) => {
     // ターゲット日付が指定されていればその日付を使用、なければ選択中の日付を使用
     const dateToUse = targetDate || selectedDate;
@@ -322,40 +752,122 @@ function App() {
   };
 
   // 予定保存ハンドラー
-  const handleSave = (schedule) => {
+  const handleSave = useCallback(async (schedule) => {
     if (schedule.id) {
-      // 既存の予定を更新
-      const newSchedules = schedules.map(s => s.id === schedule.id ? { ...s, ...schedule } : s);
-      setSchedules(newSchedules, 'schedule_edit');
-    } else {
-      // 新しい予定を追加
-      const newSchedule = { 
-        ...schedule, 
-        id: Date.now(),
-        isTask: !!schedule.isTask,
-        completed: !!schedule.completed
-      };
-      
-      // 終日予定の場合、allDayOrderを自動設定
-      if (newSchedule.allDay) {
-        const sameDateAllDaySchedules = schedules.filter(s => 
-          s.date === newSchedule.date && s.allDay
-        );
-        newSchedule.allDayOrder = sameDateAllDaySchedules.length;
+      const current = schedulesRef.current;
+      const existing = current.find((item) => item.id === schedule.id);
+      if (!existing) {
+        throw new Error('対象の予定が見つかりませんでした。');
       }
-      
-      setSchedules([...schedules, newSchedule], 'schedule_create');
-    }
-    setShowForm(false);
-  };
 
-  // 予定削除ハンドラー
-  const handleDelete = (id) => {
-    // 通知もキャンセル
-    cancelScheduleNotifications(id);
-    setSchedules(schedules.filter(s => s.id !== id), 'schedule_delete');
+      const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+      console.info('[ScheduleSave] update request', {
+        scheduleId: schedule.id,
+        originalDate: existing.date,
+        nextDate: schedule.date,
+        timestamp: new Date().toISOString(),
+      });
+      const updated = normalizeSchedule({ ...existing, ...schedule });
+
+      let optimistic = current.map((item) => (item.id === updated.id ? updated : item));
+      if (updated.allDay) {
+        optimistic = rebalanceAllDayOrdersForDates(optimistic, [updated.date]);
+      }
+      commitSchedules(optimistic, 'schedule_edit');
+      console.info('[ScheduleSave] update optimistic applied', {
+        scheduleId: updated.id,
+        date: updated.date,
+      });
+
+      if (userId) {
+        try {
+          const persisted = await updateScheduleForUser(updated, userId);
+          let latest = schedulesRef.current;
+          let synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
+          if (persisted.allDay) {
+            synced = rebalanceAllDayOrdersForDates(synced, [persisted.date]);
+          }
+          commitSchedules(synced, 'schedule_edit_sync');
+          setSupabaseError(null);
+          console.info('[ScheduleSave] update synced', {
+            scheduleId: persisted.id,
+            date: persisted.date,
+            durationMs:
+              (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                ? Math.round(performance.now() - startedAt)
+                : Math.round(Date.now() - startedAt)),
+          });
+        } catch (error) {
+          console.error('[Supabase] Failed to update schedule:', error);
+          setSupabaseError(error.message || '予定の更新に失敗しました。');
+          refreshFromSupabase('supabase_resync').catch(() => {});
+          throw error;
+        }
+      }
+    } else {
+      const baseSchedule = normalizeSchedule(schedule);
+      const tempId = createTempId();
+      const placeholder = { ...baseSchedule, id: tempId };
+
+      const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+      console.info('[ScheduleSave] create request', {
+        targetDate: baseSchedule.date,
+        isAllDay: baseSchedule.allDay,
+        tempId,
+        timestamp: new Date().toISOString(),
+      });
+
+      let optimistic = [...schedulesRef.current, placeholder];
+      if (placeholder.allDay) {
+        optimistic = rebalanceAllDayOrdersForDates(optimistic, [placeholder.date]);
+      }
+      commitSchedules(optimistic, 'schedule_create');
+      console.info('[ScheduleSave] create optimistic applied', {
+        tempId,
+        date: placeholder.date,
+      });
+
+      if (userId) {
+        try {
+          const payload = { ...baseSchedule };
+          delete payload.id;
+          const created = await createScheduleForUser(payload, userId);
+
+          let latest = schedulesRef.current;
+          let replaced = latest.map((item) => (item.id === tempId ? created : item));
+          if (!replaced.some((item) => item.id === created.id)) {
+            replaced = [...latest.filter((item) => item.id !== tempId), created];
+          }
+          if (created.allDay) {
+            replaced = rebalanceAllDayOrdersForDates(replaced, [created.date]);
+          }
+          commitSchedules(replaced, 'schedule_create_sync');
+          setSupabaseError(null);
+          console.info('[ScheduleSave] create synced', {
+            scheduleId: created.id,
+            date: created.date,
+            durationMs:
+              (typeof performance !== 'undefined' && typeof performance.now === 'function'
+                ? Math.round(performance.now() - startedAt)
+                : Math.round(Date.now() - startedAt)),
+          });
+        } catch (error) {
+          console.error('[Supabase] Failed to create schedule:', error);
+          setSupabaseError(error.message || '予定の作成に失敗しました。');
+          refreshFromSupabase('supabase_resync').catch(() => {});
+          throw error;
+        }
+      }
+    }
+
     setShowForm(false);
-  };
+  }, [commitSchedules, refreshFromSupabase, setShowForm, setSupabaseError, userId]);
+
+  // 予定削除ハンドラー（フォーム用）
+  const handleDelete = useCallback(async (id) => {
+  await handleScheduleDelete(id, { throwOnError: true });
+    setShowForm(false);
+  }, [handleScheduleDelete]);
 
   // フォーム閉じるハンドラー
   const handleClose = () => setShowForm(false);
@@ -375,11 +887,27 @@ function App() {
         }
       }}
     >
-      <TitleBar onSettingsClick={() => setShowSettings(true)} />
+      <TitleBar onSettingsClick={() => setShowSettings(true)} auth={titleBarAuth} />
+      {isAuthenticated && (
+        <>
+          {supabaseError && (
+            <div className="bg-red-600 text-white text-sm px-4 py-2 shadow-inner">
+              Supabase同期でエラーが発生しました: {supabaseError}
+            </div>
+          )}
+          {!supabaseError && isSupabaseSyncing && (
+            <div className="bg-indigo-700 text-white text-sm px-4 py-2 shadow-inner">
+              Supabaseと同期中です…
+            </div>
+          )}
+        </>
+      )}
       <main 
         className="flex-1 p-2 overflow-hidden flex relative"
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onMouseDown={handleMouseDown}
+        ref={layoutContainerRef}
       >
         {/* ハンバーガーメニュー */}
         <div 
@@ -488,6 +1016,7 @@ function App() {
                 selectedDate={selectedDate}
                 onScheduleCopy={handleScheduleCopy}
                 onScheduleDelete={handleScheduleDelete}
+                onScheduleMove={handleScheduleMove}
                 onScheduleUpdate={handleScheduleUpdate}
                 onAdd={handleAdd}
                 onEdit={handleEdit}
@@ -551,6 +1080,7 @@ function App() {
                 selectedDate={selectedDate}
                 onScheduleCopy={handleScheduleCopy}
                 onScheduleDelete={handleScheduleDelete}
+                onScheduleMove={handleScheduleMove}
                 onScheduleUpdate={handleScheduleUpdate}
                 onAdd={handleAdd}
                 onEdit={handleEdit}

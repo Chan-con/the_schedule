@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 const SettingsModal = ({ isOpen, onClose }) => {
   const [hotkey, setHotkey] = useState('');
@@ -20,6 +20,109 @@ const SettingsModal = ({ isOpen, onClose }) => {
   const hotkeyBoxRef = useRef(null);
   // 重複などのエラー保持
   const [shortcutErrors, setShortcutErrors] = useState({});
+
+  const cancelHotkeyCapture = useCallback(async () => {
+    setIsCapturingHotkey(false);
+    setPendingKeys([]);
+
+    if (window.electronAPI && previousHotkey) {
+  await window.electronAPI.registerGlobalShortcut(previousHotkey);
+  console.log('元のグローバルホットキーを復元しました:', previousHotkey);
+    }
+
+    setPreviousHotkey('');
+  }, [previousHotkey]);
+
+  const handleHotkeyKeyDown = useCallback((e) => {
+    // キャプチャ中でなくても Backspace/Delete だけはクリアを許可
+    if (!isCapturingHotkey && !(e.key === 'Backspace' || e.key === 'Delete')) return;
+
+    console.log('ホットキーキーダウン:', e.key, e.ctrlKey, e.altKey, e.shiftKey, 'capturing:', isCapturingHotkey);
+
+    // Backspace/Delete はいつでもクリア
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (hotkey) {
+        console.log('Backspace/Delete検出 - ホットキーをクリア');
+      }
+      setHotkey('');
+      setIsCapturingHotkey(false);
+      setPendingKeys([]);
+      setPreviousHotkey('');
+      if (window.electronAPI) {
+        // 即時保存して永続化
+        window.electronAPI.saveSettings({
+          hotkey: '',
+          startWithSystem,
+          minimizeToTray,
+          discordWebhookUrl,
+          discordNotifyEnabled
+        });
+        window.electronAPI.unregisterGlobalShortcut().then(() => {
+          console.log('グローバルホットキーを削除（未設定保存済み）');
+        });
+      }
+      return;
+    }
+
+    // ここからはキャプチャ中のみ処理
+    if (!isCapturingHotkey) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Escape でキャンセル
+    if (e.key === 'Escape') {
+      cancelHotkeyCapture();
+      return;
+    }
+
+    const keys = [];
+    if (e.ctrlKey) keys.push('Control');
+    if (e.altKey) keys.push('Alt');
+    if (e.shiftKey) keys.push('Shift');
+    if (e.metaKey) keys.push('Meta');
+
+    // 特殊キーではない場合、実際のキーを追加
+    if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+      keys.push(e.key.toUpperCase());
+    }
+
+    // 最低限修飾キー1つ+通常キー1つが必要
+    const modifierKeys = keys.filter(k => ['Control', 'Alt', 'Shift', 'Meta'].includes(k));
+    const normalKeys = keys.filter(k => !['Control', 'Alt', 'Shift', 'Meta'].includes(k));
+    const isFunctionKey = /^F([1-9]|1\d|2[0-4])$/.test(normalKeys[0] || '');
+
+    // 条件:
+    // 1) 修飾 + 通常キー, または 2) Fキー単体
+    if ((modifierKeys.length > 0 && normalKeys.length > 0) || (modifierKeys.length === 0 && normalKeys.length === 1 && isFunctionKey)) {
+      const newHotkey = keys.join('+');
+      setHotkey(newHotkey);
+      setIsCapturingHotkey(false);
+      setPendingKeys([]);
+      setPreviousHotkey('');
+      if (window.electronAPI) {
+        window.electronAPI.registerGlobalShortcut(newHotkey).then(() => {
+          console.log('新しいグローバルホットキーを登録しました:', newHotkey);
+          // 永続化
+          window.electronAPI.saveSettings({ hotkey: newHotkey, startWithSystem, minimizeToTray, discordWebhookUrl, discordNotifyEnabled });
+        }).catch((error) => {
+          console.error('グローバルホットキーの登録に失敗:', error);
+        });
+      }
+    } else if (keys.length > 0) {
+      setPendingKeys(keys);
+    }
+  }, [
+    isCapturingHotkey,
+    cancelHotkeyCapture,
+    hotkey,
+    startWithSystem,
+    minimizeToTray,
+    discordWebhookUrl,
+    discordNotifyEnabled
+  ]);
 
   useEffect(() => {
     if (isOpen && window.electronAPI) {
@@ -89,7 +192,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
         document.removeEventListener('keydown', handleEscKey);
       };
     }
-  }, [isOpen, isCapturingHotkey, editingShortcut]);
+  }, [isOpen, isCapturingHotkey, editingShortcut, cancelHotkeyCapture, onClose]);
 
   // ホットキーキャプチャ専用のイベントリスナー
   useEffect(() => {
@@ -104,7 +207,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
         document.removeEventListener('keydown', handleGlobalKeyDown, true);
       };
     }
-  }, [isCapturingHotkey]);
+  }, [isCapturingHotkey, handleHotkeyKeyDown]);
 
   const handleSave = async () => {
     if (window.electronAPI) {
@@ -278,106 +381,9 @@ const SettingsModal = ({ isOpen, onClose }) => {
         console.warn('ホットキー入力エリアを取得できませんでした');
       }
     }, 100);
-  };
-
-  const handleHotkeyKeyDown = (e) => {
-    // キャプチャ中でなくても Backspace/Delete だけはクリアを許可
-    if (!isCapturingHotkey && !(e.key === 'Backspace' || e.key === 'Delete')) return;
-
-    console.log('ホットキーキーダウン:', e.key, e.ctrlKey, e.altKey, e.shiftKey, 'capturing:', isCapturingHotkey);
-
-    // Backspace/Delete はいつでもクリア
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-      e.preventDefault();
-      e.stopPropagation();
-      if (hotkey) {
-        console.log('Backspace/Delete検出 - ホットキーをクリア');
-      }
-      setHotkey('');
-      setIsCapturingHotkey(false);
-      setPendingKeys([]);
-      setPreviousHotkey('');
-      if (window.electronAPI) {
-        // 即時保存して永続化
-        window.electronAPI.saveSettings({
-          hotkey: '',
-          startWithSystem,
-          minimizeToTray,
-          discordWebhookUrl,
-          discordNotifyEnabled
-        });
-        window.electronAPI.unregisterGlobalShortcut().then(() => {
-          console.log('グローバルホットキーを削除（未設定保存済み）');
-        });
-      }
-      return;
-    }
-
-    // ここからはキャプチャ中のみ処理
-    if (!isCapturingHotkey) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Escape でキャンセル
-    if (e.key === 'Escape') {
-      cancelHotkeyCapture();
-      return;
-    }
-
-    const keys = [];
-    if (e.ctrlKey) keys.push('Control');
-    if (e.altKey) keys.push('Alt');
-    if (e.shiftKey) keys.push('Shift');
-    if (e.metaKey) keys.push('Meta');
-
-    // 特殊キーではない場合、実際のキーを追加
-    if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
-      keys.push(e.key.toUpperCase());
-    }
-
-    // 最低限修飾キー1つ+通常キー1つが必要
-    const modifierKeys = keys.filter(k => ['Control', 'Alt', 'Shift', 'Meta'].includes(k));
-    const normalKeys = keys.filter(k => !['Control', 'Alt', 'Shift', 'Meta'].includes(k));
-    const isFunctionKey = /^F([1-9]|1\d|2[0-4])$/.test(normalKeys[0] || '');
-
-    // 条件:
-    // 1) 修飾 + 通常キー, または 2) Fキー単体
-    if ((modifierKeys.length > 0 && normalKeys.length > 0) || (modifierKeys.length === 0 && normalKeys.length === 1 && isFunctionKey)) {
-      const newHotkey = keys.join('+');
-      setHotkey(newHotkey);
-      setIsCapturingHotkey(false);
-      setPendingKeys([]);
-      setPreviousHotkey('');
-      if (window.electronAPI) {
-        window.electronAPI.registerGlobalShortcut(newHotkey).then(() => {
-          console.log('新しいグローバルホットキーを登録しました:', newHotkey);
-          // 永続化
-          window.electronAPI.saveSettings({ hotkey: newHotkey, startWithSystem, minimizeToTray, discordWebhookUrl, discordNotifyEnabled });
-        }).catch((error) => {
-          console.error('グローバルホットキーの登録に失敗:', error);
-        });
-      }
-    } else if (keys.length > 0) {
-      setPendingKeys(keys);
-    }
-  };
-
-  const cancelHotkeyCapture = async () => {
-    setIsCapturingHotkey(false);
-    setPendingKeys([]);
-    
-    // 元のグローバルホットキーを復元
-    if (window.electronAPI && previousHotkey) {
-      await window.electronAPI.registerGlobalShortcut(previousHotkey);
-      console.log('元のグローバルホットキーを復復元しました:', previousHotkey);
-    }
-    
-    // 前の状態をクリア
-    setPreviousHotkey('');
-  };
-
-  const shortcutLabels = {
+    };
+  
+    const shortcutLabels = {
     undo: '元に戻す',
     redo: 'やり直し',
   };

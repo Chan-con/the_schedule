@@ -27,4 +27,16 @@ window.electronAPI = {
   cancelAllNotifications: () => ipcRenderer.invoke('cancel-all-notifications'),
   // Discord
   discordTest: () => ipcRenderer.invoke('discord-test'),
+  // Supabase OAuth
+  onAuthCallback: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, url) => {
+      callback(url);
+    };
+    ipcRenderer.on('supabase-auth-callback', listener);
+    return () => {
+      ipcRenderer.removeListener('supabase-auth-callback', listener);
+    };
+  },
+  getPendingAuthUrl: () => ipcRenderer.invoke('get-pending-auth-url'),
 };

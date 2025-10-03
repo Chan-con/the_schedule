@@ -57,11 +57,17 @@ const createInitialFormData = (schedule) => {
 const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotification }) => {
   const [formData, setFormData] = useState(() => createInitialFormData(schedule));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [formError, setFormError] = useState(null);
   const nameInputRef = useRef(null);
 
   useEffect(() => {
     setFormData(createInitialFormData(schedule));
     setShowDeleteConfirm(false);
+    setIsSaving(false);
+    setIsDeleting(false);
+    setFormError(null);
   }, [schedule]);
 
   useEffect(() => {
@@ -125,15 +131,36 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSave(formData);
+    if (!onSave || isSaving || isDeleting) return;
+
+    setFormError(null);
+    setIsSaving(true);
+    try {
+      await onSave(formData);
+    } catch (error) {
+      console.error('❌ Failed to save schedule:', error);
+      setFormError(error?.message || '予定の保存に失敗しました。');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDelete = () => {
-    if (onDelete && formData.id) {
-      onDelete(formData.id);
+  const handleDelete = async () => {
+    if (!onDelete || !formData.id || isDeleting || isSaving) return;
+
+    setFormError(null);
+    setIsDeleting(true);
+    try {
+      await onDelete(formData.id);
+    } catch (error) {
+      console.error('❌ Failed to delete schedule:', error);
+      setFormError(error?.message || '予定の削除に失敗しました。');
+      setIsDeleting(false);
+      return;
     }
+    setIsDeleting(false);
   };
 
   const addNotification = () => {
@@ -610,6 +637,11 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
       </div>
 
       <div className="border-t border-gray-200 p-4 flex-shrink-0 bg-white">
+        {formError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2 mb-3">
+            {formError}
+          </div>
+        )}
         {showDeleteConfirm ? (
           <div className="bg-red-50 p-3 rounded-lg border border-red-200 mb-3">
             <p className="text-red-800 mb-3 font-medium text-sm">この予定を削除しますか？</p>
@@ -617,16 +649,18 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
               <button
                 type="button"
                 onClick={() => setShowDeleteConfirm(false)}
-                className="px-3 py-1.5 bg-white border border-gray-300 text-gray-800 rounded text-sm hover:bg-gray-50 transition-colors duration-200"
+                disabled={isDeleting}
+                className={`px-3 py-1.5 bg-white border border-gray-300 text-gray-800 rounded text-sm transition-colors duration-200 ${isDeleting ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
               >
                 キャンセル
               </button>
               <button
                 type="button"
                 onClick={handleDelete}
-                className="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors duration-200 shadow-sm"
+                disabled={isDeleting}
+                className={`px-3 py-1.5 rounded text-sm text-white transition-colors duration-200 shadow-sm ${isDeleting ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}`}
               >
-                削除する
+                {isDeleting ? '削除中…' : '削除する'}
               </button>
             </div>
           </div>
@@ -636,7 +670,8 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
               <button
                 type="button"
                 onClick={() => setShowDeleteConfirm(true)}
-                className="text-red-600 hover:text-red-800 font-medium hover:bg-red-50 bg-white border border-red-200 px-2.5 py-1.5 rounded text-sm transition-colors duration-200"
+                disabled={isSaving || isDeleting}
+                className={`text-red-600 font-medium bg-white border border-red-200 px-2.5 py-1.5 rounded text-sm transition-colors duration-200 ${isSaving || isDeleting ? 'opacity-60 cursor-not-allowed' : 'hover:text-red-800 hover:bg-red-50'}`}
               >
                 削除
               </button>
@@ -648,16 +683,18 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
               <button
                 type="button"
                 onClick={onClose}
-                className="px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded text-sm hover:bg-gray-50 transition"
+                disabled={isSaving || isDeleting}
+                className={`px-3 py-1.5 border border-gray-300 text-gray-700 bg-white rounded text-sm transition ${isSaving || isDeleting ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
               >
                 キャンセル
               </button>
               <button
                 type="submit"
                 form="schedule-form"
-                className="px-4 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded text-sm hover:from-indigo-700 hover:to-blue-700 transition shadow-md"
+                disabled={isSaving || isDeleting}
+                className={`px-4 py-1.5 text-white rounded text-sm transition shadow-md bg-gradient-to-r from-indigo-600 to-blue-600 ${isSaving || isDeleting ? 'opacity-60 cursor-not-allowed' : 'hover:from-indigo-700 hover:to-blue-700'}`}
               >
-                保存
+                {isSaving ? '保存中…' : '保存'}
               </button>
             </div>
           </div>

@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
+const isHistoryDebugEnabled =
+  typeof import.meta !== 'undefined' && import.meta.env?.VITE_DEBUG_HISTORY === 'true';
+
+const historyDebugLog = (...args) => {
+  if (!isHistoryDebugEnabled) return;
+  console.debug(...args);
+};
+
 /**
  * Undo/Redo機能を提供するカスタムフック
  * @param {any} initialState - 初期状態
@@ -61,7 +69,7 @@ export const useHistory = (initialState, maxHistorySize = 100) => {
     setInternalState(newState);
     setLastActionType(actionType);
     
-    console.log('📚 History: Added new state', {
+    historyDebugLog('📚 History: Added new state', {
       actionType,
       currentIndex: currentIndex + 1,
       historyLength: history.length + 1
@@ -83,7 +91,7 @@ export const useHistory = (initialState, maxHistorySize = 100) => {
       
       setLastActionType('undo');
       
-      console.log('↩️ Undo: Restored state', {
+      historyDebugLog('↩️ Undo: Restored state', {
         fromIndex: currentIndex,
         toIndex: newIndex,
         restoredState: previousState
@@ -106,7 +114,7 @@ export const useHistory = (initialState, maxHistorySize = 100) => {
       
       setLastActionType('redo');
       
-      console.log('↪️ Redo: Restored state', {
+      historyDebugLog('↪️ Redo: Restored state', {
         fromIndex: currentIndex,
         toIndex: newIndex,
         restoredState: nextState
@@ -125,8 +133,49 @@ export const useHistory = (initialState, maxHistorySize = 100) => {
     setHistory([state]);
     setCurrentIndex(0);
     setLastActionType('clear');
-    console.log('🗑️ History: Cleared all history');
+    historyDebugLog('🗑️ History: Cleared all history');
   }, [state]);
+
+  const replaceState = useCallback((newState, actionType = 'replace') => {
+    skipHistoryRef.current = true;
+    setInternalState(newState);
+    skipHistoryRef.current = false;
+
+    setHistory([newState]);
+    setCurrentIndex(0);
+    setLastActionType(actionType);
+
+    historyDebugLog('🔄 History: State replaced', {
+      actionType,
+      historyLength: 1,
+      currentIndex: 0
+    });
+  }, []);
+
+  const overwriteState = useCallback((newState, actionType = 'overwrite') => {
+    skipHistoryRef.current = true;
+    setInternalState(newState);
+    skipHistoryRef.current = false;
+
+    setHistory(prevHistory => {
+      if (!Array.isArray(prevHistory) || prevHistory.length === 0) {
+        return [newState];
+      }
+
+      const nextHistory = [...prevHistory];
+      const index = Math.max(0, Math.min(currentIndex, nextHistory.length - 1));
+      nextHistory[index] = newState;
+      return nextHistory;
+    });
+
+    setLastActionType(actionType);
+
+    historyDebugLog('📝 History: Overwrote current state', {
+      actionType,
+      currentIndex,
+      historyLength: history.length
+    });
+  }, [currentIndex, history.length]);
   
   // キーボードショートカットの処理
   useEffect(() => {
@@ -200,7 +249,7 @@ export const useHistory = (initialState, maxHistorySize = 100) => {
   
   // デバッグ情報の出力
   useEffect(() => {
-    console.log('📊 History Status:', {
+    historyDebugLog('📊 History Status:', {
       currentIndex,
       historyLength: history.length,
       canUndo,
@@ -218,6 +267,8 @@ export const useHistory = (initialState, maxHistorySize = 100) => {
     canUndo,
     canRedo,
     clearHistory,
+    replaceState,
+    overwriteState,
     historyLength: history.length,
     currentIndex,
     lastActionType
