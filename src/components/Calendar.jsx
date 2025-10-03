@@ -897,12 +897,6 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                 });
                 })()}
 
-                {isCustomDragging && draggedSchedule?.allDay && dragOverScheduleInfo?.date === dateStr && dragOverScheduleInfo?.scheduleId === null && (
-                  <div className="mt-0.5 h-4 rounded border-2 border-dashed border-green-400 text-[10px] font-semibold text-green-600 flex items-center justify-center">
-                    ここに配置
-                  </div>
-                )}
-                
                 {(() => {
                   const scrollOffset = parseInt(document.querySelector(`[data-date="${dateStr}"]`)?.getAttribute('data-scroll-offset') || '0');
                   const totalSchedules = daySchedules.length;
