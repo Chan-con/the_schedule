@@ -6,28 +6,31 @@ const EMOJI_OPTIONS = [
   // 仕事
 { value: '💼', label: '仕事', emoji: '💼' },
 { value: '🤝', label: '対面会議', emoji: '🤝' },
-{ value: '📞', label: '電話会議', emoji: '📞' },
 { value: '💻', label: 'オンライン会議', emoji: '💻' },
-{ value: '📊', label: 'プレゼン/資料', emoji: '📊' },
-{ value: '📚', label: '勉強/セミナー', emoji: '📚' },
+{ value: '📚', label: 'セミナー', emoji: '📚' },
 { value: '🧳', label: '出張先で仕事', emoji: '🧳' },
 { value: '🛫', label: '移動（飛行機）', emoji: '🛫' },
 { value: '🚅', label: '移動（新幹線）', emoji: '🚅' },
 { value: '🚃', label: '移動（電車）', emoji: '🚃' },
 { value: '🚕', label: '移動（車）', emoji: '🚕' },
 { value: '🏨', label: '宿泊', emoji: '🏨' },
+// タスク
 { value: '🏁', label: 'スタート', emoji: '🏁' },
 { value: '🏆', label: 'ゴール', emoji: '🏆' },
 { value: '🚩', label: 'チェック', emoji: '🚩' },
+// 連絡
+{ value: '📞', label: '電話', emoji: '📞' },
+{ value: '✉️', label: 'メール', emoji: '✉️' },
+{ value: '💬', label: 'チャット', emoji: '💬' },
+
 // プライベート
-{ value: '👜', label: 'お出かけ', emoji: '👜' },
-{ value: '🍺', label: '飲み会', emoji: '🍺' },
+{ value: '🚶', label: '外出', emoji: '🚶' },
 { value: '🍽️', label: '食事', emoji: '🍽️' },
-{ value: '🏥', label: '病院', emoji: '🏥' },
 { value: '🎂', label: '誕生日', emoji: '🎂' },
-{ value: '🎉', label: 'お祝い', emoji: '🎉' },
+{ value: '🎉', label: 'パーティ', emoji: '🎉' },
 { value: '🏖️', label: '休暇', emoji: '🏖️' },
 { value: '🏡', label: 'ホーム', emoji: '🏡' },
+{ value: '📦', label: '荷物受け取り', emoji: '📦'},
 ];
 
 const MAX_NOTIFICATIONS = 3;
