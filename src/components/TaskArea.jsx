@@ -98,24 +98,6 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
             }}
           >
             <div className="flex items-start gap-3">
-              <button
-                type="button"
-                className={`inline-flex size-6 flex-shrink-0 items-center justify-center rounded-lg border p-0 text-[11px] font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
-                  isCompleted
-                    ? 'bg-green-500 border-green-600 text-white'
-                    : 'bg-white border-gray-300 text-transparent hover:border-gray-400'
-                }`}
-                title={isCompleted ? '完了済み' : '未完了'}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (onToggleTask && task?.id) {
-                    onToggleTask(task, !isCompleted);
-                  }
-                }}
-              >
-                ✓
-              </button>
-
               <div className="flex-1 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`font-medium ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
@@ -151,6 +133,24 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
                   />
                 )}
               </div>
+
+              <button
+                type="button"
+                className={`inline-flex size-6 flex-shrink-0 items-center justify-center rounded-lg border p-0 text-[11px] font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                  isCompleted
+                    ? 'bg-green-500 border-green-600 text-white'
+                    : 'bg-white border-gray-300 text-transparent hover:border-gray-400'
+                }`}
+                title={isCompleted ? '完了済み' : '未完了'}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (onToggleTask && task?.id) {
+                    onToggleTask(task, !isCompleted);
+                  }
+                }}
+              >
+                ✓
+              </button>
             </div>
           </div>
         );
