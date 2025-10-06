@@ -41,7 +41,7 @@ const createInitialFormData = (schedule) => {
   const base = {
     id: schedule?.id ?? null,
     name: schedule?.name ?? '',
-    date: schedule?.date ?? toDateStrLocal(now),
+    date: schedule?.date ?? (isStandaloneTask ? '' : toDateStrLocal(now)),
     time: isStandaloneTask ? '' : schedule?.time ?? '',
     memo: schedule?.memo ?? '',
     emoji: schedule?.emoji ?? '',
@@ -272,6 +272,14 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
     }
   };
 
+  const handleDateDoubleClick = () => {
+    if (!isStandaloneTaskMode) return;
+    setFormData((prev) => ({
+      ...prev,
+      date: prev.date ? '' : toDateStrLocal(new Date()),
+    }));
+  };
+
   const modalTitle = formData.id
     ? formData.isStandaloneTask
       ? 'タスクを編集'
@@ -395,9 +403,15 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
               name="date"
               value={formData.date}
               onChange={handleChange}
+              onDoubleClick={isStandaloneTaskMode ? handleDateDoubleClick : undefined}
               className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-              required
+              required={!isStandaloneTaskMode}
             />
+            {isStandaloneTaskMode && (
+              <p className="mt-1 text-xs text-gray-500">
+                ダブルクリックで今日の日付を入力／クリアできます。
+              </p>
+            )}
           </div>
 
           {!isStandaloneTaskMode && (

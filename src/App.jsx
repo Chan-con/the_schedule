@@ -1164,11 +1164,8 @@ function App() {
   };
 
   const handleAddTask = useCallback((targetDate = null) => {
-    const dateToUse = targetDate || selectedDate;
-    const dateStr = toDateStrLocal(dateToUse);
-
     setEditingSchedule({
-      date: dateStr,
+      date: '',
       time: '',
       name: '',
       memo: '',
@@ -1183,7 +1180,7 @@ function App() {
     if (targetDate) {
       setSelectedDate(targetDate);
     }
-  }, [selectedDate]);
+  }, [setSelectedDate]);
 
   // 予定保存ハンドラー
   const handleSave = useCallback(async (schedule) => {

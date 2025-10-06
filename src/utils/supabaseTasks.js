@@ -53,8 +53,8 @@ const mapToSupabaseTaskRow = (task, userId) => {
   return {
     id: task?.id || undefined,
     user_id: userId,
-    name: task?.name || '',
-    date: task?.date || '',
+  name: task?.name || '',
+  date: task?.date ? task.date : null,
     time: task?.time ? task.time : null,
     memo: task?.memo || '',
     emoji: task?.emoji || '',
