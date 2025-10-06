@@ -54,6 +54,8 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  --card-stack-gap: 4px;
 }
 
 a {
@@ -191,6 +193,12 @@ button:focus-visible {
 .emoji-scrollbar::-webkit-scrollbar-corner {
   background: #f0f4ff !important;
   border-radius: 6px !important;
+}
+
+.card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-stack-gap);
 }
 
 /* スムーズスクロール */

@@ -652,7 +652,7 @@ const Timeline = ({
 									<span className="text-[11px] text-slate-300">「＋」ボタンから項目を追加できます</span>
 								</div>
 							) : (
-								<div className="flex flex-col gap-3">
+								<div className="card-stack">
 									{sortedAllDaySchedules.map((schedule, index) => renderAllDayCard(schedule, index))}
 									{hasAllDaySchedules && draggedAllDayId && (
 										<div
@@ -724,7 +724,7 @@ const Timeline = ({
 									<span className="text-xs text-slate-300">「＋」ボタンから予定を追加できます</span>
 								</div>
 							) : (
-												<div className="space-y-4 pb-2">
+												<div className="card-stack pb-2">
 													{sortedTimeItems.map((schedule, index) =>
 														renderTimeCard(
 															schedule,

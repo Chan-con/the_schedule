@@ -9,7 +9,7 @@ const AllDayArea = ({ schedules }) => {
       {allDaySchedules.length === 0 ? (
         <div className="text-gray-400 text-center py-2 text-sm">終日予定はありません</div>
       ) : (
-        <div className="space-y-2">
+        <div className="card-stack">
           {allDaySchedules.map(s => (
             <div 
               key={s.id} 

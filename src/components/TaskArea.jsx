@@ -261,7 +261,7 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onReorderTasks }) => {
   return (
     <div className="flex-1 custom-scrollbar overflow-auto pr-2 pt-2 pb-3">
       <div
-        className="flex flex-col gap-2"
+        className="card-stack"
         onDragOver={handleContainerDragOver}
         onDrop={handleContainerDrop}
       >
