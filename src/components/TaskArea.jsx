@@ -161,18 +161,6 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onReorderTasks }) => {
     finalizeReorder(incompleteTasks.length);
   }, [dropEnabled, draggedIndex, finalizeReorder, incompleteTasks.length]);
 
-  if (taskList.length === 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-3-3v6m-7 4h14a2 2 0 002-2V7a2 2 0 00-2-2h-2.5l-.72-1.447A1 1 0 0014.854 3h-5.708a1 1 0 00-.926.553L7.5 5H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-        </svg>
-        <p className="text-sm">登録されたタスクはありません</p>
-        <p className="text-xs text-gray-300">右上の「＋」からタスクを追加できます</p>
-      </div>
-    );
-  }
-
   const renderTaskCard = (task, { index = null, draggable = false } = {}) => {
     const isCompleted = !!task?.completed;
     const isStandaloneTask = !!task?.isStandaloneTask;
@@ -259,27 +247,39 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onReorderTasks }) => {
   };
 
   return (
-    <div className="flex-1 custom-scrollbar overflow-auto pr-2 pt-2 pb-3">
-      <div
-        className="card-stack"
-        onDragOver={handleContainerDragOver}
-        onDrop={handleContainerDrop}
-      >
-        {incompleteTasks.map((task, index) => (
-          <React.Fragment key={getTaskKey(task)}>
-            {renderTaskCard(task, { index, draggable: dropEnabled })}
-          </React.Fragment>
-        ))}
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="custom-scrollbar flex-1 overflow-y-auto pr-2 pt-2 pb-3">
+        {taskList.length === 0 ? (
+          <div className="flex min-h-full flex-col items-center justify-center gap-2 text-gray-400">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-3-3v6m-7 4h14a2 2 0 002-2V7a2 2 0 00-2-2h-2.5l-.72-1.447A1 1 0 0014.854 3h-5.708a1 1 0 00-.926.553L7.5 5H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <p className="text-sm">登録されたタスクはありません</p>
+            <p className="text-xs text-gray-300">右上の「＋」からタスクを追加できます</p>
+          </div>
+        ) : (
+          <div
+            className="card-stack"
+            onDragOver={handleContainerDragOver}
+            onDrop={handleContainerDrop}
+          >
+            {incompleteTasks.map((task, index) => (
+              <React.Fragment key={getTaskKey(task)}>
+                {renderTaskCard(task, { index, draggable: dropEnabled })}
+              </React.Fragment>
+            ))}
 
-        {completedTasks.length > 0 && (
-          <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
-            <span className="flex-1 h-px bg-gray-200" />
-            <span className="tracking-wide">完了済み</span>
-            <span className="flex-1 h-px bg-gray-200" />
+            {completedTasks.length > 0 && (
+              <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
+                <span className="flex-1 h-px bg-gray-200" />
+                <span className="tracking-wide">完了済み</span>
+                <span className="flex-1 h-px bg-gray-200" />
+              </div>
+            )}
+
+            {completedTasks.map((task) => renderTaskCard(task))}
           </div>
         )}
-
-        {completedTasks.map((task) => renderTaskCard(task))}
       </div>
     </div>
   );
