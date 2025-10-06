@@ -257,7 +257,6 @@ function App() {
   const [isMouseDown, setIsMouseDown] = useState(false);
   
   // ハンバーガーメニューの開閉状態
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   // 通知システム
   const { cancelScheduleNotifications, sendTestNotification } = useNotifications(notificationEntries);
@@ -359,18 +358,6 @@ function App() {
   }, [auth?.isLoading, userId, loadLocalSchedules, loadLocalTasks, refreshFromSupabase, replaceState, commitTasks]);
   
   // メニュー外クリックでメニューを閉じる
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (isMenuOpen && !event.target.closest('[data-menu-container]')) {
-        setIsMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isMenuOpen]);
   
   // 画面サイズの監視
   useEffect(() => {
@@ -1420,107 +1407,13 @@ function App() {
         </>
       )}
       <main 
-        className="flex-1 p-2 overflow-hidden flex relative"
+        className="flex-1 px-2 py-2 overflow-hidden flex relative"
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseDown={handleMouseDown}
         ref={layoutContainerRef}
       >
-        {/* ハンバーガーメニュー */}
-        <div 
-          className={`
-            fixed bottom-4 z-30 transition-all duration-300
-            ${isMobile && isTimelineOpen ? 'right-96' : 'right-4'}
-          `}
-          data-menu-container
-        >
-          {/* メニューボタン */}
-          <button
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className={`
-              w-8 h-8 rounded-full shadow-md transition-all duration-200 flex items-center justify-center relative
-              bg-white border border-gray-200 hover:border-indigo-300 hover:shadow-lg hover:scale-105 cursor-pointer
-              ${isMenuOpen ? 'bg-indigo-50 border-indigo-400 scale-105 shadow-lg' : ''}
-            `}
-            title={isMenuOpen ? "メニューを閉じる" : "メニューを開く"}
-          >
-            {/* ハンバーガー → × アニメーション */}
-            <div className="relative w-3 h-3 flex items-center justify-center">
-              {/* 1本目の線 */}
-              <div className={`
-                absolute w-3 h-0.5 rounded-full transition-all duration-300 
-                ${isMenuOpen 
-                  ? 'bg-indigo-600 rotate-45' 
-                  : 'bg-gray-600 rotate-0 -translate-y-1'
-                }
-              `}></div>
-              
-              {/* 2本目の線（中央、×の時は消える） */}
-              <div className={`
-                absolute w-3 h-0.5 rounded-full transition-all duration-300
-                ${isMenuOpen 
-                  ? 'bg-indigo-600 opacity-0 scale-0' 
-                  : 'bg-gray-600 opacity-100 scale-100'
-                }
-              `}></div>
-              
-              {/* 3本目の線 */}
-              <div className={`
-                absolute w-3 h-0.5 rounded-full transition-all duration-300
-                ${isMenuOpen 
-                  ? 'bg-indigo-600 -rotate-45' 
-                  : 'bg-gray-600 rotate-0 translate-y-1'
-                }
-              `}></div>
-            </div>
-          </button>
-          {/* メニュー項目 */}
-          {isMenuOpen && (
-            <div className={`
-              absolute bottom-10 right-0 bg-white rounded-lg shadow-xl border border-gray-100 py-1 min-w-[120px]
-              transition-all duration-200
-              ${isMenuOpen ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-2'}
-            `}>
-              <button
-                onClick={() => {
-                  undo();
-                  setIsMenuOpen(false);
-                }}
-                disabled={!canUndo}
-                className={`
-                  w-full flex items-center gap-2 px-3 py-2 text-sm transition-all duration-200 text-left bg-white
-                  ${canUndo 
-                    ? 'text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 cursor-pointer' 
-                    : 'text-gray-400 cursor-not-allowed'
-                  }
-                `}
-                title={`Ctrl+Z${canUndo ? '' : ' - 利用不可'}`}
-              >
-                <span className="text-sm">↩️</span>
-                <span className="font-medium">元に戻す</span>
-              </button>
-              <div className="border-t border-gray-100 mx-1"></div>
-              <button
-                onClick={() => {
-                  redo();
-                  setIsMenuOpen(false);
-                }}
-                disabled={!canRedo}
-                className={`
-                  w-full flex items-center gap-2 px-3 py-2 text-sm transition-all duration-200 text-left bg-white
-                  ${canRedo 
-                    ? 'text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 cursor-pointer' 
-                    : 'text-gray-400 cursor-not-allowed'
-                  }
-                `}
-                title={`Ctrl+Shift+Z${canRedo ? '' : ' - 利用不可'}`}
-              >
-                <span className="text-sm">↪️</span>
-                <span className="font-medium">やり直し</span>
-              </button>
-            </div>
-          )}
-        </div>
+        
 
         {/* モバイル表示 */}
         {isMobile ? (

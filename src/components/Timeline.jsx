@@ -1,6 +1,12 @@
-import React, { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import MemoWithLinks from './MemoWithLinks';
 import TaskArea from './TaskArea';
+
+const ALL_DAY_MIN_HEIGHT = 120;
+const TIMELINE_MIN_HEIGHT = 120;
+const VIEWPORT_PADDING = 8;
+const CARD_BOTTOM_MARGIN = 0;
+const RESIZE_HANDLE_HEIGHT = 12;
 
 const isSchedulePast = (schedule, selectedDate) => {
 	if (!selectedDate) return false;
@@ -71,12 +77,113 @@ const Timeline = ({
 	const [resizeStartY, setResizeStartY] = useState(0);
 	const [resizeStartHeight, setResizeStartHeight] = useState(0);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
+	const [cardMaxHeight, setCardMaxHeight] = useState(null);
+	const cardRef = useRef(null);
 	const timelineRef = useRef(null);
+	const allDaySectionRef = useRef(null);
+	const headerRef = useRef(null);
+	const resizeLimitsRef = useRef({ maxHeight: ALL_DAY_MIN_HEIGHT });
+
+	const computeAllDayMaxHeight = useCallback(
+		(fallback = 600) => {
+			const minHeight = ALL_DAY_MIN_HEIGHT;
+			const headerHeight = headerRef.current?.offsetHeight ?? 0;
+			const effectiveCardMax = cardMaxHeight ?? fallback;
+			const structuralReserve = headerHeight + TIMELINE_MIN_HEIGHT + RESIZE_HANDLE_HEIGHT;
+			const limit = effectiveCardMax - structuralReserve;
+			return Math.max(minHeight, limit);
+		},
+		[cardMaxHeight]
+	);
 
 	const currentTab = activeTab === 'tasks' ? 'tasks' : 'timeline';
 	const showTimeline = currentTab === 'timeline';
 	const showTasks = currentTab === 'tasks';
 	const availableTasks = Array.isArray(tasks) ? tasks : [];
+
+	useLayoutEffect(() => {
+		if (!showTimeline) return undefined;
+		if (typeof window === 'undefined') return undefined;
+
+		let frame = null;
+		const measure = () => {
+			const cardEl = cardRef.current;
+			if (!cardEl) return;
+			const cardRect = cardEl.getBoundingClientRect();
+			const viewportAvailable = window.innerHeight - cardRect.top - VIEWPORT_PADDING - CARD_BOTTOM_MARGIN;
+			const parentEl = cardEl.parentElement;
+			const parentAvailable = parentEl ? parentEl.clientHeight - CARD_BOTTOM_MARGIN : Number.POSITIVE_INFINITY;
+			const candidates = [viewportAvailable, parentAvailable].filter((value) => Number.isFinite(value) && value > 0);
+			if (!candidates.length) return;
+			const headerHeight = headerRef.current?.offsetHeight ?? 0;
+			const minimumCardHeight = headerHeight + ALL_DAY_MIN_HEIGHT + TIMELINE_MIN_HEIGHT + RESIZE_HANDLE_HEIGHT;
+			const nextMax = Math.max(minimumCardHeight, Math.min(...candidates));
+			setCardMaxHeight(nextMax);
+		};
+
+		const update = () => {
+			if (frame) {
+				cancelAnimationFrame(frame);
+			}
+			frame = requestAnimationFrame(measure);
+		};
+
+		update();
+		window.addEventListener('resize', update);
+
+		const cardEl = cardRef.current;
+		const parentEl = cardEl?.parentElement;
+		let resizeObserver;
+		if (parentEl && typeof ResizeObserver !== 'undefined') {
+			resizeObserver = new ResizeObserver(update);
+			resizeObserver.observe(parentEl);
+		}
+
+		return () => {
+			window.removeEventListener('resize', update);
+			if (resizeObserver) {
+				resizeObserver.disconnect();
+			}
+			if (frame) {
+				cancelAnimationFrame(frame);
+			}
+		};
+	}, [showTimeline]);
+
+	useEffect(() => {
+		if (typeof window === 'undefined' || !showTimeline) return undefined;
+		let frame = null;
+		const handleResize = () => {
+			if (frame) {
+				cancelAnimationFrame(frame);
+			}
+			frame = requestAnimationFrame(() => {
+				setAllDayHeight((previous) => {
+					if (isResizing) {
+						return previous;
+					}
+					const maxHeight = computeAllDayMaxHeight(previous);
+					return Math.min(Math.max(ALL_DAY_MIN_HEIGHT, previous), maxHeight);
+				});
+			});
+		};
+
+		window.addEventListener('resize', handleResize);
+		return () => {
+			window.removeEventListener('resize', handleResize);
+			if (frame) {
+				cancelAnimationFrame(frame);
+			}
+		};
+	}, [computeAllDayMaxHeight, isResizing, showTimeline]);
+
+	useEffect(() => {
+		if (!showTimeline || isResizing) return;
+		const maxHeight = computeAllDayMaxHeight(allDayHeight);
+		if (allDayHeight > maxHeight) {
+			setAllDayHeight(maxHeight);
+		}
+	}, [allDayHeight, computeAllDayMaxHeight, isResizing, showTimeline]);
 
 	const timelineEntries = useMemo(() => (Array.isArray(schedules) ? schedules : []), [schedules]);
 	const scheduleEntries = useMemo(
@@ -153,17 +260,16 @@ const Timeline = ({
 
 	useEffect(() => {
 		const handleMouseMove = (event) => {
-			if (!isResizing || !timelineRef.current) return;
+			if (!isResizing) return;
 
-			const rect = timelineRef.current.getBoundingClientRect();
-			const headerHeight = 64;
-			const minHeight = 120;
-			const maxAvailable = rect.height - headerHeight - 120;
-			const maxHeight = Math.max(minHeight, maxAvailable);
-
+			const maxHeight = resizeLimitsRef.current?.maxHeight ?? computeAllDayMaxHeight();
 			const deltaY = event.clientY - resizeStartY;
-			const newHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartHeight + deltaY));
-			setAllDayHeight(newHeight);
+			const candidateHeight = resizeStartHeight + deltaY;
+			const clampedHeight = Math.max(
+				ALL_DAY_MIN_HEIGHT,
+				Math.min(maxHeight, candidateHeight)
+			);
+			setAllDayHeight(clampedHeight);
 		};
 
 		const handleMouseUp = () => {
@@ -181,13 +287,16 @@ const Timeline = ({
 			document.removeEventListener('mouseup', handleMouseUp);
 			document.body.style.userSelect = '';
 		};
-	}, [isResizing, resizeStartY, resizeStartHeight]);
+	}, [computeAllDayMaxHeight, isResizing, resizeStartY, resizeStartHeight]);
 
 	const handleResizeStart = (event) => {
 		event.preventDefault();
 		setIsResizing(true);
 		setResizeStartY(event.clientY);
 		setResizeStartHeight(allDayHeight);
+		resizeLimitsRef.current = {
+			maxHeight: computeAllDayMaxHeight(),
+		};
 	};
 
 	useLayoutEffect(() => {
@@ -198,12 +307,8 @@ const Timeline = ({
 					const settings = await window.electronAPI.getSettings();
 					if (!mounted) return;
 					const value = typeof settings.allDayHeight === 'number' ? settings.allDayHeight : 200;
-					const container = timelineRef.current;
-					const rect = container ? container.getBoundingClientRect() : null;
-					const headerHeight = 64;
-					const minHeight = 120;
-					const dynamicMax = rect ? Math.max(minHeight, rect.height - headerHeight - 120) : 600;
-					const clamped = Math.min(Math.max(value, minHeight), dynamicMax);
+					const dynamicMax = computeAllDayMaxHeight();
+					const clamped = Math.min(Math.max(value, ALL_DAY_MIN_HEIGHT), dynamicMax);
 					setAllDayHeight(clamped);
 					setHeightLoaded(true);
 				} else {
@@ -214,7 +319,9 @@ const Timeline = ({
 					}
 					const raw = parseInt(stored, 10);
 					if (!Number.isNaN(raw)) {
-						setAllDayHeight(raw);
+						const dynamicMax = computeAllDayMaxHeight();
+						const clamped = Math.min(Math.max(raw, ALL_DAY_MIN_HEIGHT), dynamicMax);
+						setAllDayHeight(clamped);
 					}
 					setHeightLoaded(true);
 				}
@@ -227,7 +334,7 @@ const Timeline = ({
 		return () => {
 			mounted = false;
 		};
-	}, []);
+	}, [computeAllDayMaxHeight]);
 
 	useEffect(() => {
 		if (!heightLoaded || isResizing) return;
@@ -237,6 +344,7 @@ const Timeline = ({
 			localStorage.setItem('allDayHeight', String(allDayHeight));
 		}
 	}, [allDayHeight, isResizing, heightLoaded]);
+
 
 	const handleAllDayDragStart = (event, schedule) => {
 		if (isMemoHovering || !schedule?.id || schedule?.isTask) {
@@ -498,17 +606,18 @@ const Timeline = ({
 	};
 
 	const renderAllDaySection = () => {
-		const clampedHeight = Math.max(120, allDayHeight || 120);
+		const clampedHeight = Math.max(ALL_DAY_MIN_HEIGHT, allDayHeight || ALL_DAY_MIN_HEIGHT);
 		const hasAllDaySchedules = sortedAllDaySchedules.length > 0;
 		const hasAllDayTasks = sortedAllDayTasks.length > 0;
 
 		return (
 			<div
+				ref={allDaySectionRef}
 				className="relative border-b border-slate-200 bg-white"
 				style={{ height: `${clampedHeight}px` }}
 			>
-				<div className="flex h-full flex-col px-4 py-3">
-					<div className="flex items-center justify-between pb-2 text-[11px] text-slate-500">
+				<div className="flex h-full min-h-0 flex-col py-3">
+					<div className="flex items-center justify-between px-4 pb-2 text-[11px] text-slate-500">
 						<div className="inline-flex items-center gap-2">
 							<span className="inline-flex h-6 items-center rounded-full bg-amber-100 px-3 font-semibold text-amber-700">
 								終日
@@ -521,35 +630,37 @@ const Timeline = ({
 							</span>
 						)}
 					</div>
-					<div className="flex-1 overflow-auto pr-1 custom-scrollbar">
-						{!hasAllDaySchedules && !hasAllDayTasks ? (
-							<div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-slate-400">
-								<span>終日の予定やタスクはありません</span>
-								<span className="text-[11px] text-slate-300">「＋」ボタンから項目を追加できます</span>
-							</div>
-						) : (
-							<div className="flex flex-col gap-3">
-								{sortedAllDaySchedules.map((schedule, index) => renderAllDayCard(schedule, index))}
-								{hasAllDaySchedules && (
-									<div
-										className={`h-12 rounded-xl border-2 border-dashed transition-colors duration-200 ${
-										dragOverIndex === sortedAllDaySchedules.length
-											? 'border-indigo-300 bg-indigo-50/60'
-											: 'border-transparent'
-										}`}
-										onDragOver={(event) => handleAllDayDragOver(event, sortedAllDaySchedules.length)}
-										onDragLeave={handleAllDayDragLeave}
-										onDrop={(event) => handleAllDayDrop(event, sortedAllDaySchedules.length)}
-									>
-										<span className="sr-only">ここにドロップして末尾に移動</span>
-									</div>
-								)}
+					<div className="flex-1 min-h-0">
+						<div className="custom-scrollbar h-full overflow-y-auto px-4 pb-3">
+							{!hasAllDaySchedules && !hasAllDayTasks ? (
+								<div className="flex min-h-full flex-col items-center justify-center gap-2 text-xs text-slate-400">
+									<span>終日の予定やタスクはありません</span>
+									<span className="text-[11px] text-slate-300">「＋」ボタンから項目を追加できます</span>
+								</div>
+							) : (
+								<div className="flex flex-col gap-3">
+									{sortedAllDaySchedules.map((schedule, index) => renderAllDayCard(schedule, index))}
+									{hasAllDaySchedules && draggedAllDayId && (
+										<div
+											className={`h-12 rounded-xl border-2 border-dashed transition-colors duration-200 ${
+												dragOverIndex === sortedAllDaySchedules.length
+													? 'border-indigo-300 bg-indigo-50/60'
+													: 'border-transparent'
+											}`}
+											onDragOver={(event) => handleAllDayDragOver(event, sortedAllDaySchedules.length)}
+											onDragLeave={handleAllDayDragLeave}
+											onDrop={(event) => handleAllDayDrop(event, sortedAllDaySchedules.length)}
+										>
+											<span className="sr-only">ここにドロップして末尾に移動</span>
+										</div>
+									)}
 
-								{sortedAllDayTasks.map((task, index) =>
-									renderAllDayCard(task, sortedAllDaySchedules.length + index)
-								)}
-							</div>
-						)}
+									{sortedAllDayTasks.map((task, index) =>
+										renderAllDayCard(task, sortedAllDaySchedules.length + index)
+									)}
+								</div>
+							)}
+						</div>
 					</div>
 				</div>
 				<div
@@ -570,45 +681,59 @@ const Timeline = ({
 
 	const renderTimelineSection = () => (
 		<div className="flex-1 min-h-0">
-			<div className="flex h-full flex-col">
-				<div className="flex-1 overflow-auto px-4 py-4 custom-scrollbar">
-					<div className="flex items-center gap-3 pb-3 text-[11px] font-semibold text-slate-400">
-						<span className="h-px flex-1 bg-slate-200" />
-						<span className="tracking-wide">時間指定</span>
-						<span className="h-px flex-1 bg-slate-200" />
+			<div className="flex h-full min-h-0 flex-col">
+				<div className="flex-1 min-h-0">
+					<div className="custom-scrollbar h-full overflow-y-auto px-4 pb-[18px]">
+						<div className="py-4">
+							<div className="flex items-center gap-3 pb-3 text-[11px] font-semibold text-slate-400">
+								<span className="h-px flex-1 bg-slate-200" />
+								<span className="tracking-wide">時間指定</span>
+								<span className="h-px flex-1 bg-slate-200" />
+							</div>
+							{sortedTimeItems.length === 0 ? (
+								<div className="flex min-h-[calc(100%-2rem)] flex-col items-center justify-center gap-2 text-slate-400">
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										className="h-12 w-12 text-slate-200"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+									>
+										<path
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											strokeWidth="1.5"
+											d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+										/>
+									</svg>
+									<span className="text-sm">時間付きの予定はありません</span>
+									<span className="text-xs text-slate-300">「＋」ボタンから予定を追加できます</span>
+								</div>
+							) : (
+								<div className="space-y-4 pb-2">
+									{sortedTimeItems.map((schedule, index) => renderTimeCard(schedule, index))}
+								</div>
+							)}
+						</div>
 					</div>
-					{sortedTimeItems.length === 0 ? (
-						<div className="flex h-[calc(100%-2rem)] flex-col items-center justify-center gap-2 text-slate-400">
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								className="h-12 w-12 text-slate-200"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-							>
-								<path
-									strokeLinecap="round"
-									strokeLinejoin="round"
-									strokeWidth="1.5"
-									d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-								/>
-							</svg>
-							<span className="text-sm">時間付きの予定はありません</span>
-							<span className="text-xs text-slate-300">「＋」ボタンから予定を追加できます</span>
-						</div>
-					) : (
-						<div className="space-y-4">
-							{sortedTimeItems.map((schedule, index) => renderTimeCard(schedule, index))}
-						</div>
-					)}
 				</div>
 			</div>
 		</div>
 	);
 
+	const cardStyle = useMemo(() => {
+		if (!cardMaxHeight) return undefined;
+		const value = `${cardMaxHeight}px`;
+		return { height: value, maxHeight: value };
+	}, [cardMaxHeight]);
+
 	return (
-		<div className="flex h-full flex-col rounded-3xl border border-slate-200 bg-white shadow-xl">
-			<header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 rounded-t-3xl">
+		<div
+			ref={cardRef}
+			className="flex h-full min-h-0 flex-col rounded-3xl border border-slate-200 bg-white shadow-xl"
+			style={cardStyle}
+		>
+			<header ref={headerRef} className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 rounded-t-3xl">
 				<div className="flex flex-wrap items-center gap-3">
 					<div className="inline-flex items-center rounded-full bg-slate-100 p-1">
 						{tabs.map((tab) => {
@@ -653,7 +778,10 @@ const Timeline = ({
 				{showTasks ? (
 					<TaskArea tasks={availableTasks} onEdit={onEdit} onToggleTask={onToggleTask} />
 				) : (
-					<div ref={timelineRef} className="flex h-full flex-col overflow-hidden bg-slate-100/70">
+					<div
+						ref={timelineRef}
+						className="flex h-full min-h-0 flex-col overflow-hidden rounded-b-3xl bg-slate-100/70"
+					>
 						{renderAllDaySection()}
 						{renderTimelineSection()}
 					</div>

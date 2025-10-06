@@ -114,6 +114,7 @@ button:focus-visible {
 .custom-scrollbar {
   scrollbar-width: thin !important;
   scrollbar-color: #94a3b8 #f8fafc !important;
+  scrollbar-gutter: stable both-edges;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -125,7 +126,6 @@ button:focus-visible {
 .custom-scrollbar::-webkit-scrollbar-track {
   background: #f8fafc !important;
   border-radius: 6px !important;
-  margin: 2px !important;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
@@ -155,6 +155,7 @@ button:focus-visible {
 .emoji-scrollbar {
   scrollbar-width: thin !important;
   scrollbar-color: #818cf8 #f0f4ff !important;
+  scrollbar-gutter: stable both-edges;
 }
 
 .emoji-scrollbar::-webkit-scrollbar {
@@ -166,7 +167,6 @@ button:focus-visible {
 .emoji-scrollbar::-webkit-scrollbar-track {
   background: #f0f4ff !important;
   border-radius: 6px !important;
-  margin: 2px !important;
   border: 1px solid #e0e7ff !important;
 }
 
