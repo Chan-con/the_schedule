@@ -73,7 +73,7 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
   }
 
   return (
-    <div className="flex-1 custom-scrollbar overflow-auto space-y-2 pr-2">
+    <div className="flex-1 custom-scrollbar overflow-auto space-y-3 pr-2 pt-3 pb-4">
       {sortedTasks.map((task) => {
         const isCompleted = !!task?.completed;
         const isStandaloneTask = !!task?.isStandaloneTask;
@@ -104,16 +104,10 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
                     {task?.emoji ? `${task.emoji} ` : ''}
                     {task?.name || '名称未設定のタスク'}
                   </span>
-                  {isStandaloneTask ? (
-                    <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                      独立タスク
+                  {!isStandaloneTask && task?.allDay && (
+                    <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                      終日
                     </span>
-                  ) : (
-                    task?.allDay && (
-                      <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                        終日
-                      </span>
-                    )
                   )}
                 </div>
 
