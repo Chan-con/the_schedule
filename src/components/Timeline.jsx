@@ -351,7 +351,7 @@ const Timeline = ({
 		return (
 			<div
 				key={key}
-				className={`group relative w-full overflow-hidden rounded-xl border border-indigo-100 bg-white p-4 pl-6 text-sm shadow-sm transition-all duration-200 ${
+				className={`group relative w-full overflow-hidden rounded-xl border border-indigo-100 bg-white p-4 pl-5 text-sm shadow-sm transition-all duration-200 ${
 					isDragged ? 'opacity-60 ring-2 ring-indigo-200' : ''
 				} ${isDropTarget ? 'ring-2 ring-indigo-300 bg-indigo-50/70' : ''} ${
 					shouldDimForTask(schedule) ? 'opacity-60' : ''
@@ -365,8 +365,8 @@ const Timeline = ({
 				onClick={() => onEdit && onEdit(schedule)}
 				onDoubleClick={() => onEdit && onEdit(schedule)}
 			>
-				<span className="absolute inset-y-3 left-0 w-2 rounded-full bg-indigo-300" aria-hidden="true" />
-				<div className="relative ml-4 flex flex-col gap-1">
+				<span className="absolute inset-y-3 left-0 w-1 rounded-full bg-amber-400" aria-hidden="true" />
+				<div className="relative ml-3 flex flex-col gap-1">
 					<div className="flex items-start justify-between gap-2">
 						<div className="flex flex-wrap items-center gap-2">
 							<span
