@@ -213,16 +213,9 @@ const Timeline = ({
 		[taskEntries]
 	);
 
-	const sortedAllDaySchedules = useMemo(() => {
-		return [...allDaySchedules].sort((a, b) => {
-			const orderDiff = (a?.allDayOrder ?? 0) - (b?.allDayOrder ?? 0);
-			if (orderDiff !== 0) return orderDiff;
-			return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
-		});
-	}, [allDaySchedules]);
-
-	const sortedAllDayTasks = useMemo(() => {
-		return [...allDayTasks].sort((a, b) => {
+	const sortedAllDayItems = useMemo(() => {
+		const combined = [...allDaySchedules, ...allDayTasks];
+		return combined.sort((a, b) => {
 			if (!!a?.completed !== !!b?.completed) {
 				return a.completed ? 1 : -1;
 			}
@@ -230,7 +223,7 @@ const Timeline = ({
 			if (orderDiff !== 0) return orderDiff;
 			return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
 		});
-	}, [allDayTasks]);
+	}, [allDaySchedules, allDayTasks]);
 
 	const sortedTimeItems = useMemo(() => {
 		const allItems = [...timeSchedules, ...timeTasks];
@@ -348,7 +341,7 @@ const Timeline = ({
 
 
 	const handleAllDayDragStart = (event, schedule) => {
-		if (isMemoHovering || !schedule?.id || schedule?.isTask) {
+		if (isMemoHovering || !schedule?.id) {
 			event.preventDefault();
 			return;
 		}
@@ -389,7 +382,7 @@ const Timeline = ({
 
 		if (!draggedAllDayId) return;
 
-		const currentOrder = sortedAllDaySchedules;
+		const currentOrder = sortedAllDayItems;
 		const draggedSchedule = currentOrder.find((schedule) => schedule.id === draggedAllDayId);
 		if (!draggedSchedule) {
 			setDraggedAllDayId(null);
@@ -465,7 +458,7 @@ const Timeline = ({
 				} ${isDropTarget ? 'ring-2 ring-indigo-300 bg-indigo-50/70' : ''} ${
 					shouldDimForTask(schedule) ? 'opacity-60' : ''
 				}`}
-				draggable={!!schedule?.id && !isTaskItem}
+				draggable={!!schedule?.id}
 				onDragStart={(event) => handleAllDayDragStart(event, schedule)}
 				onDragEnd={handleAllDayDragEnd}
 				onDragOver={(event) => handleAllDayDragOver(event, index)}
@@ -621,8 +614,8 @@ const Timeline = ({
 
 	const renderAllDaySection = () => {
 		const clampedHeight = Math.max(ALL_DAY_MIN_HEIGHT, allDayHeight || ALL_DAY_MIN_HEIGHT);
-		const hasAllDaySchedules = sortedAllDaySchedules.length > 0;
-		const hasAllDayTasks = sortedAllDayTasks.length > 0;
+		const totalAllDayItems = sortedAllDayItems.length;
+		const hasAllDayItems = totalAllDayItems > 0;
 
 		return (
 			<div
@@ -638,39 +631,35 @@ const Timeline = ({
 							</span>
 							<span className="text-slate-400">(ドラッグで並び替え可能)</span>
 						</div>
-						{(hasAllDaySchedules || hasAllDayTasks) && (
+						{hasAllDayItems && (
 							<span className="text-slate-400">
-								{sortedAllDaySchedules.length + sortedAllDayTasks.length}件
+								{totalAllDayItems}件
 							</span>
 						)}
 					</div>
 					<div className="flex-1 min-h-0">
 						<div className="custom-scrollbar h-full overflow-y-auto px-4 pb-3">
-							{!hasAllDaySchedules && !hasAllDayTasks ? (
+							{!hasAllDayItems ? (
 								<div className="flex min-h-full flex-col items-center justify-center gap-2 text-xs text-slate-400">
 									<span>終日の予定やタスクはありません</span>
 									<span className="text-[11px] text-slate-300">「＋」ボタンから項目を追加できます</span>
 								</div>
 							) : (
 								<div className="card-stack">
-									{sortedAllDaySchedules.map((schedule, index) => renderAllDayCard(schedule, index))}
-									{hasAllDaySchedules && draggedAllDayId && (
+									{sortedAllDayItems.map((item, index) => renderAllDayCard(item, index))}
+									{draggedAllDayId && (
 										<div
 											className={`h-12 rounded-lg border-2 border-dashed transition-colors duration-200 ${
-												dragOverIndex === sortedAllDaySchedules.length
+												dragOverIndex === totalAllDayItems
 													? 'border-indigo-300 bg-indigo-50/60'
 													: 'border-transparent'
 											}`}
-											onDragOver={(event) => handleAllDayDragOver(event, sortedAllDaySchedules.length)}
+											onDragOver={(event) => handleAllDayDragOver(event, totalAllDayItems)}
 											onDragLeave={handleAllDayDragLeave}
-											onDrop={(event) => handleAllDayDrop(event, sortedAllDaySchedules.length)}
+											onDrop={(event) => handleAllDayDrop(event, totalAllDayItems)}
 										>
 											<span className="sr-only">ここにドロップして末尾に移動</span>
 										</div>
-									)}
-
-									{sortedAllDayTasks.map((task, index) =>
-										renderAllDayCard(task, sortedAllDaySchedules.length + index)
 									)}
 								</div>
 							)}

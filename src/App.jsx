@@ -23,7 +23,6 @@ import {
   createTaskForUser,
   updateTaskForUser,
   deleteTaskForUser,
-  upsertTasksForUser,
 } from './utils/supabaseTasks';
 
 // サンプルデータ - 今日の日付に合わせて調整
@@ -148,10 +147,6 @@ function App() {
     state: schedules,
     setState: setSchedules,
     replaceState,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
     historyLength,
     currentIndex,
     lastActionType
@@ -909,27 +904,26 @@ function App() {
     const updates = Array.isArray(updatedSchedule) ? updatedSchedule : [updatedSchedule];
     if (updates.length === 0) return;
 
-    const normalizedUpdates = updates
-      .filter((item) => !item?.isTask)
-      .map(normalizeSchedule);
+    const normalizedUpdates = updates.map(normalizeSchedule);
+    const scheduleUpdates = normalizedUpdates.filter((item) => !item?.isStandaloneTask);
 
-    if (normalizedUpdates.length === 0) {
+    if (scheduleUpdates.length === 0) {
       return;
     }
     console.info('[ScheduleUpdate] request', JSON.stringify({
       actionType,
-      count: normalizedUpdates.length,
-      ids: normalizedUpdates.map((item) => item.id),
+      count: scheduleUpdates.length,
+      ids: scheduleUpdates.map((item) => item.id),
       timestamp: new Date().toISOString(),
     }));
     const current = schedulesRef.current;
-    const updateMap = new Map(normalizedUpdates.map((item) => [item.id, item]));
+    const updateMap = new Map(scheduleUpdates.map((item) => [item.id, item]));
 
     let optimistic = current.map((schedule) =>
       updateMap.has(schedule.id) ? { ...schedule, ...updateMap.get(schedule.id) } : schedule
     );
 
-    const affectedDates = normalizedUpdates.filter((item) => item.allDay).map((item) => item.date);
+    const affectedDates = scheduleUpdates.filter((item) => item.allDay).map((item) => item.date);
     if (affectedDates.length > 0) {
       optimistic = rebalanceAllDayOrdersForDates(optimistic, affectedDates);
     }
@@ -937,16 +931,16 @@ function App() {
     commitSchedules(optimistic, actionType);
     console.info('[ScheduleUpdate] optimistic applied', JSON.stringify({
       actionType,
-      count: normalizedUpdates.length,
+      count: scheduleUpdates.length,
     }));
 
     if (userId) {
       (async () => {
-        const jobMeta = { kind: 'upsertSchedules', actionType, count: normalizedUpdates.length };
+        const jobMeta = { kind: 'upsertSchedules', actionType, count: scheduleUpdates.length };
         beginSupabaseJob(jobMeta);
         const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
         try {
-          const persisted = await upsertSchedulesForUser(normalizedUpdates, userId);
+          const persisted = await upsertSchedulesForUser(scheduleUpdates, userId);
           if (Array.isArray(persisted) && persisted.length > 0) {
             let latest = schedulesRef.current;
             const persistedMap = new Map(persisted.map((item) => [item.id, item]));

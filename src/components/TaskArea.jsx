@@ -144,6 +144,23 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onReorderTasks }) => {
     resetDragState();
   }, [resetDragState]);
 
+  const dropEnabled = typeof onReorderTasks === 'function';
+
+  const handleContainerDragOver = useCallback((event) => {
+    if (!dropEnabled || draggedIndex == null) return;
+    if (event.target !== event.currentTarget) return;
+    event.preventDefault();
+    setDragOverIndex(incompleteTasks.length);
+  }, [dropEnabled, draggedIndex, incompleteTasks.length]);
+
+  const handleContainerDrop = useCallback((event) => {
+    if (!dropEnabled || draggedIndex == null) return;
+    if (event.target !== event.currentTarget) return;
+    event.preventDefault();
+    event.stopPropagation();
+    finalizeReorder(incompleteTasks.length);
+  }, [dropEnabled, draggedIndex, finalizeReorder, incompleteTasks.length]);
+
   if (taskList.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-2">
@@ -240,23 +257,6 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onReorderTasks }) => {
       </div>
     );
   };
-
-  const dropEnabled = typeof onReorderTasks === 'function';
-
-  const handleContainerDragOver = useCallback((event) => {
-    if (!dropEnabled || draggedIndex == null) return;
-    if (event.target !== event.currentTarget) return;
-    event.preventDefault();
-    setDragOverIndex(incompleteTasks.length);
-  }, [dropEnabled, draggedIndex, incompleteTasks.length]);
-
-  const handleContainerDrop = useCallback((event) => {
-    if (!dropEnabled || draggedIndex == null) return;
-    if (event.target !== event.currentTarget) return;
-    event.preventDefault();
-    event.stopPropagation();
-    finalizeReorder(incompleteTasks.length);
-  }, [dropEnabled, draggedIndex, finalizeReorder, incompleteTasks.length]);
 
   return (
     <div className="flex-1 custom-scrollbar overflow-auto pr-2 pt-2 pb-3">

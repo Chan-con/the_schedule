@@ -326,22 +326,65 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
             if (draggedSchedule?.allDay) {
               let hoverInfo = null;
               if (hoveredDate) {
-                const element = document.elementFromPoint(e.clientX, e.clientY);
-                const scheduleElement = element?.closest('.schedule-item[data-schedule-id]');
-                if (scheduleElement) {
-                  const isAllDayTarget = scheduleElement.getAttribute('data-all-day') === 'true';
-                  const scheduleDate = scheduleElement.closest('button[data-date]')?.getAttribute('data-date');
-                  if (isAllDayTarget && scheduleDate) {
-                    const rectSchedule = scheduleElement.getBoundingClientRect();
-                    const position = e.clientY < rectSchedule.top + rectSchedule.height / 2 ? 'before' : 'after';
-                    const scheduleId = Number(scheduleElement.getAttribute('data-schedule-id'));
-                    hoverInfo = { scheduleId, position, date: scheduleDate };
+                const calendarElement = calendarRef.current;
+                const dateButton = calendarElement?.querySelector(`button[data-date="${hoveredDate}"]`);
+                if (dateButton) {
+                  const scheduleElements = Array.from(
+                    dateButton.querySelectorAll('.schedule-item[data-schedule-id][data-all-day="true"]')
+                  );
+                  const draggedScheduleId = String(draggedSchedule.id);
+                  const otherElements = scheduleElements.filter(
+                    (el) => el.getAttribute('data-schedule-id') !== draggedScheduleId
+                  );
+
+                  if (otherElements.length > 0) {
+                    const pointerY = e.clientY;
+                    let matched = null;
+                    let insertionIndex = 0;
+
+                    for (let index = 0; index < otherElements.length; index += 1) {
+                      const element = otherElements[index];
+                      const rectSchedule = element.getBoundingClientRect();
+                      const scheduleId = element.getAttribute('data-schedule-id');
+                      const midpoint = rectSchedule.top + rectSchedule.height / 2;
+
+                      if (pointerY < midpoint) {
+                        matched = {
+                          scheduleId,
+                          position: 'before',
+                          date: hoveredDate,
+                          index: insertionIndex,
+                        };
+                        break;
+                      }
+
+                      insertionIndex += 1;
+                      matched = {
+                        scheduleId,
+                        position: 'after',
+                        date: hoveredDate,
+                        index: insertionIndex,
+                      };
+                    }
+
+                    if (!matched) {
+                      const afterIndex = otherElements.length;
+                      const lastElement = otherElements[otherElements.length - 1];
+                      matched = {
+                        scheduleId: lastElement.getAttribute('data-schedule-id'),
+                        position: 'after',
+                        date: hoveredDate,
+                        index: afterIndex,
+                      };
+                    }
+
+                    hoverInfo = matched;
+                  } else {
+                    hoverInfo = { scheduleId: null, position: 'after', date: hoveredDate, index: 0 };
                   }
                 }
-                if (!hoverInfo) {
-                  hoverInfo = { scheduleId: null, position: 'after', date: hoveredDate };
-                }
               }
+
               setDragOverScheduleInfo(hoverInfo);
             } else {
               setDragOverScheduleInfo(null);
@@ -400,18 +443,12 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                 return String(a.id).localeCompare(String(b.id));
               });
 
-              const originalOrderIds = sortedAllDay.map(s => s.id);
-              const withoutDragged = sortedAllDay.filter(s => s.id !== draggedSchedule.id);
+              const originalOrderIds = sortedAllDay.map(s => String(s.id));
+              const withoutDragged = sortedAllDay.filter(s => String(s.id) !== String(draggedSchedule.id));
 
               let insertionIndex = withoutDragged.length;
-
-              if (dragOverScheduleInfo.scheduleId && dragOverScheduleInfo.scheduleId !== draggedSchedule.id) {
-                const targetIndex = withoutDragged.findIndex(s => s.id === dragOverScheduleInfo.scheduleId);
-                if (targetIndex !== -1) {
-                  insertionIndex = dragOverScheduleInfo.position === 'before' ? targetIndex : targetIndex + 1;
-                }
-              } else if (!dragOverScheduleInfo.scheduleId) {
-                insertionIndex = dragOverScheduleInfo.position === 'before' ? 0 : withoutDragged.length;
+              if (typeof dragOverScheduleInfo.index === 'number') {
+                insertionIndex = dragOverScheduleInfo.index;
               }
 
               insertionIndex = Math.max(0, Math.min(insertionIndex, withoutDragged.length));
@@ -419,7 +456,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
               const reordered = [...withoutDragged];
               reordered.splice(insertionIndex, 0, draggedSchedule);
 
-              const newOrderIds = reordered.map(s => s.id);
+              const newOrderIds = reordered.map(s => String(s.id));
               const orderChanged = originalOrderIds.length !== newOrderIds.length ||
                 originalOrderIds.some((id, index) => id !== newOrderIds[index]);
 
