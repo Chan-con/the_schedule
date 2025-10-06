@@ -743,10 +743,10 @@ const Timeline = ({
 									key={tab.key}
 									type="button"
 									onClick={() => handleTabButtonClick(tab.key)}
-									className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+									className={`rounded-full border border-transparent px-3 py-1.5 text-xs font-semibold transition-all duration-200 focus:outline-none focus-visible:outline-none active:outline-none active:bg-transparent active:text-indigo-600 hover:border-transparent ${
 										isActive
 											? 'bg-white text-indigo-600 shadow'
-											: 'text-slate-500 hover:text-indigo-500'
+											: 'bg-transparent text-slate-500 hover:text-indigo-500'
 									}`}
 									aria-pressed={isActive}
 								>
