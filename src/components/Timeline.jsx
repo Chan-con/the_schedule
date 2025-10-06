@@ -65,6 +65,7 @@ const Timeline = ({
 	onAddTask,
 	onScheduleUpdate,
 	onToggleTask,
+	onTaskReorder,
 	activeTab = 'timeline',
 	onTabChange,
 	tasks = [],
@@ -796,7 +797,12 @@ const Timeline = ({
 
 			<div className="flex-1 min-h-0 overflow-hidden">
 				{showTasks ? (
-					<TaskArea tasks={availableTasks} onEdit={onEdit} onToggleTask={onToggleTask} />
+					<TaskArea
+						tasks={availableTasks}
+						onEdit={onEdit}
+						onToggleTask={onToggleTask}
+						onReorderTasks={onTaskReorder}
+					/>
 				) : (
 					<div
 						ref={timelineRef}

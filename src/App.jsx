@@ -998,8 +998,14 @@ function App() {
         timestamp: new Date().toISOString(),
       }));
       const updatedTask = normalizeTask({ ...entry, completed });
-      const optimisticTasks = currentTasks.map((item) => (item.id === updatedTask.id ? updatedTask : item));
-      commitTasks(optimisticTasks, 'task_toggle');
+      const withoutTarget = currentTasks.filter((item) => item.id !== updatedTask.id);
+      const incompleteGroup = withoutTarget.filter((item) => !item.completed);
+      const completedGroup = withoutTarget.filter((item) => item.completed);
+      const reordered = completed
+        ? [...incompleteGroup, updatedTask, ...completedGroup]
+        : [...incompleteGroup, updatedTask, ...completedGroup];
+
+      commitTasks(reordered, 'task_toggle');
       console.info('[TaskToggle] optimistic applied', JSON.stringify({
         taskId: updatedTask.id,
         completed,
@@ -1076,6 +1082,28 @@ function App() {
       })();
     }
   }, [beginSupabaseJob, commitSchedules, commitTasks, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
+
+  const handleStandaloneTaskReorder = useCallback((orderedTasks, actionType = 'task_reorder') => {
+    if (!Array.isArray(orderedTasks) || orderedTasks.length === 0) {
+      return;
+    }
+
+    const currentTasks = tasksRef.current;
+    if (orderedTasks.length !== currentTasks.length) {
+      console.warn('[TaskReorder] length mismatch, ignoring', {
+        provided: orderedTasks.length,
+        current: currentTasks.length,
+      });
+      return;
+    }
+
+    const normalized = normalizeTasks(orderedTasks);
+    commitTasks(normalized, actionType);
+    console.info('[TaskReorder] committed', JSON.stringify({
+      actionType,
+      count: normalized.length,
+    }));
+  }, [commitTasks]);
   const handleAdd = (targetDate = null) => {
     // ターゲット日付が指定されていればその日付を使用、なければ選択中の日付を使用
     const dateToUse = targetDate || selectedDate;
@@ -1473,6 +1501,7 @@ function App() {
                         activeTab={timelineActiveTab}
                         onTabChange={setTimelineActiveTab}
                         tasks={tasks}
+                        onTaskReorder={handleStandaloneTaskReorder}
                       />
                     </div>
                   </div>
@@ -1538,6 +1567,7 @@ function App() {
                 activeTab={timelineActiveTab}
                 onTabChange={setTimelineActiveTab}
                 tasks={tasks}
+                onTaskReorder={handleStandaloneTaskReorder}
               />
             </div>
           </>
