@@ -66,6 +66,7 @@ const Timeline = ({
 	onScheduleUpdate,
 	onToggleTask,
 	onTaskReorder,
+	onScheduleDelete,
 	activeTab = 'timeline',
 	onTabChange,
 	tasks = [],
@@ -78,12 +79,41 @@ const Timeline = ({
 	const [resizeStartY, setResizeStartY] = useState(0);
 	const [resizeStartHeight, setResizeStartHeight] = useState(0);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
+	const [isAltPressed, setIsAltPressed] = useState(false);
 	const [cardMaxHeight, setCardMaxHeight] = useState(null);
 	const cardRef = useRef(null);
 	const timelineRef = useRef(null);
 	const allDaySectionRef = useRef(null);
 	const headerRef = useRef(null);
 	const resizeLimitsRef = useRef({ maxHeight: ALL_DAY_MIN_HEIGHT });
+
+	useEffect(() => {
+		const handleKeyDown = (event) => {
+			if (event.altKey) {
+				setIsAltPressed(true);
+			}
+		};
+
+		const handleKeyUp = (event) => {
+			if (!event.altKey) {
+				setIsAltPressed(false);
+			}
+		};
+
+		const handleBlur = () => {
+			setIsAltPressed(false);
+		};
+
+		document.addEventListener('keydown', handleKeyDown);
+		document.addEventListener('keyup', handleKeyUp);
+		window.addEventListener('blur', handleBlur);
+
+		return () => {
+			document.removeEventListener('keydown', handleKeyDown);
+			document.removeEventListener('keyup', handleKeyUp);
+			window.removeEventListener('blur', handleBlur);
+		};
+	}, []);
 
 	const computeAllDayMaxHeight = useCallback(
 		(fallback = 600) => {
@@ -466,11 +496,22 @@ const Timeline = ({
 				onDrop={(event) => handleAllDayDrop(event, index)}
 				onClick={() => onEdit && onEdit(schedule)}
 				onDoubleClick={() => onEdit && onEdit(schedule)}
+				onContextMenu={(event) => {
+					if (!isAltPressed) return;
+					event.preventDefault();
+					event.stopPropagation();
+					if (onScheduleDelete) {
+						onScheduleDelete(schedule);
+					}
+				}}
 			>
 				<span className="absolute inset-y-3 left-0 w-1 rounded-full bg-amber-400" aria-hidden="true" />
 				<div className="relative ml-3 flex flex-col gap-1">
 					<div className="flex items-start justify-between gap-2">
 						<div className="flex flex-wrap items-center gap-2">
+							{isAltPressed && (
+								<span className="mr-1 text-xs" aria-hidden="true">⚡</span>
+							)}
 							<span
 								className={`font-medium ${
 									isTaskItem && isCompleted ? 'text-slate-500 line-through' : isPast ? 'text-slate-500' : 'text-slate-900'
@@ -557,11 +598,22 @@ const Timeline = ({
 					} ${shouldDimForTask(schedule) ? 'opacity-60' : ''}`}
 					onClick={() => onEdit && onEdit(schedule)}
 					onDoubleClick={() => onEdit && onEdit(schedule)}
+					onContextMenu={(event) => {
+						if (!isAltPressed) return;
+						event.preventDefault();
+						event.stopPropagation();
+						if (onScheduleDelete) {
+							onScheduleDelete(schedule);
+						}
+					}}
 				>
 					<span className="absolute inset-y-3 left-0 w-1 rounded-full bg-indigo-300" aria-hidden="true" />
 					<div className="relative ml-2.5 flex flex-wrap items-start gap-3">
 						<div className="flex min-w-0 flex-1 flex-col gap-1">
 							<div className="flex flex-wrap items-center gap-2">
+								{isAltPressed && (
+									<span className="mr-1 text-xs" aria-hidden="true">⚡</span>
+								)}
 								<span
 									className={`truncate font-medium ${
 										isTaskSchedule && isCompleted ? 'line-through text-slate-500' : 'text-slate-900'
@@ -791,6 +843,8 @@ const Timeline = ({
 						onEdit={onEdit}
 						onToggleTask={onToggleTask}
 						onReorderTasks={onTaskReorder}
+						onTaskDelete={onScheduleDelete}
+						isAltPressed={isAltPressed}
 					/>
 				) : (
 					<div

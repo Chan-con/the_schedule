@@ -1492,6 +1492,7 @@ function App() {
                         onAddTask={handleAddTask}
                         onScheduleUpdate={handleScheduleUpdate}
                         onToggleTask={handleToggleTask}
+                        onScheduleDelete={handleScheduleDelete}
                         activeTab={timelineActiveTab}
                         onTabChange={setTimelineActiveTab}
                         tasks={tasks}
@@ -1558,6 +1559,7 @@ function App() {
                 onAddTask={handleAddTask}
                 onScheduleUpdate={handleScheduleUpdate}
                 onToggleTask={handleToggleTask}
+                onScheduleDelete={handleScheduleDelete}
                 activeTab={timelineActiveTab}
                 onTabChange={setTimelineActiveTab}
                 tasks={tasks}
