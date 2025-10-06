@@ -526,23 +526,36 @@ const Timeline = ({
 		);
 	};
 
-	const renderTimeCard = (schedule, index) => {
+	const renderTimeCard = (schedule, index, isFirst, isLast) => {
 		const key = getScheduleKey(schedule, index, 'time-');
 		const isPast = isSchedulePast(schedule, selectedDate);
 		const isTaskSchedule = !!schedule?.isTask;
 		const isCompleted = !!schedule?.completed;
 		const timeLabel = schedule?.allDay ? '終日' : formatTimeLabel(schedule?.time);
+		const showTopConnector = !isFirst;
+		const showBottomConnector = !isLast;
+		const connectorGapPx = 12;
 
 		return (
 			<div key={key} className="relative flex items-stretch gap-2">
 				<div className="relative flex w-10 flex-col items-center justify-center text-[10px] text-slate-400">
-					<div
-						className="pointer-events-none absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-indigo-100"
-						aria-hidden="true"
-					/>
+					{showTopConnector && (
+						<div
+							className="pointer-events-none absolute left-1/2 w-px -translate-x-1/2 bg-indigo-100"
+							style={{ top: '0.25rem', bottom: `calc(50% + ${connectorGapPx}px)` }}
+							aria-hidden="true"
+						/>
+					)}
 					<span className="relative z-10 inline-flex items-center justify-center rounded-full bg-white px-1.5 py-[1px] font-semibold text-indigo-500 tabular-nums shadow-sm">
 						{timeLabel}
 					</span>
+					{showBottomConnector && (
+						<div
+							className="pointer-events-none absolute left-1/2 w-px -translate-x-1/2 bg-indigo-100"
+							style={{ top: `calc(50% + ${connectorGapPx}px)`, bottom: '0.25rem' }}
+							aria-hidden="true"
+						/>
+					)}
 				</div>
 				<div
 					className={`relative flex-1 cursor-pointer overflow-hidden rounded-lg border border-indigo-100 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md ${
@@ -710,9 +723,16 @@ const Timeline = ({
 									<span className="text-xs text-slate-300">「＋」ボタンから予定を追加できます</span>
 								</div>
 							) : (
-								<div className="space-y-4 pb-2">
-									{sortedTimeItems.map((schedule, index) => renderTimeCard(schedule, index))}
-								</div>
+												<div className="space-y-4 pb-2">
+													{sortedTimeItems.map((schedule, index) =>
+														renderTimeCard(
+															schedule,
+															index,
+															index === 0,
+															index === sortedTimeItems.length - 1
+														)
+													)}
+												</div>
 							)}
 						</div>
 					</div>
