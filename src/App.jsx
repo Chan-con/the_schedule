@@ -141,18 +141,32 @@ function App() {
 
   const initialLoadedSchedules = useMemo(() => loadLocalSchedules(), [loadLocalSchedules]);
   const initialLoadedTasks = useMemo(() => loadLocalTasks(), [loadLocalTasks]);
-  
-  // 履歴管理機能付きの予定状態
+
+  const historyApi = useHistory({ schedules: initialLoadedSchedules, tasks: initialLoadedTasks }, 100);
+
+  // 履歴管理機能付きの予定・タスク状態
   const {
-    state: schedules,
-    setState: setSchedules,
+    state: historyState,
+    setState: setHistoryState,
     replaceState,
     historyLength,
     currentIndex,
-    lastActionType
-  } = useHistory(initialLoadedSchedules, 100);
+    lastActionType,
+  } = historyApi;
 
-  const [tasks, setTasksState] = useState(initialLoadedTasks);
+  const historySetterRef = useRef(setHistoryState);
+  useEffect(() => {
+    historySetterRef.current = setHistoryState;
+  }, [setHistoryState]);
+
+  const schedules = useMemo(
+    () => (Array.isArray(historyState?.schedules) ? historyState.schedules : []),
+    [historyState?.schedules]
+  );
+  const tasks = useMemo(
+    () => (Array.isArray(historyState?.tasks) ? historyState.tasks : []),
+    [historyState?.tasks]
+  );
 
   const auth = useContext(AuthContext);
   const userId = auth?.user?.id || null;
@@ -186,20 +200,51 @@ function App() {
   }, []);
 
   const commitSchedules = useCallback((nextSchedules, actionType = 'unknown') => {
-    const normalized = normalizeSchedules(nextSchedules);
-    schedulesRef.current = normalized;
-    setSchedules(normalized, actionType);
-  }, [setSchedules]);
+    const normalizedSchedules = normalizeSchedules(nextSchedules);
+    schedulesRef.current = normalizedSchedules;
+    setHistoryState(
+      {
+        schedules: normalizedSchedules,
+        tasks: tasksRef.current,
+      },
+      actionType
+    );
+  }, [setHistoryState]);
 
   const commitTasks = useCallback((nextTasks, actionType = 'unknown') => {
-    const normalized = normalizeTasks(nextTasks);
-    tasksRef.current = normalized;
-    setTasksState(normalized);
+    const normalizedTasks = normalizeTasks(nextTasks);
+    tasksRef.current = normalizedTasks;
+    setHistoryState(
+      {
+        schedules: schedulesRef.current,
+        tasks: normalizedTasks,
+      },
+      actionType
+    );
     console.log('💾 Tasks committed:', {
       actionType,
-      count: normalized.length,
+      count: normalizedTasks.length,
     });
-  }, [setTasksState]);
+  }, [setHistoryState]);
+
+  const replaceAppState = useCallback(
+    (nextSchedules, nextTasks, actionType = 'replace') => {
+      const normalizedSchedules = normalizeSchedules(nextSchedules);
+      const normalizedTasks = normalizeTasks(nextTasks);
+      schedulesRef.current = normalizedSchedules;
+      tasksRef.current = normalizedTasks;
+
+      const applyHistory = typeof replaceState === 'function' ? replaceState : historySetterRef.current;
+      applyHistory(
+        {
+          schedules: normalizedSchedules,
+          tasks: normalizedTasks,
+        },
+        actionType
+      );
+    },
+    [replaceState]
+  );
 
   useEffect(() => {
     schedulesRef.current = schedules;
@@ -282,8 +327,7 @@ function App() {
         ]);
         if (isCancelledFn()) return;
 
-        replaceState(remoteSchedules, actionType);
-        commitTasks(remoteTasks, `${actionType}_tasks`);
+        replaceAppState(remoteSchedules, remoteTasks, actionType);
         setSupabaseError(null);
         hasFetchedRemoteRef.current = true;
         console.info('[SupabaseSync] payload', JSON.stringify({
@@ -326,7 +370,7 @@ function App() {
         }));
       }
     },
-    [beginSupabaseJob, commitTasks, endSupabaseJob, replaceState, userId]
+    [beginSupabaseJob, endSupabaseJob, replaceAppState, userId]
   );
 
   useEffect(() => {
@@ -336,8 +380,7 @@ function App() {
       hasFetchedRemoteRef.current = false;
       setSupabaseError(null);
       setIsSupabaseSyncing(false);
-      replaceState(loadLocalSchedules(), 'local_restore');
-      commitTasks(loadLocalTasks(), 'local_restore');
+  replaceAppState(loadLocalSchedules(), loadLocalTasks(), 'local_restore');
       return;
     }
 
@@ -350,7 +393,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [auth?.isLoading, userId, loadLocalSchedules, loadLocalTasks, refreshFromSupabase, replaceState, commitTasks]);
+  }, [auth?.isLoading, userId, loadLocalSchedules, loadLocalTasks, refreshFromSupabase, replaceAppState]);
   
   // メニュー外クリックでメニューを閉じる
   
