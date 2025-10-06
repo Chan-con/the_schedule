@@ -332,55 +332,57 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                   const scheduleElements = Array.from(
                     dateButton.querySelectorAll('.schedule-item[data-schedule-id][data-all-day="true"]')
                   );
-                  const draggedScheduleId = String(draggedSchedule.id);
-                  const otherElements = scheduleElements.filter(
-                    (el) => el.getAttribute('data-schedule-id') !== draggedScheduleId
-                  );
+                  const draggedScheduleId = draggedSchedule?.id != null ? String(draggedSchedule.id) : null;
 
-                  if (otherElements.length > 0) {
+                  if (scheduleElements.length > 0) {
                     const pointerY = e.clientY;
-                    let matched = null;
-                    let insertionIndex = 0;
+                    let insertionIndex = scheduleElements.length;
+                    let hoverScheduleId = null;
 
-                    for (let index = 0; index < otherElements.length; index += 1) {
-                      const element = otherElements[index];
+                    const normalizeId = (value) => {
+                      if (value == null || value === '') {
+                        return null;
+                      }
+                      return value;
+                    };
+
+                    for (let index = 0; index < scheduleElements.length; index += 1) {
+                      const element = scheduleElements[index];
                       const rectSchedule = element.getBoundingClientRect();
-                      const scheduleId = element.getAttribute('data-schedule-id');
-                      const midpoint = rectSchedule.top + rectSchedule.height / 2;
+                      const scheduleId = normalizeId(element.getAttribute('data-schedule-id'));
 
-                      if (pointerY < midpoint) {
-                        matched = {
-                          scheduleId,
-                          position: 'before',
-                          date: hoveredDate,
-                          index: insertionIndex,
-                        };
+                      if (pointerY < rectSchedule.top) {
+                        insertionIndex = index;
+                        hoverScheduleId = scheduleId;
                         break;
                       }
 
-                      insertionIndex += 1;
-                      matched = {
-                        scheduleId,
-                        position: 'after',
-                        date: hoveredDate,
-                        index: insertionIndex,
-                      };
+                      if (pointerY <= rectSchedule.bottom) {
+                        insertionIndex = index;
+                        hoverScheduleId = scheduleId;
+                        break;
+                      }
                     }
 
-                    if (!matched) {
-                      const afterIndex = otherElements.length;
-                      const lastElement = otherElements[otherElements.length - 1];
-                      matched = {
-                        scheduleId: lastElement.getAttribute('data-schedule-id'),
-                        position: 'after',
-                        date: hoveredDate,
-                        index: afterIndex,
-                      };
+                    if (hoverScheduleId == null) {
+                      const lastElement = scheduleElements[scheduleElements.length - 1];
+                      const lastRect = lastElement.getBoundingClientRect();
+                      if (pointerY > lastRect.bottom) {
+                        insertionIndex = scheduleElements.length;
+                      }
                     }
 
-                    hoverInfo = matched;
+                    if (draggedScheduleId != null && hoverScheduleId === draggedScheduleId) {
+                      hoverScheduleId = null;
+                    }
+
+                    hoverInfo = {
+                      scheduleId: hoverScheduleId,
+                      index: insertionIndex,
+                      date: hoveredDate,
+                    };
                   } else {
-                    hoverInfo = { scheduleId: null, position: 'after', date: hoveredDate, index: 0 };
+                    hoverInfo = { scheduleId: null, date: hoveredDate, index: 0 };
                   }
                 }
               }
@@ -815,116 +817,134 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                   // オフセットを適用して表示する予定を決定
                   const visibleSchedules = daySchedules.slice(scrollOffset, scrollOffset + maxSchedulesPerCell);
                   
-                  return visibleSchedules.map((schedule, i) => {
-                    // 表示テキストを決定
-                    const displayText = schedule.allDay 
-                      ? `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.name}` 
+                  const draggedScheduleId = draggedSchedule?.id != null ? String(draggedSchedule.id) : null;
+
+                  const rendered = visibleSchedules.map((schedule, index) => {
+                    const scheduleId = schedule.id != null ? String(schedule.id) : null;
+                    const displayText = schedule.allDay
+                      ? `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.name}`
                       : `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.time} ${schedule.name}`;
-                    
-                    // 予定が過去かどうかを判定
+
                     const isPast = isSchedulePast(schedule);
                     const isDimTask = shouldDimForTask(schedule);
-                      const isHoverTarget = isCustomDragging && draggedSchedule?.allDay && schedule.allDay &&
-                        dragOverScheduleInfo?.date === dateStr && dragOverScheduleInfo?.scheduleId === schedule.id;
-                      const hoverPosition = dragOverScheduleInfo?.position;
-                      const hoverStyle = isHoverTarget
-                        ? (hoverPosition === 'before'
-                          ? { boxShadow: 'inset 0 3px 0 0 rgba(34,197,94,0.7)' }
-                          : { boxShadow: 'inset 0 -3px 0 0 rgba(34,197,94,0.7)' })
-                        : undefined;
-                    
+                    const isHoverTarget =
+                      isCustomDragging &&
+                      draggedSchedule?.allDay &&
+                      schedule.allDay &&
+                      dragOverScheduleInfo?.date === dateStr &&
+                      (dragOverScheduleInfo?.scheduleId ?? null) === (scheduleId ?? null);
+                    const isDraggedSchedule = draggedScheduleId != null && scheduleId === draggedScheduleId;
+
                     return (
-                    <div 
-                      key={i}
-                      // カスタムドラッグシステムのみ使用
-                      draggable={false}
-                        data-schedule-id={schedule.id}
+                      <div
+                        key={scheduleId ?? index}
+                        draggable={false}
+                        data-schedule-id={scheduleId ?? ''}
                         data-all-day={schedule.allDay ? 'true' : 'false'}
-                      className={`
-                        schedule-item text-xs px-1 py-0.5 rounded truncate w-full leading-tight select-none
-                        ${schedule.allDay ? 
-                          isPast ? 'bg-yellow-100 text-yellow-600 hover:bg-yellow-200 cursor-grab' : 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300 cursor-grab'
-                          : 
-                          isPast ? 'bg-blue-100 text-blue-600 hover:bg-blue-200 cursor-pointer' : 'bg-blue-200 text-blue-800 hover:bg-blue-300 cursor-pointer'
-                        }
-                        ${isPast || isDimTask ? 'opacity-60' : ''}
-                        ${draggedSchedule?.id === schedule.id ? 'opacity-50' : ''}
-                        ${isCustomDragging && draggedSchedule?.id === schedule.id ? 'opacity-30 transform scale-95' : ''}
-                        ${isHoverTarget ? 'ring-2 ring-green-400 ring-offset-1 ring-offset-white relative' : ''}
-                        transition-all duration-150
-                      `}
-                      title={displayText}
-                      style={hoverStyle}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        console.log('🚀 Custom drag started:', {
-                          scheduleId: schedule.id,
-                          scheduleName: schedule.name,
-                          isAllDay: schedule.allDay,
-                          isAltPressed: isAltPressed,
-                          mousePosition: { x: e.clientX, y: e.clientY }
-                        });
-                        
-                        setDraggedSchedule(schedule);
-                        setIsCustomDragging(true);
-                        setDragOffset({
-                          x: e.clientX - e.currentTarget.getBoundingClientRect().left,
-                          y: e.clientY - e.currentTarget.getBoundingClientRect().top
-                        });
-                        setMousePosition({ x: e.clientX, y: e.clientY });
-                      }}
-                      onDoubleClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        // 予定をダブルクリックで編集
-                        console.log('📝 Calendar schedule double-clicked for edit:', schedule.name);
-                        console.log('📝 onEdit function exists:', typeof onEdit === 'function');
-                        if (onEdit) {
-                          onEdit(schedule);
-                        } else {
-                          console.error('❌ onEdit function is not available');
-                        }
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // 日付選択を実行（タイムライン更新のため）
-                        onDateClick(new Date(dateStr));
-                      }}
-                      onContextMenu={(e) => {
-                        if (isAltPressed) {
-                          e.preventDefault();
-                          if (onScheduleDelete) {
-                            onScheduleDelete(schedule);
+                        className={`
+                          schedule-item text-xs px-1 py-0.5 rounded truncate w-full leading-tight select-none
+                          ${schedule.allDay
+                            ? isPast
+                              ? 'bg-yellow-100 text-yellow-600 hover:bg-yellow-200 cursor-grab'
+                              : 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300 cursor-grab'
+                            : isPast
+                              ? 'bg-blue-100 text-blue-600 hover:bg-blue-200 cursor-pointer'
+                              : 'bg-blue-200 text-blue-800 hover:bg-blue-300 cursor-pointer'}
+                          ${isPast || isDimTask ? 'opacity-60' : ''}
+                          ${isDraggedSchedule ? 'opacity-50' : ''}
+                          ${isCustomDragging && isDraggedSchedule ? 'opacity-30 transform scale-95' : ''}
+                          ${isHoverTarget ? 'ring-2 ring-indigo-300 ring-offset-1 ring-offset-white bg-indigo-50 relative' : ''}
+                          transition-all duration-150
+                        `}
+                        title={displayText}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+
+                          console.log('🚀 Custom drag started:', {
+                            scheduleId: schedule.id,
+                            scheduleName: schedule.name,
+                            isAllDay: schedule.allDay,
+                            isAltPressed,
+                            mousePosition: { x: event.clientX, y: event.clientY },
+                          });
+
+                          setDraggedSchedule(schedule);
+                          setIsCustomDragging(true);
+                          setDragOffset({
+                            x: event.clientX - event.currentTarget.getBoundingClientRect().left,
+                            y: event.clientY - event.currentTarget.getBoundingClientRect().top,
+                          });
+                          setMousePosition({ x: event.clientX, y: event.clientY });
+                        }}
+                        onDoubleClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          console.log('📝 Calendar schedule double-clicked for edit:', schedule.name);
+                          if (onEdit) {
+                            onEdit(schedule);
                           }
-                        }
-                      }}
-                    >
-                      <div className="flex items-center">
-                        {schedule.isTask && (
-                          <button
-                            type="button"
-                            className={`mr-1 inline-flex h-3 w-3 items-center justify-center rounded border p-0 text-[8px] leading-none transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'}`}
-                            title={schedule.completed ? '完了済み' : '未完了'}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (onToggleTask) onToggleTask(schedule, !schedule.completed);
-                            }}
-                          >
-                            ✓
-                          </button>
-                        )}
-                        {isAltPressed && (
-                          <span className="mr-1 text-xs font-bold opacity-70">
-                            {draggedSchedule?.id === schedule.id ? '📋' : '⚡'}
+                        }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDateClick(new Date(dateStr));
+                        }}
+                        onContextMenu={(event) => {
+                          if (isAltPressed) {
+                            event.preventDefault();
+                            if (onScheduleDelete) {
+                              onScheduleDelete(schedule);
+                            }
+                          }
+                        }}
+                      >
+                        <div className="flex items-center">
+                          {schedule.isTask && (
+                            <button
+                              type="button"
+                              className={`mr-1 inline-flex h-3 w-3 items-center justify-center rounded border p-0 text-[8px] leading-none transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'}`}
+                              title={schedule.completed ? '完了済み' : '未完了'}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (onToggleTask) {
+                                  onToggleTask(schedule, !schedule.completed);
+                                }
+                              }}
+                            >
+                              ✓
+                            </button>
+                          )}
+                          {isAltPressed && (
+                            <span className="mr-1 text-xs font-bold opacity-70">
+                              {isDraggedSchedule ? '📋' : '⚡'}
+                            </span>
+                          )}
+                          <span className={`truncate pointer-events-none text-[0.8rem] font-bold ${schedule.isTask ? 'text-gray-700' : 'text-gray-800'}`}>
+                            {displayText}
                           </span>
-                        )}
-                        <span className={`truncate pointer-events-none text-[0.8rem] font-bold ${schedule.isTask ? 'text-gray-700' : 'text-gray-800'}`}>{displayText}</span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                });
+                    );
+                  });
+
+                  if (
+                    isCustomDragging &&
+                    draggedSchedule?.allDay &&
+                    dragOverScheduleInfo?.date === dateStr &&
+                    typeof dragOverScheduleInfo?.index === 'number' &&
+                    dragOverScheduleInfo.index >= rendered.length
+                  ) {
+                    rendered.push(
+                      <div
+                        key="all-day-drop-tail"
+                        className="h-7 rounded border-2 border-dashed border-indigo-200 bg-indigo-50/70 text-[10px] text-indigo-400 flex items-center justify-center"
+                      >
+                        ここにドロップで末尾へ移動
+                      </div>
+                    );
+                  }
+
+                  return rendered;
                 })()}
 
                 {(() => {
