@@ -459,7 +459,7 @@ const Timeline = ({
 		return (
 			<div
 				key={key}
-				className={`group relative w-full overflow-hidden rounded-xl border border-indigo-100 bg-white p-4 pl-5 text-sm shadow-sm transition-all duration-200 ${
+				className={`group relative w-full overflow-hidden rounded-lg border border-indigo-100 bg-white p-4 pl-5 text-sm shadow-sm transition-all duration-200 ${
 					isDragged ? 'opacity-60 ring-2 ring-indigo-200' : ''
 				} ${isDropTarget ? 'ring-2 ring-indigo-300 bg-indigo-50/70' : ''} ${
 					shouldDimForTask(schedule) ? 'opacity-60' : ''
@@ -545,7 +545,7 @@ const Timeline = ({
 					</span>
 				</div>
 				<div
-					className={`relative flex-1 cursor-pointer overflow-hidden rounded-xl border border-indigo-100 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md ${
+					className={`relative flex-1 cursor-pointer overflow-hidden rounded-lg border border-indigo-100 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md ${
 						isPast ? 'opacity-80' : ''
 					} ${shouldDimForTask(schedule) ? 'opacity-60' : ''}`}
 					onClick={() => onEdit && onEdit(schedule)}
@@ -642,7 +642,7 @@ const Timeline = ({
 									{sortedAllDaySchedules.map((schedule, index) => renderAllDayCard(schedule, index))}
 									{hasAllDaySchedules && draggedAllDayId && (
 										<div
-											className={`h-12 rounded-xl border-2 border-dashed transition-colors duration-200 ${
+											className={`h-12 rounded-lg border-2 border-dashed transition-colors duration-200 ${
 												dragOverIndex === sortedAllDaySchedules.length
 													? 'border-indigo-300 bg-indigo-50/60'
 													: 'border-transparent'
@@ -730,10 +730,10 @@ const Timeline = ({
 	return (
 		<div
 			ref={cardRef}
-			className="flex h-full min-h-0 flex-col rounded-3xl border border-slate-200 bg-white shadow-xl"
+			className="flex h-full min-h-0 flex-col rounded-lg border border-slate-200 bg-white shadow-xl"
 			style={cardStyle}
 		>
-			<header ref={headerRef} className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 rounded-t-3xl">
+			<header ref={headerRef} className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 rounded-t-lg">
 				<div className="flex flex-wrap items-center gap-3">
 					<div className="inline-flex items-center rounded-full bg-slate-100 p-1">
 						{tabs.map((tab) => {
@@ -780,7 +780,7 @@ const Timeline = ({
 				) : (
 					<div
 						ref={timelineRef}
-						className="flex h-full min-h-0 flex-col overflow-hidden rounded-b-3xl bg-slate-100/70"
+						className="flex h-full min-h-0 flex-col overflow-hidden rounded-b-lg bg-slate-100/70"
 					>
 						{renderAllDaySection()}
 						{renderTimelineSection()}
