@@ -1,479 +1,666 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
 import MemoWithLinks from './MemoWithLinks';
+import TaskArea from './TaskArea';
 
-// 予定が過去かどうかを判定する関数
 const isSchedulePast = (schedule, selectedDate) => {
-  const now = new Date();
-  const scheduleDate = new Date(selectedDate);
+	if (!selectedDate) return false;
 
-  if (schedule.allDay) {
-    // 終日予定は「今日より前」のみ過去。当日は過去扱いしない（日時は無視）
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const dateOnly = new Date(scheduleDate);
-    dateOnly.setHours(0, 0, 0, 0);
-    return dateOnly < startOfToday;
-  } else {
-    // 時間指定予定の場合、時刻も含めて比較
-    if (!schedule.time) return false;
+	const now = new Date();
 
-    const [hours, minutes] = schedule.time.split(':').map(Number);
-    const scheduleDateTime = new Date(scheduleDate);
-    scheduleDateTime.setHours(hours, minutes, 0, 0);
+	if (schedule.allDay) {
+		const startOfToday = new Date();
+		startOfToday.setHours(0, 0, 0, 0);
+		const dateOnly = new Date(selectedDate);
+		dateOnly.setHours(0, 0, 0, 0);
+		return dateOnly < startOfToday;
+	}
 
-    return scheduleDateTime < now;
-  }
+	if (!schedule.time) return false;
+
+	const [hours, minutes] = String(schedule.time)
+		.split(':')
+		.map((value) => Number(value));
+	if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+		return false;
+	}
+
+	const scheduleDateTime = new Date(selectedDate);
+	scheduleDateTime.setHours(hours, minutes, 0, 0);
+
+	return scheduleDateTime < now;
 };
 
 const shouldDimForTask = (schedule) => {
-  if (!schedule?.isTask) return false;
-  return !!schedule.completed;
+	if (!schedule?.isTask) return false;
+	return !!schedule.completed;
 };
 
-const Timeline = ({ schedules, selectedDate, onEdit, onAdd, onScheduleUpdate, onToggleTask }) => {
-  const [draggedAllDayId, setDraggedAllDayId] = useState(null);
-  const [dragOverIndex, setDragOverIndex] = useState(null);
-  const [allDayHeight, setAllDayHeight] = useState(200); // 終日エリア高さ（settings から初期化）
-  const [heightLoaded, setHeightLoaded] = useState(false);
-  const [isResizing, setIsResizing] = useState(false);
-  const [resizeStartY, setResizeStartY] = useState(0); // リサイズ開始時のマウスY座標
-  const [resizeStartHeight, setResizeStartHeight] = useState(0); // リサイズ開始時の高さ
-  const [isMemoHovering, setIsMemoHovering] = useState(false); // メモホバー状態
-  const timelineRef = useRef(null);
-  const resizeRef = useRef(null);
+const formatTimeLabel = (time) => {
+	if (!time) return '時間未設定';
+	const [hours = '00', minutes = '00'] = String(time).split(':');
+	if (Number.isNaN(Number(hours))) {
+		return time;
+	}
+	return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
 
-  // 終日予定と時間指定予定を分ける
-  const allDaySchedules = schedules.filter(s => s.allDay);
-  const timeSchedules = schedules.filter(s => !s.allDay);
-  
-  // 時間指定予定を時間順にソート
-  const sortedTimeSchedules = [...timeSchedules].sort((a, b) => {
-    if (!a.time) return 1;
-    if (!b.time) return -1;
-    return a.time.localeCompare(b.time);
-  });
+const getScheduleKey = (schedule, index, prefix) => {
+	if (schedule?.id != null) {
+		return `${prefix}${schedule.id}`;
+	}
+	return `${prefix}${index}-${schedule?.name ?? 'schedule'}`;
+};
 
-  // リサイズハンドラー
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!isResizing || !timelineRef.current) return;
-      
-      const rect = timelineRef.current.getBoundingClientRect();
-      const headerHeight = 60; // ヘッダー部分の高さ
-      const minHeight = 100; // 最小高さ
-      const maxHeight = rect.height - headerHeight - 100; // 最大高さ
-      
-      // マウス移動の差分を計算
-      const deltaY = e.clientY - resizeStartY;
-      const newHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartHeight + deltaY));
-      setAllDayHeight(newHeight);
-    };
+const Timeline = ({
+	schedules = [],
+	selectedDate,
+	onEdit,
+	onAdd,
+	onAddTask,
+	onScheduleUpdate,
+	onToggleTask,
+	activeTab = 'timeline',
+	onTabChange,
+	tasks = [],
+}) => {
+	const [draggedAllDayId, setDraggedAllDayId] = useState(null);
+	const [dragOverIndex, setDragOverIndex] = useState(null);
+	const [allDayHeight, setAllDayHeight] = useState(200);
+	const [heightLoaded, setHeightLoaded] = useState(false);
+	const [isResizing, setIsResizing] = useState(false);
+	const [resizeStartY, setResizeStartY] = useState(0);
+	const [resizeStartHeight, setResizeStartHeight] = useState(0);
+	const [isMemoHovering, setIsMemoHovering] = useState(false);
+	const timelineRef = useRef(null);
 
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
+	const currentTab = activeTab === 'tasks' ? 'tasks' : 'timeline';
+	const showTimeline = currentTab === 'timeline';
+	const showTasks = currentTab === 'tasks';
+	const availableTasks = Array.isArray(tasks) ? tasks : [];
 
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.userSelect = 'none';
-    }
+	const timelineEntries = useMemo(() => (Array.isArray(schedules) ? schedules : []), [schedules]);
+	const scheduleEntries = useMemo(
+		() => timelineEntries.filter((item) => !item?.isTask),
+		[timelineEntries]
+	);
+	const taskEntries = useMemo(
+		() => timelineEntries.filter((item) => item?.isTask),
+		[timelineEntries]
+	);
 
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.userSelect = '';
-    };
-  }, [isResizing, resizeStartY, resizeStartHeight]);
+	const allDaySchedules = useMemo(
+		() => scheduleEntries.filter((schedule) => schedule?.allDay),
+		[scheduleEntries]
+	);
+	const allDayTasks = useMemo(
+		() => taskEntries.filter((task) => task?.allDay),
+		[taskEntries]
+	);
+	const timeSchedules = useMemo(
+		() => scheduleEntries.filter((schedule) => !schedule?.allDay),
+		[scheduleEntries]
+	);
+	const timeTasks = useMemo(
+		() => taskEntries.filter((task) => !task?.allDay),
+		[taskEntries]
+	);
 
-  const handleResizeStart = (e) => {
-    e.preventDefault();
-    setIsResizing(true);
-    setResizeStartY(e.clientY);
-    setResizeStartHeight(allDayHeight);
-  };
+	const sortedAllDaySchedules = useMemo(() => {
+		return [...allDaySchedules].sort((a, b) => {
+			const orderDiff = (a?.allDayOrder ?? 0) - (b?.allDayOrder ?? 0);
+			if (orderDiff !== 0) return orderDiff;
+			return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+		});
+	}, [allDaySchedules]);
 
-  // 初期ロード時に settings から復元
-  useLayoutEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        if (window.electronAPI) {
-          const s = await window.electronAPI.getSettings();
-          if (!mounted) return;
-          const val = typeof s.allDayHeight === 'number' ? s.allDayHeight : 200;
-          const container = timelineRef.current;
-          const rect = container ? container.getBoundingClientRect() : null;
-            const headerHeight = 60;
-            const minHeight = 100;
-            const dynamicMax = rect ? Math.max(minHeight, rect.height - headerHeight - 100) : 600;
-            const clamped = Math.min(Math.max(val, minHeight), dynamicMax);
-            setAllDayHeight(clamped);
-            setHeightLoaded(true);
-        } else {
-          const stored = localStorage.getItem('allDayHeight');
-          if (!stored) return;
-          const raw = parseInt(stored, 10);
-          if (!isNaN(raw)) {
-            setAllDayHeight(raw);
-            setHeightLoaded(true);
-          }
-        }
-      } catch (e) {
-        console.warn('終日エリア高さの読み込みに失敗:', e);
-        setHeightLoaded(true);
-      }
-    };
-    load();
-    return () => { mounted = false; };
-  }, []);
+	const sortedAllDayTasks = useMemo(() => {
+		return [...allDayTasks].sort((a, b) => {
+			if (!!a?.completed !== !!b?.completed) {
+				return a.completed ? 1 : -1;
+			}
+			const orderDiff = (a?.allDayOrder ?? 0) - (b?.allDayOrder ?? 0);
+			if (orderDiff !== 0) return orderDiff;
+			return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+		});
+	}, [allDayTasks]);
 
-  // 高さ変更を保存（ドラッグ終了時）
-  useEffect(() => {
-    if (!heightLoaded) return; // 初期ロード前は保存しない
-    if (!isResizing) {
-      if (window.electronAPI) {
-        window.electronAPI.saveLayout({ allDayHeight });
-      } else {
-        localStorage.setItem('allDayHeight', String(allDayHeight));
-      }
-    }
-  }, [allDayHeight, isResizing, heightLoaded]);
+	const sortedTimeItems = useMemo(() => {
+		const allItems = [...timeSchedules, ...timeTasks];
+		return allItems.sort((a, b) => {
+			const aTime = a?.time || '';
+			const bTime = b?.time || '';
+			if (!aTime && !bTime) {
+				if (!!a?.completed !== !!b?.completed) {
+					return a.completed ? 1 : -1;
+				}
+				if (!!a?.isTask !== !!b?.isTask) {
+					return a.isTask ? 1 : -1;
+				}
+				return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+			}
+			if (!aTime) return 1;
+			if (!bTime) return -1;
+			if (aTime !== bTime) return aTime.localeCompare(bTime);
+			if (!!a?.isTask !== !!b?.isTask) {
+				return a.isTask ? 1 : -1;
+			}
+			if (!!a?.completed !== !!b?.completed) {
+				return a.completed ? 1 : -1;
+			}
+			return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+		});
+	}, [timeSchedules, timeTasks]);
 
-  // 終日予定の並び替え処理
-  const handleAllDayDragStart = (e, schedule) => {
-    // メモにホバー中は並び替えを無効化
-    if (isMemoHovering) {
-      e.preventDefault();
-      return;
-    }
-    
-    setDraggedAllDayId(schedule.id);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/html', e.target.outerHTML);
-    e.target.style.opacity = '0.5';
-  };
+	useEffect(() => {
+		const handleMouseMove = (event) => {
+			if (!isResizing || !timelineRef.current) return;
 
-  const handleAllDayDragEnd = (e) => {
-    e.target.style.opacity = '1';
-    setDraggedAllDayId(null);
-    setDragOverIndex(null);
-  };
+			const rect = timelineRef.current.getBoundingClientRect();
+			const headerHeight = 64;
+			const minHeight = 120;
+			const maxAvailable = rect.height - headerHeight - 120;
+			const maxHeight = Math.max(minHeight, maxAvailable);
 
-  const handleAllDayDragOver = (e, index) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverIndex(index);
-  };
+			const deltaY = event.clientY - resizeStartY;
+			const newHeight = Math.max(minHeight, Math.min(maxHeight, resizeStartHeight + deltaY));
+			setAllDayHeight(newHeight);
+		};
 
-  const handleAllDayDragLeave = (e) => {
-    // 子要素から出た場合は無視
-    if (!e.currentTarget.contains(e.relatedTarget)) {
-      setDragOverIndex(null);
-    }
-  };
+		const handleMouseUp = () => {
+			setIsResizing(false);
+		};
 
-  const handleAllDayDrop = (e, dropIndex) => {
-    e.preventDefault();
-    setDragOverIndex(null);
-    
-    if (!draggedAllDayId || draggedAllDayId === null) return;
-    
-    const draggedSchedule = allDaySchedules.find(s => s.id === draggedAllDayId);
-    if (!draggedSchedule) return;
-    
-    const currentIndex = allDaySchedules.findIndex(s => s.id === draggedAllDayId);
-    if (currentIndex === dropIndex) return;
-    
-    // 新しい順序で配列を再構築
-    const newAllDaySchedules = [...allDaySchedules];
-    newAllDaySchedules.splice(currentIndex, 1);
-    newAllDaySchedules.splice(dropIndex, 0, draggedSchedule);
-    
-    // orderプロパティを更新
-    const updatedSchedules = newAllDaySchedules.map((schedule, index) => ({
-      ...schedule,
-      allDayOrder: index
-    }));
-    
-    // 親コンポーネントに更新を通知
-    if (onScheduleUpdate) {
-      onScheduleUpdate(updatedSchedules, 'schedule_reorder_all_day');
-    }
-    
-    console.log('📋 All-day schedules reordered:', {
-      from: currentIndex,
-      to: dropIndex,
-      scheduleId: draggedAllDayId
-    });
-    
-    setDraggedAllDayId(null);
-  };
+		if (isResizing) {
+			document.addEventListener('mousemove', handleMouseMove);
+			document.addEventListener('mouseup', handleMouseUp);
+			document.body.style.userSelect = 'none';
+		}
 
-  // 選択日付のフォーマット
-  const formattedDate = selectedDate 
-    ? selectedDate.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' }) 
-    : '選択された日付';
+		return () => {
+			document.removeEventListener('mousemove', handleMouseMove);
+			document.removeEventListener('mouseup', handleMouseUp);
+			document.body.style.userSelect = '';
+		};
+	}, [isResizing, resizeStartY, resizeStartHeight]);
 
-  return (
-    <div 
-      ref={timelineRef}
-      className="bg-white rounded-lg shadow-lg p-3 h-full flex flex-col overflow-hidden"
-      style={{
-        '--scrollbar-width': '6px',
-        '--scrollbar-track': '#f1f5f9',
-        '--scrollbar-thumb': '#cbd5e1',
-        '--scrollbar-thumb-hover': '#94a3b8'
-      }}
-    >
-      <style>{`
-        .custom-scrollbar {
-          scrollbar-width: thin;
-          scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar {
-          width: var(--scrollbar-width);
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: var(--scrollbar-track);
-          border-radius: 3px;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: var(--scrollbar-thumb);
-          border-radius: 3px;
-          transition: background-color 0.2s ease;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: var(--scrollbar-thumb-hover);
-        }
-        
-        .resize-handle {
-          background: transparent;
-          width: 100%;
-          height: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.2s ease;
-        }
-        
-        .resize-handle::before {
-          content: '';
-          width: 48px;
-          height: 3px;
-          background: #9ca3af;
-          border-radius: 2px;
-        }
-      `}</style>
-      
-      <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-100 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-base font-bold text-gray-800">タイムライン</h2>
-          <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full">
-            {formattedDate}
-          </span>
-        </div>
-        
-        <button
-          onClick={() => {
-            console.log('➕ Timeline add button clicked');
-            console.log('➕ onAdd function exists:', typeof onAdd === 'function');
-            if (onAdd) {
-              onAdd();
-            } else {
-              console.error('❌ onAdd function is not available');
-            }
-          }}
-          className="text-gray-300 hover:text-gray-500 transition-colors duration-200 cursor-pointer font-bold text-lg p-1 bg-transparent border-none outline-none"
-          title="予定を追加"
-        >
-          +
-        </button>
-      </div>
-      
-      {/* 終日予定エリア（リサイズ可能） */}
-      {allDaySchedules.length > 0 && (
-        <div className="flex flex-col">
-          <div 
-            className="custom-scrollbar overflow-auto"
-            style={{ height: `${allDayHeight}px` }}
-          >
-            <div className="text-xs font-medium text-gray-500 mb-2 px-2 flex items-center gap-2">
-              <span>終日</span>
-              <span className="text-xs text-gray-400">（ドラッグで並び替え可能）</span>
-            </div>
-            <div className="space-y-2 pr-2">
-              {allDaySchedules
-                .sort((a, b) => (a.allDayOrder || 0) - (b.allDayOrder || 0))
-                .map((s, index) => {
-                  const isPast = isSchedulePast(s, selectedDate);
-                  const isDimTask = shouldDimForTask(s);
-                  return (
-                <div 
-                  key={s.id}
-                  draggable={!isMemoHovering}
-                  onDragStart={(e) => handleAllDayDragStart(e, s)}
-                  onDragEnd={handleAllDayDragEnd}
-                  onDragOver={(e) => handleAllDayDragOver(e, index)}
-                  onDragLeave={handleAllDayDragLeave}
-                  onDrop={(e) => handleAllDayDrop(e, index)}
-                  className={`
-                    border-l-4 ${(isPast || isDimTask) ? 'border-yellow-300 opacity-60' : 'border-yellow-500'} pl-4 flex flex-col gap-1 ${isMemoHovering ? 'cursor-text' : 'cursor-grab'} hover:bg-yellow-50 rounded-md transition p-2 bg-white
-                    ${draggedAllDayId === s.id ? 'opacity-50 transform scale-95' : ''}
-                    ${dragOverIndex === index && draggedAllDayId !== s.id ? 'transform translate-y-1 shadow-lg bg-yellow-100' : ''}
-                  `}
-                  onClick={(e) => {
-                    // メモにホバー中はクリックを無効化
-                    if (isMemoHovering) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      return;
-                    }
-                    console.log('👆 All-day schedule clicked:', s.name);
-                    onEdit(s);
-                  }}
-                  onDoubleClick={(e) => {
-                    // メモにホバー中はダブルクリックを無効化
-                    if (isMemoHovering) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      return;
-                    }
-                    e.stopPropagation();
-                    console.log('📝 All-day schedule double-clicked for edit:', s.name);
-                    console.log('📝 onEdit function exists:', typeof onEdit === 'function');
-                    onEdit(s);
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    {s.isTask && (
-                      <button
-                        type="button"
-                        className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded border p-0 text-[9px] leading-none transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${s.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'}`}
-                        title={s.completed ? '完了済み' : '未完了'}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (onToggleTask) onToggleTask(s.id, !s.completed);
-                        }}
-                      >
-                        ✓
-                      </button>
-                    )}
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${(isPast || isDimTask) ? 'text-yellow-500 bg-yellow-50' : 'text-yellow-700 bg-yellow-100'}`}>終日</span>
-                    <span className={`font-medium ${(isPast || isDimTask) ? 'text-gray-500' : 'text-gray-900'}`}>{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
-                    <div className="ml-auto opacity-40 hover:opacity-80 transition-opacity">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                      </svg>
-                    </div>
-                  </div>
-                  {s.memo && (
-                    <MemoWithLinks 
-                      memo={s.memo}
-                      className="text-gray-500 text-sm pl-2 border-l-2 border-gray-200 ml-1"
-                      onHoverChange={setIsMemoHovering}
-                    />
-                  )}
-                </div>
-                );
-              })}
-            </div>
-          </div>
-          
-          {/* リサイズハンドル */}
-          <div 
-            ref={resizeRef}
-            className="resize-handle relative h-4 cursor-row-resize select-none"
-            onMouseDown={handleResizeStart}
-            title="ドラッグして境界を調整"
-          />
-        </div>
-      )}
-      
-      {/* 時間指定予定エリア */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {sortedTimeSchedules.length === 0 && allDaySchedules.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-2 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <p>この日の予定はありません</p>
-          </div>
-        ) : sortedTimeSchedules.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-            <p className="text-sm">時間指定の予定はありません</p>
-          </div>
-        ) : (
-          <div className="flex-1 custom-scrollbar overflow-auto">
-            <div className="text-xs font-medium text-gray-500 mb-3 px-2">時間指定</div>
-            <ul className="space-y-3 pr-2">
-              {sortedTimeSchedules.map(s => {
-                const isPast = isSchedulePast(s, selectedDate);
-                const isDimTask = shouldDimForTask(s);
-                return (
-                <li 
-                  key={s.id} 
-                  className={`border-l-4 ${(isPast || isDimTask) ? 'border-blue-300 opacity-60' : 'border-blue-500'} pl-4 flex flex-col gap-1 ${isMemoHovering ? 'cursor-text' : 'cursor-pointer'} ${isPast ? 'hover:bg-blue-50' : 'hover:bg-blue-50'} rounded-md transition p-2`}
-                  onClick={(e) => {
-                    // メモにホバー中はクリックを無効化
-                    if (isMemoHovering) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      return;
-                    }
-                    console.log('👆 Time schedule clicked:', s.name);
-                    onEdit(s);
-                  }}
-                  onDoubleClick={(e) => {
-                    // メモにホバー中はダブルクリックを無効化
-                    if (isMemoHovering) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      return;
-                    }
-                    e.stopPropagation();
-                    console.log('📝 Time schedule double-clicked for edit:', s.name);
-                    console.log('📝 onEdit function exists:', typeof onEdit === 'function');
-                    onEdit(s);
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    {s.isTask && (
-                      <button
-                        type="button"
-                        className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded border p-0 text-[9px] leading-none transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${s.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'}`}
-                        title={s.completed ? '完了済み' : '未完了'}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (onToggleTask) onToggleTask(s.id, !s.completed);
-                        }}
-                      >
-                        ✓
-                      </button>
-                    )}
-                    <span className={`font-semibold text-lg min-w-[4rem] ${(isPast || isDimTask) ? 'text-blue-400' : 'text-blue-600'}`}>{s.time}</span>
-                    <span className={`font-bold ${(isPast || isDimTask) ? 'text-gray-500' : 'text-gray-900'}`}>{s.emoji || ''}{s.emoji ? ' ' : ''}{s.name}</span>
-                  </div>
-                  {s.memo && (
-                    <MemoWithLinks 
-                      memo={s.memo}
-                      className="text-gray-500 text-sm pl-2 border-l-2 border-gray-200 ml-1"
-                      onHoverChange={setIsMemoHovering}
-                    />
-                  )}
-                </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+	const handleResizeStart = (event) => {
+		event.preventDefault();
+		setIsResizing(true);
+		setResizeStartY(event.clientY);
+		setResizeStartHeight(allDayHeight);
+	};
+
+	useLayoutEffect(() => {
+		let mounted = true;
+		const load = async () => {
+			try {
+				if (window.electronAPI) {
+					const settings = await window.electronAPI.getSettings();
+					if (!mounted) return;
+					const value = typeof settings.allDayHeight === 'number' ? settings.allDayHeight : 200;
+					const container = timelineRef.current;
+					const rect = container ? container.getBoundingClientRect() : null;
+					const headerHeight = 64;
+					const minHeight = 120;
+					const dynamicMax = rect ? Math.max(minHeight, rect.height - headerHeight - 120) : 600;
+					const clamped = Math.min(Math.max(value, minHeight), dynamicMax);
+					setAllDayHeight(clamped);
+					setHeightLoaded(true);
+				} else {
+					const stored = localStorage.getItem('allDayHeight');
+					if (!stored) {
+						setHeightLoaded(true);
+						return;
+					}
+					const raw = parseInt(stored, 10);
+					if (!Number.isNaN(raw)) {
+						setAllDayHeight(raw);
+					}
+					setHeightLoaded(true);
+				}
+			} catch (error) {
+				console.warn('終日エリア高さの読み込みに失敗:', error);
+				setHeightLoaded(true);
+			}
+		};
+		load();
+		return () => {
+			mounted = false;
+		};
+	}, []);
+
+	useEffect(() => {
+		if (!heightLoaded || isResizing) return;
+		if (window.electronAPI) {
+			window.electronAPI.saveLayout({ allDayHeight });
+		} else {
+			localStorage.setItem('allDayHeight', String(allDayHeight));
+		}
+	}, [allDayHeight, isResizing, heightLoaded]);
+
+	const handleAllDayDragStart = (event, schedule) => {
+		if (isMemoHovering || !schedule?.id || schedule?.isTask) {
+			event.preventDefault();
+			return;
+		}
+
+		const card = event.currentTarget;
+		if (card) {
+			card.style.opacity = '0.5';
+		}
+		setDraggedAllDayId(schedule.id);
+		event.dataTransfer.effectAllowed = 'move';
+		event.dataTransfer.setData('text/plain', String(schedule.id));
+	};
+
+	const handleAllDayDragEnd = (event) => {
+		const card = event.currentTarget;
+		if (card) {
+			card.style.opacity = '1';
+		}
+		setDraggedAllDayId(null);
+		setDragOverIndex(null);
+	};
+
+	const handleAllDayDragOver = (event, index) => {
+		event.preventDefault();
+		event.dataTransfer.dropEffect = 'move';
+		setDragOverIndex(index);
+	};
+
+	const handleAllDayDragLeave = (event) => {
+		if (!event.currentTarget.contains(event.relatedTarget)) {
+			setDragOverIndex(null);
+		}
+	};
+
+	const handleAllDayDrop = (event, dropIndex) => {
+		event.preventDefault();
+		setDragOverIndex(null);
+
+		if (!draggedAllDayId) return;
+
+		const currentOrder = sortedAllDaySchedules;
+		const draggedSchedule = currentOrder.find((schedule) => schedule.id === draggedAllDayId);
+		if (!draggedSchedule) {
+			setDraggedAllDayId(null);
+			return;
+		}
+
+		const currentIndex = currentOrder.findIndex((schedule) => schedule.id === draggedAllDayId);
+		if (currentIndex === -1) {
+			setDraggedAllDayId(null);
+			return;
+		}
+
+		const nextOrder = [...currentOrder];
+		nextOrder.splice(currentIndex, 1);
+		const targetIndex = Math.min(dropIndex, nextOrder.length);
+		nextOrder.splice(targetIndex, 0, draggedSchedule);
+
+		const updatedSchedules = nextOrder.map((schedule, index) => ({
+			...schedule,
+			allDayOrder: index,
+		}));
+
+		if (onScheduleUpdate) {
+			onScheduleUpdate(updatedSchedules, 'schedule_reorder_all_day');
+		}
+
+		setDraggedAllDayId(null);
+	};
+
+	const tabs = [
+		{ key: 'timeline', label: 'タイムライン' },
+		{ key: 'tasks', label: 'タスク' },
+	];
+	const isAddDisabled = showTasks ? !onAddTask : !onAdd;
+
+	const handleAddClick = () => {
+		if (showTasks) {
+			if (onAddTask) {
+				onAddTask();
+			}
+			return;
+		}
+
+		if (onAdd) {
+			onAdd();
+		}
+	};
+
+	const handleTabButtonClick = (key) => {
+		if (key === currentTab) return;
+		if (onTabChange) {
+			onTabChange(key);
+		}
+	};
+
+	const handleMemoHoverChange = (value) => {
+		setIsMemoHovering(Boolean(value));
+	};
+
+	const renderAllDayCard = (schedule, index) => {
+		const key = getScheduleKey(schedule, index, 'all-day-');
+		const isDragged = draggedAllDayId === schedule?.id;
+		const isDropTarget = dragOverIndex === index;
+		const isPast = isSchedulePast(schedule, selectedDate);
+ 		const isTaskItem = !!schedule?.isTask;
+ 		const isCompleted = !!schedule?.completed;
+
+		return (
+			<div
+				key={key}
+				className={`group relative w-full overflow-hidden rounded-xl border border-indigo-100 bg-white p-4 pl-6 text-sm shadow-sm transition-all duration-200 ${
+					isDragged ? 'opacity-60 ring-2 ring-indigo-200' : ''
+				} ${isDropTarget ? 'ring-2 ring-indigo-300 bg-indigo-50/70' : ''} ${
+					shouldDimForTask(schedule) ? 'opacity-60' : ''
+				}`}
+				draggable={!!schedule?.id && !isTaskItem}
+				onDragStart={(event) => handleAllDayDragStart(event, schedule)}
+				onDragEnd={handleAllDayDragEnd}
+				onDragOver={(event) => handleAllDayDragOver(event, index)}
+				onDragLeave={handleAllDayDragLeave}
+				onDrop={(event) => handleAllDayDrop(event, index)}
+				onClick={() => onEdit && onEdit(schedule)}
+				onDoubleClick={() => onEdit && onEdit(schedule)}
+			>
+				<span className="absolute inset-y-3 left-0 w-2 rounded-full bg-indigo-300" aria-hidden="true" />
+				<div className="relative ml-4 flex flex-col gap-1">
+					<div className="flex items-start justify-between gap-2">
+						<div className="flex flex-wrap items-center gap-2">
+							<span
+								className={`font-medium ${
+									isTaskItem && isCompleted ? 'text-slate-500 line-through' : isPast ? 'text-slate-500' : 'text-slate-900'
+								}`}
+							>
+								{schedule?.emoji ? `${schedule.emoji} ` : ''}
+								{schedule?.name || '名称未設定の予定'}
+							</span>
+							{schedule?.allDay && (
+								<span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+									終日
+								</span>
+							)}
+							{isTaskItem && (
+								<span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-600">
+									タスク
+								</span>
+							)}
+						</div>
+						{isTaskItem && onToggleTask && schedule?.id && (
+							<button
+								type="button"
+								className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+									isCompleted
+										? 'border-green-500 bg-green-500 text-white'
+										: 'border-slate-300 bg-white text-transparent hover:border-slate-400'
+								}`}
+								title={isCompleted ? '完了済み' : '未完了'}
+								onClick={(event) => {
+									event.stopPropagation();
+									onToggleTask(schedule, !isCompleted);
+								}}
+							>
+								✓
+							</button>
+						)}
+					</div>
+					{schedule?.memo && (
+						<MemoWithLinks
+							memo={schedule.memo}
+							className="text-xs leading-relaxed text-slate-600"
+							onHoverChange={handleMemoHoverChange}
+						/>
+					)}
+				</div>
+			</div>
+		);
+	};
+
+	const renderTimeCard = (schedule, index) => {
+		const key = getScheduleKey(schedule, index, 'time-');
+		const isPast = isSchedulePast(schedule, selectedDate);
+		const isTaskSchedule = !!schedule?.isTask;
+		const isCompleted = !!schedule?.completed;
+		const timeLabel = schedule?.allDay ? '終日' : formatTimeLabel(schedule?.time);
+
+		return (
+			<div key={key} className="relative flex items-stretch gap-2">
+				<div className="relative flex w-10 flex-col items-center justify-center text-[10px] text-slate-400">
+					<div
+						className="pointer-events-none absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-indigo-100"
+						aria-hidden="true"
+					/>
+					<span className="relative z-10 inline-flex items-center justify-center rounded-full bg-white px-1.5 py-[1px] font-semibold text-indigo-500 tabular-nums shadow-sm">
+						{timeLabel}
+					</span>
+				</div>
+				<div
+					className={`relative flex-1 cursor-pointer overflow-hidden rounded-xl border border-indigo-100 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md ${
+						isPast ? 'opacity-80' : ''
+					} ${shouldDimForTask(schedule) ? 'opacity-60' : ''}`}
+					onClick={() => onEdit && onEdit(schedule)}
+					onDoubleClick={() => onEdit && onEdit(schedule)}
+				>
+					<span className="absolute inset-y-3 left-0 w-1 rounded-full bg-indigo-300" aria-hidden="true" />
+					<div className="relative ml-2.5 flex flex-wrap items-start gap-3">
+						<div className="flex min-w-0 flex-1 flex-col gap-1">
+							<div className="flex flex-wrap items-center gap-2">
+								<span
+									className={`truncate font-medium ${
+										isTaskSchedule && isCompleted ? 'line-through text-slate-500' : 'text-slate-900'
+									}`}
+								>
+									{schedule?.emoji ? `${schedule.emoji} ` : ''}
+									{schedule?.name || '名称未設定の予定'}
+								</span>
+								{schedule?.location && (
+									<div className="text-xs text-slate-500">
+										{schedule.location}
+									</div>
+								)}
+								{isTaskSchedule && (
+									<span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-600">
+										タスク
+									</span>
+								)}
+							</div>
+							{schedule?.memo && (
+								<MemoWithLinks
+									memo={schedule.memo}
+									className="text-xs leading-relaxed text-slate-600"
+									onHoverChange={handleMemoHoverChange}
+								/>
+							)}
+						</div>
+						{isTaskSchedule && onToggleTask && schedule?.id && (
+							<button
+								type="button"
+								className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+									isCompleted
+										? 'border-green-500 bg-green-500 text-white'
+										: 'border-slate-300 bg-white text-transparent hover:border-slate-400'
+								}`}
+								title={isCompleted ? '完了済み' : '未完了'}
+								onClick={(event) => {
+									event.stopPropagation();
+									onToggleTask(schedule, !isCompleted);
+								}}
+							>
+								✓
+							</button>
+						)}
+					</div>
+				</div>
+			</div>
+		);
+	};
+
+	const renderAllDaySection = () => {
+		const clampedHeight = Math.max(120, allDayHeight || 120);
+		const hasAllDaySchedules = sortedAllDaySchedules.length > 0;
+		const hasAllDayTasks = sortedAllDayTasks.length > 0;
+
+		return (
+			<div
+				className="relative border-b border-slate-200 bg-white"
+				style={{ height: `${clampedHeight}px` }}
+			>
+				<div className="flex h-full flex-col px-4 py-3">
+					<div className="flex items-center justify-between pb-2 text-[11px] text-slate-500">
+						<div className="inline-flex items-center gap-2">
+							<span className="inline-flex h-6 items-center rounded-full bg-amber-100 px-3 font-semibold text-amber-700">
+								終日
+							</span>
+							<span className="text-slate-400">(ドラッグで並び替え可能)</span>
+						</div>
+						{(hasAllDaySchedules || hasAllDayTasks) && (
+							<span className="text-slate-400">
+								{sortedAllDaySchedules.length + sortedAllDayTasks.length}件
+							</span>
+						)}
+					</div>
+					<div className="flex-1 overflow-auto pr-1 custom-scrollbar">
+						{!hasAllDaySchedules && !hasAllDayTasks ? (
+							<div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-slate-400">
+								<span>終日の予定やタスクはありません</span>
+								<span className="text-[11px] text-slate-300">「＋」ボタンから項目を追加できます</span>
+							</div>
+						) : (
+							<div className="flex flex-col gap-3">
+								{sortedAllDaySchedules.map((schedule, index) => renderAllDayCard(schedule, index))}
+								{hasAllDaySchedules && (
+									<div
+										className={`h-12 rounded-xl border-2 border-dashed transition-colors duration-200 ${
+										dragOverIndex === sortedAllDaySchedules.length
+											? 'border-indigo-300 bg-indigo-50/60'
+											: 'border-transparent'
+										}`}
+										onDragOver={(event) => handleAllDayDragOver(event, sortedAllDaySchedules.length)}
+										onDragLeave={handleAllDayDragLeave}
+										onDrop={(event) => handleAllDayDrop(event, sortedAllDaySchedules.length)}
+									>
+										<span className="sr-only">ここにドロップして末尾に移動</span>
+									</div>
+								)}
+
+								{sortedAllDayTasks.map((task, index) =>
+									renderAllDayCard(task, sortedAllDaySchedules.length + index)
+								)}
+							</div>
+						)}
+					</div>
+				</div>
+				<div
+					className={`absolute inset-x-0 bottom-0 flex h-4 items-center justify-center cursor-row-resize select-none ${
+						isResizing ? 'bg-indigo-100/60' : 'bg-transparent'
+					}`}
+					onMouseDown={handleResizeStart}
+				>
+					<div
+						className={`h-1 w-16 rounded-full transition-colors duration-200 ${
+							isResizing ? 'bg-indigo-400' : 'bg-slate-300 hover:bg-indigo-300'
+						}`}
+					/>
+				</div>
+			</div>
+		);
+	};
+
+	const renderTimelineSection = () => (
+		<div className="flex-1 min-h-0">
+			<div className="flex h-full flex-col">
+				<div className="flex-1 overflow-auto px-4 py-4 custom-scrollbar">
+					<div className="flex items-center gap-3 pb-3 text-[11px] font-semibold text-slate-400">
+						<span className="h-px flex-1 bg-slate-200" />
+						<span className="tracking-wide">時間指定</span>
+						<span className="h-px flex-1 bg-slate-200" />
+					</div>
+					{sortedTimeItems.length === 0 ? (
+						<div className="flex h-[calc(100%-2rem)] flex-col items-center justify-center gap-2 text-slate-400">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								className="h-12 w-12 text-slate-200"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+							>
+								<path
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									strokeWidth="1.5"
+									d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+								/>
+							</svg>
+							<span className="text-sm">時間付きの予定はありません</span>
+							<span className="text-xs text-slate-300">「＋」ボタンから予定を追加できます</span>
+						</div>
+					) : (
+						<div className="space-y-4">
+							{sortedTimeItems.map((schedule, index) => renderTimeCard(schedule, index))}
+						</div>
+					)}
+				</div>
+			</div>
+		</div>
+	);
+
+	return (
+		<div className="flex h-full flex-col rounded-3xl border border-slate-200 bg-white shadow-xl">
+			<header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 rounded-t-3xl">
+				<div className="flex flex-wrap items-center gap-3">
+					<div className="inline-flex items-center rounded-full bg-slate-100 p-1">
+						{tabs.map((tab) => {
+							const isActive = currentTab === tab.key;
+							return (
+								<button
+									key={tab.key}
+									type="button"
+									onClick={() => handleTabButtonClick(tab.key)}
+									className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+										isActive
+											? 'bg-white text-indigo-600 shadow'
+											: 'text-slate-500 hover:text-indigo-500'
+									}`}
+									aria-pressed={isActive}
+								>
+									{tab.label}
+								</button>
+							);
+						})}
+					</div>
+					<span className="text-xs font-medium text-slate-400">
+						{showTasks
+							? `タスク ${availableTasks.length}件`
+							: `予定 ${timelineEntries.length}件`}
+					</span>
+				</div>
+				<button
+					type="button"
+					className={`inline-flex h-9 w-9 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-600 transition-all duration-200 ${
+						isAddDisabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-indigo-50 hover:shadow'
+					}`}
+					onClick={handleAddClick}
+					disabled={isAddDisabled}
+					title={showTasks ? 'タスクを追加' : '予定を追加'}
+				>
+					<span className="text-lg font-semibold leading-none">＋</span>
+				</button>
+			</header>
+
+			<div className="flex-1 min-h-0 overflow-hidden">
+				{showTasks ? (
+					<TaskArea tasks={availableTasks} onEdit={onEdit} onToggleTask={onToggleTask} />
+				) : (
+					<div ref={timelineRef} className="flex h-full flex-col overflow-hidden bg-slate-100/70">
+						{renderAllDaySection()}
+						{renderTimelineSection()}
+					</div>
+				)}
+			</div>
+		</div>
+	);
 };
 
 export default Timeline;

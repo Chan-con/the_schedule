@@ -37,17 +37,20 @@ const MAX_NOTIFICATIONS = 3;
 
 const createInitialFormData = (schedule) => {
   const now = new Date();
+  const isStandaloneTask = schedule?.isStandaloneTask ?? false;
   const base = {
     id: schedule?.id ?? null,
     name: schedule?.name ?? '',
     date: schedule?.date ?? toDateStrLocal(now),
-    time: schedule?.time ?? '',
+    time: isStandaloneTask ? '' : schedule?.time ?? '',
     memo: schedule?.memo ?? '',
     emoji: schedule?.emoji ?? '',
-    allDay: schedule?.allDay ?? !(schedule?.time),
+    allDay: isStandaloneTask ? true : schedule?.allDay ?? !(schedule?.time),
     notifications: schedule?.notifications ? schedule.notifications.map((n) => ({ ...n })) : [],
     isTask: schedule?.isTask ?? false,
-    completed: schedule?.completed ?? false
+    completed: schedule?.completed ?? false,
+    isStandaloneTask,
+    source: schedule?.source ?? (isStandaloneTask ? 'standaloneTask' : 'schedule'),
   };
 
   if (!base.time) {
@@ -64,6 +67,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
   const [isDeleting, setIsDeleting] = useState(false);
   const [formError, setFormError] = useState(null);
   const nameInputRef = useRef(null);
+  const isStandaloneTaskMode = formData.isTask && formData.isStandaloneTask;
 
   useEffect(() => {
     setFormData(createInitialFormData(schedule));
@@ -268,6 +272,16 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
     }
   };
 
+  const modalTitle = formData.id
+    ? formData.isStandaloneTask
+      ? 'タスクを編集'
+      : '予定を編集'
+    : formData.isStandaloneTask
+      ? '新規タスク登録'
+      : '新規予定登録';
+
+  const nameLabel = formData.isStandaloneTask ? 'タスク名' : '予定名';
+
   return (
     <div
       className="schedule-form-modal flex flex-col h-full w-full"
@@ -276,9 +290,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
       }}
     >
       <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-200 flex-shrink-0">
-        <h2 className="text-2xl font-bold text-gray-800">
-          {formData.id ? '予定を編集' : '新規予定登録'}
-        </h2>
+        <h2 className="text-2xl font-bold text-gray-800">{modalTitle}</h2>
         <button
           onClick={onClose}
           className="text-gray-500 hover:text-gray-800 p-2 rounded-full hover:bg-gray-100 bg-white border border-gray-200 transition-colors duration-200"
@@ -293,41 +305,45 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
       <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ minHeight: 0, maxHeight: 'calc(90vh - 160px)' }}>
         <form id="schedule-form" onSubmit={handleSubmit} className="p-6 pt-4 space-y-5">
           <div className="space-y-3">
-            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-1 shadow-inner">
-              <div className="grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  aria-pressed={!formData.isTask}
-                  onClick={() =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      isTask: false,
-                      completed: false
-                    }))
-                  }
-                  className={`tab-toggle-button ${!formData.isTask ? 'is-active' : ''}`}
-                  title="予定モード"
-                >
-                  <span>予定</span>
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={formData.isTask}
-                  onClick={() =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      isTask: true,
-                      emoji: '',
-                      completed: prev.completed || false
-                    }))
-                  }
-                  className={`tab-toggle-button ${formData.isTask ? 'is-active' : ''}`}
-                  title="タスクモード"
-                >
-                  <span>タスク</span>
-                </button>
+            {!formData.isStandaloneTask && (
+              <div className="bg-gray-50 border border-gray-200 rounded-2xl p-1 shadow-inner">
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    aria-pressed={!formData.isTask}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        isTask: false,
+                        completed: false,
+                        isStandaloneTask: false,
+                      }))
+                    }
+                    className={`tab-toggle-button ${!formData.isTask ? 'is-active' : ''}`}
+                    title="予定モード"
+                  >
+                    <span>予定</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={formData.isTask}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        isTask: true,
+                        emoji: '',
+                        completed: prev.completed || false,
+                        isStandaloneTask: schedule?.isStandaloneTask ?? prev.isStandaloneTask ?? true,
+                      }))
+                    }
+                    className={`tab-toggle-button ${formData.isTask ? 'is-active' : ''}`}
+                    title="タスクモード"
+                  >
+                    <span>タスク</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {formData.isTask && (
               <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
@@ -359,7 +375,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
           </div>
 
           <div>
-            <label className="block text-gray-700 font-medium mb-2">予定名</label>
+            <label className="block text-gray-700 font-medium mb-2">{nameLabel}</label>
             <input
               ref={nameInputRef}
               type="text"
@@ -373,7 +389,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
           </div>
 
           <div>
-            <label className="block text-gray-700 font-medium mb-2">日付</label>
+            <label className="block text-gray-700 font-medium mb-2">{isStandaloneTaskMode ? '納期' : '日付'}</label>
             <input
               type="date"
               name="date"
@@ -384,29 +400,31 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
             />
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-gray-700 font-medium">開始時間</label>
-              <span className={`text-xs px-2 py-1 rounded-full ${formData.allDay ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
-                {formData.allDay ? '終日' : '時間指定'}
-              </span>
+          {!isStandaloneTaskMode && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-gray-700 font-medium">開始時間</label>
+                <span className={`text-xs px-2 py-1 rounded-full ${formData.allDay ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
+                  {formData.allDay ? '終日' : '時間指定'}
+                </span>
+              </div>
+              <input
+                type="time"
+                name="time"
+                value={formData.time}
+                onChange={handleChange}
+                onDoubleClick={handleTimeDoubleClick}
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition cursor-pointer"
+                placeholder="空欄の場合は終日になります"
+                title="ダブルクリック: 空欄→現在時刻入力 / 入力済み→クリア"
+              />
+              <div className="text-xs text-gray-500 mt-1">
+                時間を入力しない場合は、自動的に終日予定になります
+                <br />
+                <span className="text-blue-600">💡 ダブルクリックで現在時刻入力/クリア</span>
+              </div>
             </div>
-            <input
-              type="time"
-              name="time"
-              value={formData.time}
-              onChange={handleChange}
-              onDoubleClick={handleTimeDoubleClick}
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition cursor-pointer"
-              placeholder="空欄の場合は終日になります"
-              title="ダブルクリック: 空欄→現在時刻入力 / 入力済み→クリア"
-            />
-            <div className="text-xs text-gray-500 mt-1">
-              時間を入力しない場合は、自動的に終日予定になります
-              <br />
-              <span className="text-blue-600">💡 ダブルクリックで現在時刻入力/クリア</span>
-            </div>
-          </div>
+          )}
 
           {!formData.isTask && (
             <div>

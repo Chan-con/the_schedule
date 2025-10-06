@@ -859,7 +859,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                         if (isAltPressed) {
                           e.preventDefault();
                           if (onScheduleDelete) {
-                            onScheduleDelete(schedule.id);
+                            onScheduleDelete(schedule);
                           }
                         }
                       }}
@@ -872,7 +872,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                             title={schedule.completed ? '完了済み' : '未完了'}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (onToggleTask) onToggleTask(schedule.id, !schedule.completed);
+                              if (onToggleTask) onToggleTask(schedule, !schedule.completed);
                             }}
                           >
                             ✓
