@@ -499,7 +499,7 @@ const Timeline = ({
 						{isTaskItem && onToggleTask && schedule?.id && (
 							<button
 								type="button"
-								className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+								className={`inline-flex size-6 flex-shrink-0 items-center justify-center rounded-lg border p-0 text-[11px] font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
 									isCompleted
 										? 'border-green-500 bg-green-500 text-white'
 										: 'border-slate-300 bg-white text-transparent hover:border-slate-400'
@@ -585,7 +585,7 @@ const Timeline = ({
 						{isTaskSchedule && onToggleTask && schedule?.id && (
 							<button
 								type="button"
-								className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+								className={`inline-flex size-6 flex-shrink-0 items-center justify-center rounded-lg border p-0 text-[11px] font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
 									isCompleted
 										? 'border-green-500 bg-green-500 text-white'
 										: 'border-slate-300 bg-white text-transparent hover:border-slate-400'

@@ -356,7 +356,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                       isTask: true
                     }))
                   }
-                  className={`inline-flex w-7 aspect-square items-center justify-center rounded-md border transition-colors duration-200 text-[12px] leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                  className={`inline-flex size-7 flex-shrink-0 items-center justify-center rounded-lg border p-0 text-[12px] leading-none transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
                     formData.completed
                       ? 'bg-green-500 border-green-600 text-white'
                       : 'bg-white border-gray-300 text-transparent hover:bg-gray-50'

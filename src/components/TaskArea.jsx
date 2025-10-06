@@ -76,7 +76,7 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
     <div className="flex-1 custom-scrollbar overflow-auto space-y-2 pr-2">
       {sortedTasks.map((task) => {
         const isCompleted = !!task?.completed;
-  const isStandaloneTask = !!task?.isStandaloneTask;
+        const isStandaloneTask = !!task?.isStandaloneTask;
         const formattedDate = formatTaskDate(task);
         const key = task?.id ?? `${task?.name ?? 'task'}-${task?.date ?? 'no-date'}`;
 
@@ -100,7 +100,7 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
             <div className="flex items-start gap-3">
               <button
                 type="button"
-                className={`inline-flex h-5 w-5 items-center justify-center rounded-md border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                className={`inline-flex size-6 flex-shrink-0 items-center justify-center rounded-lg border p-0 text-[11px] font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
                   isCompleted
                     ? 'bg-green-500 border-green-600 text-white'
                     : 'bg-white border-gray-300 text-transparent hover:border-gray-400'
