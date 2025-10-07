@@ -18,12 +18,6 @@ import {
   deleteScheduleForUser,
   upsertSchedulesForUser,
 } from './utils/supabaseSchedules';
-import {
-  fetchTasksForUser,
-  createTaskForUser,
-  updateTaskForUser,
-  deleteTaskForUser,
-} from './utils/supabaseTasks';
 
 // サンプルデータ - 今日の日付に合わせて調整
 const getTodayDateStr = () => toDateStrLocal(new Date());
@@ -37,33 +31,11 @@ const normalizeSchedule = (schedule) => ({
   ...schedule,
   isTask: schedule?.isTask ?? false,
   completed: schedule?.completed ?? false,
-  isStandaloneTask: schedule?.isStandaloneTask ?? false,
 });
 
 const normalizeSchedules = (schedules) => {
   if (!Array.isArray(schedules)) return [];
   return schedules.map(normalizeSchedule);
-};
-
-const normalizeTask = (task = {}) => {
-  const rawTime = typeof task.time === 'string' ? task.time.trim() : '';
-  const normalizedTime = rawTime || '';
-
-  return {
-    ...task,
-    isTask: true,
-    isStandaloneTask: task?.isStandaloneTask ?? true,
-    source: task?.source ?? 'standaloneTask',
-    time: normalizedTime,
-    allDay: true,
-    completed: task?.completed ?? false,
-    notifications: Array.isArray(task?.notifications) ? task.notifications : [],
-  };
-};
-
-const normalizeTasks = (tasks) => {
-  if (!Array.isArray(tasks)) return [];
-  return tasks.map(normalizeTask);
 };
 
 const createTempId = () => Date.now();
@@ -122,27 +94,8 @@ function App() {
     return normalizeSchedules(initialSchedules);
   }, []);
 
-  const loadLocalTasks = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return normalizeTasks([]);
-    }
-
-    try {
-      const stored = window.localStorage.getItem('tasks');
-      if (stored) {
-        return normalizeTasks(JSON.parse(stored));
-      }
-    } catch (error) {
-      console.warn('⚠️ Failed to parse tasks from localStorage:', error);
-    }
-
-    return normalizeTasks([]);
-  }, []);
-
   const initialLoadedSchedules = useMemo(() => loadLocalSchedules(), [loadLocalSchedules]);
-  const initialLoadedTasks = useMemo(() => loadLocalTasks(), [loadLocalTasks]);
-
-  const historyApi = useHistory({ schedules: initialLoadedSchedules, tasks: initialLoadedTasks }, 100);
+  const historyApi = useHistory({ schedules: initialLoadedSchedules }, 100);
 
   // 履歴管理機能付きの予定・タスク状態
   const {
@@ -163,9 +116,9 @@ function App() {
     () => (Array.isArray(historyState?.schedules) ? historyState.schedules : []),
     [historyState?.schedules]
   );
-  const tasks = useMemo(
-    () => (Array.isArray(historyState?.tasks) ? historyState.tasks : []),
-    [historyState?.tasks]
+  const taskSchedules = useMemo(
+    () => (Array.isArray(schedules) ? schedules.filter((item) => item?.isTask) : []),
+    [schedules]
   );
 
   const auth = useContext(AuthContext);
@@ -173,7 +126,6 @@ function App() {
   const [isSupabaseSyncing, setIsSupabaseSyncing] = useState(false);
   const [supabaseError, setSupabaseError] = useState(null);
   const schedulesRef = useRef(schedules);
-  const tasksRef = useRef(tasks);
   const hasFetchedRemoteRef = useRef(false);
   const supabaseJobsRef = useRef(0);
 
@@ -205,40 +157,20 @@ function App() {
     setHistoryState(
       {
         schedules: normalizedSchedules,
-        tasks: tasksRef.current,
       },
       actionType
     );
-  }, [setHistoryState]);
-
-  const commitTasks = useCallback((nextTasks, actionType = 'unknown') => {
-    const normalizedTasks = normalizeTasks(nextTasks);
-    tasksRef.current = normalizedTasks;
-    setHistoryState(
-      {
-        schedules: schedulesRef.current,
-        tasks: normalizedTasks,
-      },
-      actionType
-    );
-    console.log('💾 Tasks committed:', {
-      actionType,
-      count: normalizedTasks.length,
-    });
   }, [setHistoryState]);
 
   const replaceAppState = useCallback(
-    (nextSchedules, nextTasks, actionType = 'replace') => {
+    (nextSchedules, actionType = 'replace') => {
       const normalizedSchedules = normalizeSchedules(nextSchedules);
-      const normalizedTasks = normalizeTasks(nextTasks);
       schedulesRef.current = normalizedSchedules;
-      tasksRef.current = normalizedTasks;
 
       const applyHistory = typeof replaceState === 'function' ? replaceState : historySetterRef.current;
       applyHistory(
         {
           schedules: normalizedSchedules,
-          tasks: normalizedTasks,
         },
         actionType
       );
@@ -249,10 +181,6 @@ function App() {
   useEffect(() => {
     schedulesRef.current = schedules;
   }, [schedules]);
-
-  useEffect(() => {
-    tasksRef.current = tasks;
-  }, [tasks]);
 
   const authUser = auth?.user ?? null;
   const isAuthLoading = auth?.isLoading ?? false;
@@ -269,11 +197,10 @@ function App() {
     onLogout: authLogout,
   }), [authLogin, authLogout, authUser, isAuthLoading, isAuthProcessing]);
 
-  const notificationEntries = useMemo(() => {
-    const scheduleEntries = Array.isArray(schedules) ? schedules : [];
-    const taskEntries = Array.isArray(tasks) ? tasks : [];
-    return [...scheduleEntries, ...taskEntries];
-  }, [schedules, tasks]);
+  const notificationEntries = useMemo(
+    () => (Array.isArray(schedules) ? schedules : []),
+    [schedules]
+  );
   
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingSchedule, setEditingSchedule] = useState(null);
@@ -321,24 +248,19 @@ function App() {
       }));
       beginSupabaseJob({ actionType, kind: 'fetchData' });
       try {
-        const [remoteSchedules, remoteTasks] = await Promise.all([
-          fetchSchedulesForUser(userId),
-          fetchTasksForUser(userId),
-        ]);
+        const remoteSchedules = await fetchSchedulesForUser(userId);
         if (isCancelledFn()) return;
 
-        replaceAppState(remoteSchedules, remoteTasks, actionType);
+        replaceAppState(remoteSchedules, actionType);
         setSupabaseError(null);
         hasFetchedRemoteRef.current = true;
         console.info('[SupabaseSync] payload', JSON.stringify({
           actionType,
           schedules: remoteSchedules.slice(0, 10),
-          tasks: remoteTasks.slice(0, 10),
         }));
         console.info('[SupabaseSync] success', JSON.stringify({
           actionType,
           count: remoteSchedules.length,
-          taskCount: remoteTasks.length,
           durationMs:
             (typeof performance !== 'undefined' && typeof performance.now === 'function'
               ? Math.round(performance.now() - startedAt)
@@ -380,7 +302,7 @@ function App() {
       hasFetchedRemoteRef.current = false;
       setSupabaseError(null);
       setIsSupabaseSyncing(false);
-  replaceAppState(loadLocalSchedules(), loadLocalTasks(), 'local_restore');
+  replaceAppState(loadLocalSchedules(), 'local_restore');
       return;
     }
 
@@ -393,7 +315,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [auth?.isLoading, userId, loadLocalSchedules, loadLocalTasks, refreshFromSupabase, replaceAppState]);
+  }, [auth?.isLoading, userId, loadLocalSchedules, refreshFromSupabase, replaceAppState]);
   
   // メニュー外クリックでメニューを閉じる
   
@@ -423,13 +345,6 @@ function App() {
     });
   }, [schedules, currentIndex, historyLength, lastActionType]);
 
-  useEffect(() => {
-    localStorage.setItem('tasks', JSON.stringify(tasks));
-    console.log('💾 Tasks saved to localStorage:', {
-      count: tasks.length,
-    });
-  }, [tasks]);
-  
   // 起動時に設定からレイアウト読み込み
   useEffect(() => {
     (async () => {
@@ -601,55 +516,17 @@ function App() {
     const entry =
       typeof target === 'object'
         ? target
-        : schedulesRef.current.find((item) => item.id === target) || tasksRef.current.find((item) => item.id === target);
+        : schedulesRef.current.find((item) => item.id === target);
 
     if (!entry || !entry.id) return;
 
-  const entryType = entry.isTask && entry.isStandaloneTask ? 'task' : 'schedule';
     console.info('[EntryDelete] request', JSON.stringify({
-      entryType,
+      entryType: entry.isTask ? 'task_schedule' : 'schedule',
       entryId: entry.id,
       timestamp: new Date().toISOString(),
     }));
 
     cancelScheduleNotifications(entry.id);
-
-  if (entry.isTask && entry.isStandaloneTask) {
-      const currentTasks = tasksRef.current;
-      const optimisticTasks = currentTasks.filter((item) => item.id !== entry.id);
-      commitTasks(optimisticTasks, 'task_delete');
-      console.info('[TaskDelete] optimistic applied', JSON.stringify({
-        taskId: entry.id,
-        remainingCount: optimisticTasks.length,
-      }));
-
-      if (!userId) return;
-
-      const jobMeta = { kind: 'deleteTask', taskId: entry.id };
-      beginSupabaseJob(jobMeta);
-      const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-      try {
-        await deleteTaskForUser(entry.id, userId);
-        setSupabaseError(null);
-        console.info('[TaskDelete] synced', JSON.stringify({
-          taskId: entry.id,
-          durationMs:
-            (typeof performance !== 'undefined' && typeof performance.now === 'function'
-              ? Math.round(performance.now() - startedAt)
-              : Math.round(Date.now() - startedAt)),
-        }));
-      } catch (error) {
-        console.error('[Supabase] Failed to delete task:', error);
-        setSupabaseError(error.message || 'タスクの削除に失敗しました。');
-        refreshFromSupabase('supabase_resync').catch(() => {});
-        if (throwOnError) {
-          throw error;
-        }
-      } finally {
-        endSupabaseJob(jobMeta);
-      }
-      return;
-    }
 
     const scheduleId = entry.id;
     const currentSchedules = schedulesRef.current;
@@ -685,57 +562,11 @@ function App() {
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, cancelScheduleNotifications, commitSchedules, commitTasks, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, cancelScheduleNotifications, commitSchedules, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
 
   // 予定移動ハンドラー（ドラッグ&ドロップ用）
   const handleScheduleMove = useCallback((schedule, nextDate) => {
     if (!schedule?.id || !nextDate) return;
-
-  if (schedule.isTask && schedule.isStandaloneTask) {
-      const currentTasks = tasksRef.current;
-      const existingTask = currentTasks.find((item) => item.id === schedule.id);
-      if (!existingTask) return;
-
-      const updatedTask = normalizeTask({ ...existingTask, ...schedule, date: nextDate });
-      const optimisticTasks = currentTasks.map((item) => (item.id === updatedTask.id ? updatedTask : item));
-
-      commitTasks(optimisticTasks, 'task_move');
-      console.info('[TaskMove] optimistic applied', JSON.stringify({
-        taskId: updatedTask.id,
-        toDate: updatedTask.date,
-      }));
-
-      if (userId) {
-        (async () => {
-          const jobMeta = { kind: 'updateTask', taskId: updatedTask.id, action: 'move' };
-          beginSupabaseJob(jobMeta);
-          const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-          try {
-            const persisted = await updateTaskForUser(updatedTask, userId);
-            const latestTasks = tasksRef.current;
-            const syncedTasks = latestTasks.map((item) => (item.id === persisted.id ? normalizeTask(persisted) : item));
-            commitTasks(syncedTasks, 'task_move_sync');
-            setSupabaseError(null);
-            console.info('[TaskMove] synced', JSON.stringify({
-              taskId: persisted.id,
-              toDate: persisted.date,
-              durationMs:
-                (typeof performance !== 'undefined' && typeof performance.now === 'function'
-                  ? Math.round(performance.now() - startedAt)
-                  : Math.round(Date.now() - startedAt)),
-            }));
-          } catch (error) {
-            console.error('[Supabase] Failed to move task:', error);
-            setSupabaseError(error.message || 'タスクの移動に失敗しました。');
-            refreshFromSupabase('supabase_resync').catch(() => {});
-          } finally {
-            endSupabaseJob(jobMeta);
-          }
-        })();
-      }
-
-      return;
-    }
 
     const current = schedulesRef.current;
     const existing = current.find((item) => item.id === schedule.id);
@@ -751,7 +582,7 @@ function App() {
     }));
 
     const previousDate = existing.date;
-  const updated = normalizeSchedule({ ...existing, ...schedule, date: nextDate, isStandaloneTask: false });
+  const updated = normalizeSchedule({ ...existing, ...schedule, date: nextDate });
 
     let optimistic = current.map((item) => (item.id === updated.id ? updated : item));
     if (updated.allDay) {
@@ -799,80 +630,12 @@ function App() {
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, commitTasks, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
 
   // 予定コピー（ALTドラッグ複製など）
   const handleScheduleCopy = useCallback((schedule) => {
     if (!schedule) return;
-
-    if (schedule.isTask && schedule.isStandaloneTask) {
-      const taskPayload = {
-        ...schedule,
-        time: '',
-        allDay: true,
-        isTask: true,
-        isStandaloneTask: true,
-        source: schedule?.source ?? 'standaloneTask',
-      };
-      const normalizedTask = normalizeTask(taskPayload);
-      const latestTasks = tasksRef.current;
-
-      if (normalizedTask.id && latestTasks.some((item) => item.id === normalizedTask.id)) {
-        const optimisticTasks = latestTasks.map((item) => (item.id === normalizedTask.id ? normalizedTask : item));
-        commitTasks(optimisticTasks, 'task_copy_replace');
-        handleScheduleMove(normalizedTask, normalizedTask.date);
-        return;
-      }
-
-      const tempId = normalizedTask.id || createTempId();
-      const placeholder = { ...normalizedTask, id: tempId };
-
-      commitTasks([...latestTasks, placeholder], 'task_copy');
-      console.info('[TaskCopy] optimistic applied', JSON.stringify({
-        tempId,
-        date: placeholder.date,
-      }));
-
-      if (userId) {
-        (async () => {
-          const jobMeta = { kind: 'createTask', tempId, action: 'copy' };
-          beginSupabaseJob(jobMeta);
-          const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-          try {
-            const payload = { ...normalizedTask };
-            delete payload.id;
-            const created = await createTaskForUser(payload, userId);
-            jobMeta.taskId = created.id;
-
-            const latest = tasksRef.current;
-            let replaced = latest.map((item) => (item.id === tempId ? normalizeTask(created) : item));
-            if (!replaced.some((item) => item.id === created.id)) {
-              replaced = [...latest.filter((item) => item.id !== tempId), normalizeTask(created)];
-            }
-            commitTasks(replaced, 'task_copy_sync');
-            setSupabaseError(null);
-            console.info('[TaskCopy] synced', JSON.stringify({
-              taskId: created.id,
-              date: created.date,
-              durationMs:
-                (typeof performance !== 'undefined' && typeof performance.now === 'function'
-                  ? Math.round(performance.now() - startedAt)
-                  : Math.round(Date.now() - startedAt)),
-            }));
-          } catch (error) {
-            console.error('[Supabase] Failed to copy task:', error);
-            setSupabaseError(error.message || 'タスクのコピーに失敗しました。');
-            refreshFromSupabase('supabase_resync').catch(() => {});
-          } finally {
-            endSupabaseJob(jobMeta);
-          }
-        })();
-      }
-
-      return;
-    }
-
-  const normalized = normalizeSchedule({ ...schedule, isStandaloneTask: false });
+  const normalized = normalizeSchedule({ ...schedule });
     const latest = schedulesRef.current;
 
     console.info('[ScheduleCopy] request', JSON.stringify({
@@ -940,15 +703,14 @@ function App() {
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, commitTasks, endSupabaseJob, handleScheduleMove, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, handleScheduleMove, refreshFromSupabase, setSupabaseError, userId]);
 
   // 予定更新ハンドラー（並び替え用）
   const handleScheduleUpdate = useCallback((updatedSchedule, actionType = 'schedule_reorder') => {
     const updates = Array.isArray(updatedSchedule) ? updatedSchedule : [updatedSchedule];
     if (updates.length === 0) return;
 
-    const normalizedUpdates = updates.map(normalizeSchedule);
-    const scheduleUpdates = normalizedUpdates.filter((item) => !item?.isStandaloneTask);
+    const scheduleUpdates = updates.map(normalizeSchedule).filter(Boolean);
 
     if (scheduleUpdates.length === 0) {
       return;
@@ -1023,69 +785,29 @@ function App() {
     const entry =
       typeof target === 'object'
         ? target
-        : tasksRef.current.find((item) => item.id === target) || schedulesRef.current.find((item) => item.id === target);
+        : schedulesRef.current.find((item) => item.id === target);
 
     if (!entry) return;
 
-  if (entry.isTask && entry.isStandaloneTask) {
-      const currentTasks = tasksRef.current;
-      console.info('[TaskToggle] request', JSON.stringify({
-        taskId: entry.id,
-        completed,
-        timestamp: new Date().toISOString(),
-      }));
-      const updatedTask = normalizeTask({ ...entry, completed });
-      const withoutTarget = currentTasks.filter((item) => item.id !== updatedTask.id);
-      const incompleteGroup = withoutTarget.filter((item) => !item.completed);
-      const completedGroup = withoutTarget.filter((item) => item.completed);
-      const reordered = completed
-        ? [...incompleteGroup, updatedTask, ...completedGroup]
-        : [...incompleteGroup, updatedTask, ...completedGroup];
+    const scheduleId = entry.id;
+    console.info('[TaskToggle] request', JSON.stringify({
+      scheduleId,
+      completed,
+      timestamp: new Date().toISOString(),
+    }));
 
-      commitTasks(reordered, 'task_toggle');
-      console.info('[TaskToggle] optimistic applied', JSON.stringify({
-        taskId: updatedTask.id,
-        completed,
-      }));
-
-      if (userId) {
-        (async () => {
-          const jobMeta = { kind: 'updateTask', taskId: updatedTask.id, action: 'task_toggle' };
-          beginSupabaseJob(jobMeta);
-          const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-          try {
-            const persisted = await updateTaskForUser(updatedTask, userId);
-            const latestTasks = tasksRef.current;
-            const syncedTasks = latestTasks.map((item) => (item.id === persisted.id ? normalizeTask(persisted) : item));
-            commitTasks(syncedTasks, 'task_toggle_sync');
-            setSupabaseError(null);
-            console.info('[TaskToggle] synced', JSON.stringify({
-              taskId: persisted.id,
-              completed: persisted.completed,
-              durationMs:
-                (typeof performance !== 'undefined' && typeof performance.now === 'function'
-                  ? Math.round(performance.now() - startedAt)
-                  : Math.round(Date.now() - startedAt)),
-            }));
-          } catch (error) {
-            console.error('[Supabase] Failed to toggle task state:', error);
-            setSupabaseError(error.message || 'タスク状態の更新に失敗しました。');
-            refreshFromSupabase('supabase_resync').catch(() => {});
-          } finally {
-            endSupabaseJob(jobMeta);
-          }
-        })();
-      }
-
-      return;
-    }
+    const updatedSchedule = normalizeSchedule({
+      ...entry,
+      completed,
+      isTask: entry?.isTask ?? true,
+    });
 
     const currentSchedules = schedulesRef.current;
-    const scheduleId = entry.id;
-  const updatedSchedule = { ...entry, completed, isTask: true, isStandaloneTask: false };
-    const optimisticSchedules = currentSchedules.map((item) => (item.id === scheduleId ? updatedSchedule : item));
+    const optimisticSchedules = currentSchedules.map((item) =>
+      item.id === scheduleId ? updatedSchedule : item
+    );
     commitSchedules(optimisticSchedules, 'task_toggle');
-    console.info('[TaskToggle] optimistic applied (schedule fallback)', JSON.stringify({
+    console.info('[TaskToggle] optimistic applied', JSON.stringify({
       scheduleId,
       completed,
     }));
@@ -1101,7 +823,7 @@ function App() {
           const synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
           commitSchedules(synced, 'task_toggle_sync');
           setSupabaseError(null);
-          console.info('[TaskToggle] synced (schedule fallback)', JSON.stringify({
+          console.info('[TaskToggle] synced', JSON.stringify({
             scheduleId: persisted.id,
             completed: persisted.completed,
             durationMs:
@@ -1110,7 +832,7 @@ function App() {
                 : Math.round(Date.now() - startedAt)),
           }));
         } catch (error) {
-          console.error('[Supabase] Failed to toggle task state (schedule fallback):', error);
+          console.error('[Supabase] Failed to toggle task state:', error);
           setSupabaseError(error.message || 'タスク状態の更新に失敗しました。');
           refreshFromSupabase('supabase_resync').catch(() => {});
         } finally {
@@ -1118,29 +840,8 @@ function App() {
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, commitTasks, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
 
-  const handleStandaloneTaskReorder = useCallback((orderedTasks, actionType = 'task_reorder') => {
-    if (!Array.isArray(orderedTasks) || orderedTasks.length === 0) {
-      return;
-    }
-
-    const currentTasks = tasksRef.current;
-    if (orderedTasks.length !== currentTasks.length) {
-      console.warn('[TaskReorder] length mismatch, ignoring', {
-        provided: orderedTasks.length,
-        current: currentTasks.length,
-      });
-      return;
-    }
-
-    const normalized = normalizeTasks(orderedTasks);
-    commitTasks(normalized, actionType);
-    console.info('[TaskReorder] committed', JSON.stringify({
-      actionType,
-      count: normalized.length,
-    }));
-  }, [commitTasks]);
   const handleAdd = (targetDate = null) => {
     // ターゲット日付が指定されていればその日付を使用、なければ選択中の日付を使用
     const dateToUse = targetDate || selectedDate;
@@ -1164,15 +865,15 @@ function App() {
   };
 
   const handleAddTask = useCallback((targetDate = null) => {
+    const baseDate = targetDate ? toDateStrLocal(targetDate) : '';
     setEditingSchedule({
-      date: '',
+      date: baseDate,
       time: '',
       name: '',
       memo: '',
       allDay: true,
       isTask: true,
-      isStandaloneTask: true,
-      source: 'standaloneTask',
+      source: 'scheduleTask',
       completed: false,
     });
     setShowForm(true);
@@ -1185,126 +886,6 @@ function App() {
   // 予定保存ハンドラー
   const handleSave = useCallback(async (schedule) => {
     if (!schedule) return;
-
-    if (schedule.isTask && schedule.isStandaloneTask) {
-      const taskPayload = {
-        ...schedule,
-        time: '',
-        allDay: true,
-        isTask: true,
-        isStandaloneTask: true,
-        source: schedule?.source ?? 'standaloneTask',
-      };
-
-      const normalizedTask = normalizeTask(taskPayload);
-
-      if (normalizedTask.id) {
-        const currentTasks = tasksRef.current;
-        const existingTask = currentTasks.find((item) => item.id === normalizedTask.id);
-
-        if (!existingTask) {
-          console.warn('[TaskSave] update target not found, fallback to create');
-        } else {
-          const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-          console.info('[TaskSave] update request', JSON.stringify({
-            taskId: normalizedTask.id,
-            date: normalizedTask.date,
-            timestamp: new Date().toISOString(),
-          }));
-
-          const optimisticTasks = currentTasks.map((item) => (item.id === normalizedTask.id ? normalizedTask : item));
-          commitTasks(optimisticTasks, 'task_edit');
-          console.info('[TaskSave] update optimistic applied', JSON.stringify({
-            taskId: normalizedTask.id,
-            date: normalizedTask.date,
-          }));
-
-          if (userId) {
-            const jobMeta = { kind: 'updateTask', taskId: normalizedTask.id, action: 'save' };
-            beginSupabaseJob(jobMeta);
-            try {
-              const persisted = await updateTaskForUser(normalizedTask, userId);
-              const latestTasks = tasksRef.current;
-              const syncedTasks = latestTasks.map((item) => (item.id === persisted.id ? normalizeTask(persisted) : item));
-              commitTasks(syncedTasks, 'task_edit_sync');
-              setSupabaseError(null);
-              console.info('[TaskSave] update synced', JSON.stringify({
-                taskId: persisted.id,
-                date: persisted.date,
-                durationMs:
-                  (typeof performance !== 'undefined' && typeof performance.now === 'function'
-                    ? Math.round(performance.now() - startedAt)
-                    : Math.round(Date.now() - startedAt)),
-              }));
-            } catch (error) {
-              console.error('[Supabase] Failed to update task:', error);
-              setSupabaseError(error.message || 'タスクの更新に失敗しました。');
-              refreshFromSupabase('supabase_resync').catch(() => {});
-              throw error;
-            } finally {
-              endSupabaseJob(jobMeta);
-            }
-          }
-
-          setShowForm(false);
-          return;
-        }
-      }
-
-  const baseTask = normalizeTask({ ...taskPayload, id: undefined });
-      const tempId = createTempId();
-      const placeholder = { ...baseTask, id: tempId };
-
-      const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-      console.info('[TaskSave] create request', JSON.stringify({
-        tempId,
-        date: baseTask.date,
-        timestamp: new Date().toISOString(),
-      }));
-
-      commitTasks([...tasksRef.current, placeholder], 'task_create');
-      console.info('[TaskSave] create optimistic applied', JSON.stringify({
-        tempId,
-        date: placeholder.date,
-      }));
-
-      if (userId) {
-        const jobMeta = { kind: 'createTask', tempId, action: 'save' };
-        beginSupabaseJob(jobMeta);
-        try {
-          const payload = { ...baseTask };
-          delete payload.id;
-          const created = await createTaskForUser(payload, userId);
-          jobMeta.taskId = created.id;
-
-          const latestTasks = tasksRef.current;
-          let replaced = latestTasks.map((item) => (item.id === tempId ? normalizeTask(created) : item));
-          if (!replaced.some((item) => item.id === created.id)) {
-            replaced = [...latestTasks.filter((item) => item.id !== tempId), normalizeTask(created)];
-          }
-          commitTasks(replaced, 'task_create_sync');
-          setSupabaseError(null);
-          console.info('[TaskSave] create synced', JSON.stringify({
-            taskId: created.id,
-            date: created.date,
-            durationMs:
-              (typeof performance !== 'undefined' && typeof performance.now === 'function'
-                ? Math.round(performance.now() - startedAt)
-                : Math.round(Date.now() - startedAt)),
-          }));
-        } catch (error) {
-          console.error('[Supabase] Failed to create task:', error);
-          setSupabaseError(error.message || 'タスクの作成に失敗しました。');
-          refreshFromSupabase('supabase_resync').catch(() => {});
-          throw error;
-        } finally {
-          endSupabaseJob(jobMeta);
-        }
-      }
-
-      setShowForm(false);
-      return;
-    }
 
   if (schedule.id) {
       const current = schedulesRef.current;
@@ -1320,7 +901,7 @@ function App() {
         nextDate: schedule.date,
         timestamp: new Date().toISOString(),
       }));
-  const updated = normalizeSchedule({ ...existing, ...schedule, isStandaloneTask: false });
+  const updated = normalizeSchedule({ ...existing, ...schedule });
 
       let optimistic = current.map((item) => (item.id === updated.id ? updated : item));
       if (updated.allDay) {
@@ -1362,7 +943,7 @@ function App() {
         }
       }
     } else {
-  const baseSchedule = normalizeSchedule({ ...schedule, isStandaloneTask: false });
+  const baseSchedule = normalizeSchedule({ ...schedule });
       const tempId = createTempId();
       const placeholder = { ...baseSchedule, id: tempId };
 
@@ -1423,7 +1004,7 @@ function App() {
     }
 
     setShowForm(false);
-  }, [beginSupabaseJob, commitSchedules, commitTasks, endSupabaseJob, refreshFromSupabase, setShowForm, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, refreshFromSupabase, setShowForm, setSupabaseError, userId]);
 
   // 予定削除ハンドラー（フォーム用）
   const handleDelete = useCallback(async (id) => {
@@ -1535,8 +1116,7 @@ function App() {
                         onScheduleDelete={handleScheduleDelete}
                         activeTab={timelineActiveTab}
                         onTabChange={setTimelineActiveTab}
-                        tasks={tasks}
-                        onTaskReorder={handleStandaloneTaskReorder}
+                        tasks={taskSchedules}
                       />
                     </div>
                   </div>
@@ -1602,8 +1182,7 @@ function App() {
                 onScheduleDelete={handleScheduleDelete}
                 activeTab={timelineActiveTab}
                 onTabChange={setTimelineActiveTab}
-                tasks={tasks}
-                onTaskReorder={handleStandaloneTaskReorder}
+                tasks={taskSchedules}
               />
             </div>
           </>

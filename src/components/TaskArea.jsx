@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import MemoWithLinks from './MemoWithLinks';
 
 const formatTaskDate = (task) => {
@@ -6,10 +6,12 @@ const formatTaskDate = (task) => {
     if (task?.time) {
       return `時間: ${task.time}`;
     }
-    return null;
+    return '日付未設定';
   }
 
-  const parts = (task.date || '').split('-').map(Number);
+  const parts = String(task.date || '')
+    .split('-')
+    .map((value) => Number(value));
   if (parts.length < 3 || Number.isNaN(parts[0])) {
     return task.date;
   }
@@ -23,15 +25,39 @@ const formatTaskDate = (task) => {
   const options = { month: 'numeric', day: 'numeric', weekday: 'short' };
   const dateLabel = dateObj.toLocaleDateString('ja-JP', options);
 
-  if (task?.isStandaloneTask) {
-    return `納期: ${dateLabel}`;
-  }
-
-  if (task.allDay || !task.time) {
+  if (task?.allDay || !task?.time) {
     return dateLabel;
   }
 
   return `${dateLabel} ${task.time}`;
+};
+
+const compareTasksByDate = (a, b) => {
+  const aDate = a?.date ?? '';
+  const bDate = b?.date ?? '';
+
+  if (!aDate && !bDate) {
+    const aName = a?.name ?? '';
+    const bName = b?.name ?? '';
+    return aName.localeCompare(bName, 'ja');
+  }
+  if (!aDate) return 1;
+  if (!bDate) return -1;
+  if (aDate !== bDate) {
+    return aDate.localeCompare(bDate);
+  }
+
+  const aTime = a?.time ?? '';
+  const bTime = b?.time ?? '';
+
+  if (!aTime && !bTime) {
+    const aName = a?.name ?? '';
+    const bName = b?.name ?? '';
+    return aName.localeCompare(bName, 'ja');
+  }
+  if (!aTime) return 1;
+  if (!bTime) return -1;
+  return aTime.localeCompare(bTime);
 };
 
 const getTaskKey = (task) => {
@@ -45,7 +71,7 @@ const getTaskKey = (task) => {
   return `task-${task?.name ?? 'unknown'}-${task?.date ?? 'no-date'}-${task?.time ?? 'no-time'}`;
 };
 
-const TaskArea = ({ tasks = [], onEdit, onToggleTask, onReorderTasks, onTaskDelete, isAltPressed = false }) => {
+const TaskArea = ({ tasks = [], onEdit, onToggleTask, onTaskDelete, isAltPressed = false }) => {
   const taskList = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
   const { incompleteTasks, completedTasks } = useMemo(() => {
@@ -58,130 +84,24 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onReorderTasks, onTaskDele
         incomplete.push(task);
       }
     });
+
+    incomplete.sort(compareTasksByDate);
+    completed.sort(compareTasksByDate);
+
     return { incompleteTasks: incomplete, completedTasks: completed };
   }, [taskList]);
 
-  const [draggedIndex, setDraggedIndex] = useState(null);
-  const [dragOverIndex, setDragOverIndex] = useState(null);
-
-  const resetDragState = useCallback(() => {
-    setDraggedIndex(null);
-    setDragOverIndex(null);
-  }, []);
-
-  const finalizeReorder = useCallback((destinationIndex) => {
-    if (draggedIndex == null || destinationIndex == null) {
-      resetDragState();
-      return;
-    }
-
-    if (typeof onReorderTasks !== 'function') {
-      resetDragState();
-      return;
-    }
-
-    const sourceIndex = draggedIndex;
-    if (destinationIndex === sourceIndex) {
-      resetDragState();
-      return;
-    }
-
-    const reorderedIncomplete = [...incompleteTasks];
-    const [movedTask] = reorderedIncomplete.splice(sourceIndex, 1);
-
-    let insertIndex = destinationIndex;
-    if (destinationIndex > sourceIndex) {
-      insertIndex -= 1;
-    }
-
-    insertIndex = Math.max(0, Math.min(insertIndex, reorderedIncomplete.length));
-    reorderedIncomplete.splice(insertIndex, 0, movedTask);
-
-    const nextOrder = [...reorderedIncomplete, ...completedTasks];
-    const originalOrder = [...incompleteTasks, ...completedTasks];
-    const isSameOrder = nextOrder.length === originalOrder.length && nextOrder.every((task, index) => task === originalOrder[index]);
-
-    if (!isSameOrder) {
-      onReorderTasks(nextOrder);
-    }
-
-    resetDragState();
-  }, [completedTasks, draggedIndex, incompleteTasks, onReorderTasks, resetDragState]);
-
-  const handleDragStart = useCallback((event, index) => {
-    if (typeof onReorderTasks !== 'function') {
-      event.preventDefault();
-      return;
-    }
-
-    const target = incompleteTasks[index];
-    if (!target) {
-      event.preventDefault();
-      return;
-    }
-
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', getTaskKey(target));
-    setDraggedIndex(index);
-    setDragOverIndex(index);
-  }, [incompleteTasks, onReorderTasks]);
-
-  const handleDragOver = useCallback((event, index) => {
-    if (draggedIndex == null) return;
-    event.preventDefault();
-    if (dragOverIndex !== index) {
-      setDragOverIndex(index);
-    }
-  }, [dragOverIndex, draggedIndex]);
-
-  const handleDrop = useCallback((event, index) => {
-    event.preventDefault();
-    event.stopPropagation();
-    finalizeReorder(index);
-  }, [finalizeReorder]);
-
-  const handleDragEnd = useCallback(() => {
-    resetDragState();
-  }, [resetDragState]);
-
-  const dropEnabled = typeof onReorderTasks === 'function';
-
-  const handleContainerDragOver = useCallback((event) => {
-    if (!dropEnabled || draggedIndex == null) return;
-    if (event.target !== event.currentTarget) return;
-    event.preventDefault();
-    setDragOverIndex(incompleteTasks.length);
-  }, [dropEnabled, draggedIndex, incompleteTasks.length]);
-
-  const handleContainerDrop = useCallback((event) => {
-    if (!dropEnabled || draggedIndex == null) return;
-    if (event.target !== event.currentTarget) return;
-    event.preventDefault();
-    event.stopPropagation();
-    finalizeReorder(incompleteTasks.length);
-  }, [dropEnabled, draggedIndex, finalizeReorder, incompleteTasks.length]);
-
-  const renderTaskCard = (task, { index = null, draggable = false } = {}) => {
+  const renderTaskCard = (task) => {
     const isCompleted = !!task?.completed;
-    const isStandaloneTask = !!task?.isStandaloneTask;
     const formattedDate = formatTaskDate(task);
     const key = getTaskKey(task);
-
-    const highlightActive = draggable && draggedIndex === index;
-    const highlightDrop = draggable && dragOverIndex === index && draggedIndex !== null;
 
     return (
       <div
         key={key}
         className={`border border-gray-200 rounded-lg p-2.5 bg-white shadow-sm transition hover:shadow-md cursor-pointer ${
           isCompleted ? 'opacity-70' : ''
-        } ${highlightActive ? 'opacity-60' : ''} ${highlightDrop ? 'ring-2 ring-indigo-200' : ''}`}
-        draggable={draggable}
-        onDragStart={draggable ? (event) => handleDragStart(event, index) : undefined}
-        onDragOver={draggable ? (event) => handleDragOver(event, index) : undefined}
-        onDrop={draggable ? (event) => handleDrop(event, index) : undefined}
-        onDragLeave={draggable ? () => setDragOverIndex(null) : undefined}
-        onDragEnd={draggable ? handleDragEnd : undefined}
+        }`}
         onClick={() => {
           if (onEdit) {
             onEdit(task);
@@ -211,7 +131,7 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onReorderTasks, onTaskDele
                 {task?.emoji ? `${task.emoji} ` : ''}
                 {task?.name || '名称未設定のタスク'}
               </span>
-              {!isStandaloneTask && task?.allDay && (
+              {task?.allDay && task?.date && (
                 <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
                   終日
                 </span>
@@ -269,14 +189,10 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onReorderTasks, onTaskDele
             <p className="text-xs text-gray-300">右上の「＋」からタスクを追加できます</p>
           </div>
         ) : (
-          <div
-            className="card-stack"
-            onDragOver={handleContainerDragOver}
-            onDrop={handleContainerDrop}
-          >
-            {incompleteTasks.map((task, index) => (
+          <div className="card-stack">
+            {incompleteTasks.map((task) => (
               <React.Fragment key={getTaskKey(task)}>
-                {renderTaskCard(task, { index, draggable: dropEnabled })}
+                {renderTaskCard(task)}
               </React.Fragment>
             ))}
 

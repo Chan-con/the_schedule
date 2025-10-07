@@ -65,7 +65,6 @@ const Timeline = ({
 	onAddTask,
 	onScheduleUpdate,
 	onToggleTask,
-	onTaskReorder,
 	onScheduleDelete,
 	activeTab = 'timeline',
 	onTabChange,
@@ -842,7 +841,6 @@ const Timeline = ({
 						tasks={availableTasks}
 						onEdit={onEdit}
 						onToggleTask={onToggleTask}
-						onReorderTasks={onTaskReorder}
 						onTaskDelete={onScheduleDelete}
 						isAltPressed={isAltPressed}
 					/>
