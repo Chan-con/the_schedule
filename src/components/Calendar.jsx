@@ -904,7 +904,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                               {isDraggedSchedule ? '📋' : '⚡'}
                             </span>
                           )}
-                          <span className={`truncate pointer-events-none text-left text-[0.8rem] font-bold flex-1 ${schedule.isTask ? 'text-gray-700' : 'text-gray-800'}`}>
+                          <span className={`truncate pointer-events-none text-left text-[0.56rem] font-bold flex-1 ${schedule.isTask ? 'text-gray-700' : 'text-gray-800'}`}>
                             {displayText}
                           </span>
                           {schedule.isTask && (
