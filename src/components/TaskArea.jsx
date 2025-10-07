@@ -128,7 +128,6 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onTaskDelete, isAltPressed
                 <span className="mr-1 text-xs" aria-hidden="true">⚡</span>
               )}
               <span className={`font-medium ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
-                {task?.emoji ? `${task.emoji} ` : ''}
                 {task?.name || '名称未設定のタスク'}
               </span>
               {task?.allDay && task?.date && (

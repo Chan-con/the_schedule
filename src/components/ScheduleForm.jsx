@@ -1,38 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { toDateStrLocal } from '../utils/date';
 
-const EMOJI_OPTIONS = [
-{ value: '', label: '-', emoji: '' },
-  // 仕事
-{ value: '💼', label: '仕事', emoji: '💼' },
-{ value: '🤝', label: '対面会議', emoji: '🤝' },
-{ value: '💻', label: 'オンライン会議', emoji: '💻' },
-{ value: '📚', label: 'セミナー', emoji: '📚' },
-{ value: '🧳', label: '出張先で仕事', emoji: '🧳' },
-{ value: '🛫', label: '移動（飛行機）', emoji: '🛫' },
-{ value: '🚅', label: '移動（新幹線）', emoji: '🚅' },
-{ value: '🚃', label: '移動（電車）', emoji: '🚃' },
-{ value: '🚕', label: '移動（車）', emoji: '🚕' },
-{ value: '🏨', label: '宿泊', emoji: '🏨' },
-// タスク
-{ value: '🏁', label: 'スタート', emoji: '🏁' },
-{ value: '🏆', label: 'ゴール', emoji: '🏆' },
-{ value: '🚩', label: 'チェック', emoji: '🚩' },
-// 連絡
-{ value: '📞', label: '電話', emoji: '📞' },
-{ value: '✉️', label: 'メール', emoji: '✉️' },
-{ value: '💬', label: 'チャット', emoji: '💬' },
-
-// プライベート
-{ value: '🚶', label: '外出', emoji: '🚶' },
-{ value: '🍽️', label: '食事', emoji: '🍽️' },
-{ value: '🎂', label: '誕生日', emoji: '🎂' },
-{ value: '🎉', label: 'パーティ', emoji: '🎉' },
-{ value: '🏖️', label: '休暇', emoji: '🏖️' },
-{ value: '🏡', label: 'ホーム', emoji: '🏡' },
-{ value: '📦', label: '荷物受け取り', emoji: '📦'},
-];
-
 const MAX_NOTIFICATIONS = 3;
 
 const createInitialFormData = (schedule) => {
@@ -43,8 +11,7 @@ const createInitialFormData = (schedule) => {
     name: schedule?.name ?? '',
     date: schedule?.date ?? toDateStrLocal(now),
     time: schedule?.time ?? '',
-    memo: schedule?.memo ?? '',
-    emoji: schedule?.emoji ?? '',
+  memo: schedule?.memo ?? '',
     allDay: schedule?.allDay ?? !(schedule?.time),
     notifications: schedule?.notifications ? schedule.notifications.map((n) => ({ ...n })) : [],
     isTask: isTaskEntry,
@@ -323,7 +290,6 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                     setFormData((prev) => ({
                       ...prev,
                       isTask: true,
-                      emoji: prev.emoji ?? '',
                       source: 'scheduleTask',
                       date: prev.date || toDateStrLocal(new Date()),
                     }))
@@ -414,50 +380,6 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
               <span className="text-blue-600">💡 ダブルクリックで現在時刻入力/クリア</span>
             </div>
           </div>
-
-          {!formData.isTask && (
-            <div>
-              <label className="block text-gray-700 font-medium mb-2">絵文字</label>
-              <div className="border border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 p-2 shadow-inner">
-                <div
-                  className="grid grid-cols-6 gap-1 overflow-y-auto emoji-scrollbar smooth-scroll"
-                  style={{
-                    height: '112px',
-                    maxHeight: '112px',
-                    scrollBehavior: 'smooth'
-                  }}
-                >
-                  {EMOJI_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onMouseDown={(e) => {
-                        // マウスクリック時にフォーカスが当たって黒枠が出ないようにする
-                        e.preventDefault();
-                      }}
-                      onClick={() =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          emoji: option.value
-                        }))
-                      }
-                      title={option.label}
-                      className={`
-                        w-8 h-8 rounded-md border transition-all duration-200 flex items-center justify-center text-lg hover:scale-110 flex-shrink-0 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0
-                        ${
-                          formData.emoji === option.value
-                            ? 'border-blue-500 bg-blue-100 shadow-md'
-                            : 'border-gray-200 hover:border-gray-300 bg-white hover:shadow-sm'
-                        }
-                      `}
-                    >
-                      {option.emoji || '－'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
 
           <div>
             <div className="flex justify-between items-center mb-2">

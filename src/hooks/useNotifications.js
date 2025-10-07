@@ -63,9 +63,12 @@ const generateNotificationText = (schedule, notification) => {
     notificationTypeText = `${notification.value}${unitText[notification.unit]}`;
   }
   
+  const title = schedule.name || '名称未設定の予定';
+  const memoText = schedule.memo ? `\nメモ: ${schedule.memo}` : '';
+
   return {
-    title: `${schedule.emoji || '📅'} ${schedule.name}`,
-    body: `${notificationTypeText}の通知\n${timeText}${schedule.memo ? `\n📝 ${schedule.memo}` : ''}`
+    title,
+    body: `${notificationTypeText}の通知\n${timeText}${memoText}`
   };
 };
 

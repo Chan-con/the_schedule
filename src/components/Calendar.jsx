@@ -821,9 +821,9 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
 
                   const rendered = visibleSchedules.map((schedule, index) => {
                     const scheduleId = schedule.id != null ? String(schedule.id) : null;
-                    const displayText = schedule.allDay
-                      ? `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.name}`
-                      : `${schedule.emoji || ''}${schedule.emoji ? ' ' : ''}${schedule.time} ${schedule.name}`;
+                    const displayText = schedule.allDay || !schedule.time
+                      ? schedule.name
+                      : `${schedule.time} ${schedule.name}`;
 
                     const isPast = isSchedulePast(schedule);
                     const isDimTask = shouldDimForTask(schedule);
@@ -1008,9 +1008,9 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                 <span className="mr-1 text-xs opacity-70">📋</span>
               )}
               <span className="font-bold">
-                {draggedSchedule.allDay 
-                  ? `${draggedSchedule.emoji || ''}${draggedSchedule.emoji ? ' ' : ''}${draggedSchedule.name}` 
-                  : `${draggedSchedule.emoji || ''}${draggedSchedule.emoji ? ' ' : ''}${draggedSchedule.time} ${draggedSchedule.name}`}
+                {draggedSchedule.allDay || !draggedSchedule.time
+                  ? draggedSchedule.name
+                  : `${draggedSchedule.time} ${draggedSchedule.name}`}
               </span>
             </div>
           </div>

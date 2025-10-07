@@ -4,7 +4,7 @@ Electron + React で動作するカレンダーアプリを、Supabase と Googl
 
 ## 主な機能
 
-- 📅 予定・タスク管理（終日、時間指定、通知、絵文字、タスクチェックなど既存機能はそのまま）
+- 📅 予定・タスク管理（終日、時間指定、通知、タスクチェックなど既存機能はそのまま）
 - 🔐 Google アカウントによるサインイン（Supabase Auth / Google OAuth）
 - ☁️ Supabase PostgreSQL へユーザー毎に予定を保存（Row Level Security 対応）
 - 🔁 オフラインでも利用できるようにユーザー毎のローカルキャッシュを保持
@@ -50,7 +50,6 @@ VITE_SUPABASE_ELECTRON_REDIRECT_URL=schedule-app://auth-callback
 			 time text,
 			 name text not null,
 			 memo text,
-			 emoji text,
 			 all_day boolean not null default false,
 			 all_day_order integer not null default 0,
 			 notifications jsonb not null default '[]'::jsonb,

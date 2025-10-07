@@ -516,7 +516,6 @@ const Timeline = ({
 									isTaskItem && isCompleted ? 'text-slate-500 line-through' : isPast ? 'text-slate-500' : 'text-slate-900'
 								}`}
 							>
-								{schedule?.emoji ? `${schedule.emoji} ` : ''}
 								{schedule?.name || '名称未設定の予定'}
 							</span>
 							{schedule?.allDay && (
@@ -618,7 +617,6 @@ const Timeline = ({
 										isTaskSchedule && isCompleted ? 'line-through text-slate-500' : 'text-slate-900'
 									}`}
 								>
-									{schedule?.emoji ? `${schedule.emoji} ` : ''}
 									{schedule?.name || '名称未設定の予定'}
 								</span>
 								{schedule?.location && (
