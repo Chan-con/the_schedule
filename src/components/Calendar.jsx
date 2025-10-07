@@ -927,23 +927,6 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                     );
                   });
 
-                  if (
-                    isCustomDragging &&
-                    draggedSchedule?.allDay &&
-                    dragOverScheduleInfo?.date === dateStr &&
-                    typeof dragOverScheduleInfo?.index === 'number' &&
-                    dragOverScheduleInfo.index >= rendered.length
-                  ) {
-                    rendered.push(
-                      <div
-                        key="all-day-drop-tail"
-                        className="h-7 rounded border-2 border-dashed border-indigo-200 bg-indigo-50/70 text-[10px] text-indigo-400 flex items-center justify-center"
-                      >
-                        ここにドロップで末尾へ移動
-                      </div>
-                    );
-                  }
-
                   return rendered;
                 })()}
 
