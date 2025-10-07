@@ -130,6 +130,12 @@ const Timeline = ({
 	const showTimeline = currentTab === 'timeline';
 	const showTasks = currentTab === 'tasks';
 	const availableTasks = Array.isArray(tasks) ? tasks : [];
+	const incompleteTaskCount = availableTasks.reduce((count, task) => {
+		if (!task || task.completed) {
+			return count;
+		}
+		return count + 1;
+	}, 0);
 
 	useLayoutEffect(() => {
 		if (!showTimeline) return undefined;
@@ -816,7 +822,7 @@ const Timeline = ({
 					</div>
 					<span className="text-xs font-medium text-slate-400">
 						{showTasks
-							? `タスク ${availableTasks.length}件`
+							? `タスク ${incompleteTaskCount}件`
 							: `予定 ${timelineEntries.length}件`}
 					</span>
 				</div>
