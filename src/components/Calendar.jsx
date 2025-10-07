@@ -92,16 +92,16 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       const rowHeight = availableHeight / 6; // 6週間分
       
       // 日付表示部分（約20px）とスケジュール間隔（2px）を考慮
-      const dateHeight = 20;
-      const scheduleHeight = 20; // 1スケジュールの高さ
-      const scheduleSpacing = 2; // スケジュール間の余白
-      const otherItemsHeight = 16; // "他○件"の高さ
-      const padding = 8; // セル内のパディング
+      const dateHeight = 18;
+      const scheduleHeight = 14; // 1スケジュールの高さ
+      const scheduleSpacing = 1; // スケジュール間の余白
+      const otherItemsHeight = 14; // "他○件"の高さ
+      const padding = 4; // セル内のパディング
       
       const availableForSchedules = rowHeight - dateHeight - padding;
       const maxSchedules = Math.max(1, Math.floor((availableForSchedules - otherItemsHeight) / (scheduleHeight + scheduleSpacing)));
       
-      setMaxSchedulesPerCell(Math.min(maxSchedules, 6)); // 最大6件まで
+  setMaxSchedulesPerCell(Math.min(maxSchedules, 7)); // 最大7件まで
       
       console.log('📏 Calendar size updated:', {
         calendarHeight,
@@ -810,7 +810,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
               </div>
               
               {/* 予定部分 - 残りのスペースを使用（表示中の全日付で予定を表示） */}
-              <div className="schedules-container flex-1 w-full overflow-hidden space-y-0.5">
+              <div className="schedules-container flex-1 w-full overflow-hidden space-y-[2px]">
                 {(() => {
                   // スクロールオフセットを取得
                   const scrollOffset = parseInt(document.querySelector(`[data-date="${dateStr}"]`)?.getAttribute('data-scroll-offset') || '0');
@@ -842,7 +842,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                         data-schedule-id={scheduleId ?? ''}
                         data-all-day={schedule.allDay ? 'true' : 'false'}
                         className={`
-                          schedule-item text-xs px-1 py-0.5 rounded truncate w-full leading-tight select-none
+                          schedule-item text-xs px-1 py-px rounded truncate w-full leading-tight select-none
                           ${schedule.allDay
                             ? isPast
                               ? 'bg-yellow-100 text-yellow-600 hover:bg-yellow-200 cursor-grab'
@@ -898,9 +898,9 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                           }
                         }}
                       >
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-0.5">
                           {isAltPressed && (
-                            <span className="text-xs font-bold opacity-70 mr-1">
+                            <span className="text-[10px] font-bold opacity-70">
                               {isDraggedSchedule ? '📋' : '⚡'}
                             </span>
                           )}
@@ -956,7 +956,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                     if (scrollOffset > 0 && hiddenSchedules > 0) {
                       // 上にも下にも隠れた予定がある場合
                       return (
-                        <div className="text-xs font-bold text-gray-500 px-1 py-0.5 truncate flex justify-between items-center bg-gray-50 rounded">
+                        <div className="text-[10px] font-bold text-gray-500 px-1 py-0.5 truncate flex justify-between items-center bg-gray-50 rounded">
                           <span>↑{scrollOffset}件</span>
                           <span className="text-gray-400">•••</span>
                           <span>↓{hiddenSchedules}件</span>
@@ -965,14 +965,14 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                     } else if (scrollOffset > 0) {
                       // 上にのみ隠れた予定がある場合
                       return (
-                        <div className="text-xs font-bold text-gray-500 px-1 py-0.5 truncate text-center bg-gray-50 rounded">
+                        <div className="text-[10px] font-bold text-gray-500 px-1 py-0.5 truncate text-center bg-gray-50 rounded">
                           ↑ 他{scrollOffset}件
                         </div>
                       );
                     } else {
                       // 下にのみ隠れた予定がある場合
                       return (
-                        <div className="text-xs font-bold text-gray-500 px-1 py-0.5 truncate text-center bg-gray-50 rounded">
+                        <div className="text-[10px] font-bold text-gray-500 px-1 py-0.5 truncate text-center bg-gray-50 rounded">
                           ↓ 他{hiddenSchedules}件
                         </div>
                       );
