@@ -898,11 +898,19 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                           }
                         }}
                       >
-                        <div className="flex items-center">
+                        <div className="flex items-center gap-1">
+                          {isAltPressed && (
+                            <span className="text-xs font-bold opacity-70 mr-1">
+                              {isDraggedSchedule ? '📋' : '⚡'}
+                            </span>
+                          )}
+                          <span className={`truncate pointer-events-none text-left text-[0.8rem] font-bold flex-1 ${schedule.isTask ? 'text-gray-700' : 'text-gray-800'}`}>
+                            {displayText}
+                          </span>
                           {schedule.isTask && (
                             <button
                               type="button"
-                              className={`mr-1 inline-flex h-3 w-3 items-center justify-center rounded border p-0 text-[8px] leading-none transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'}`}
+                              className={`ml-1 inline-flex h-3 w-3 shrink-0 items-center justify-center rounded border p-0 text-[8px] leading-none transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'}`}
                               title={schedule.completed ? '完了済み' : '未完了'}
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -914,14 +922,6 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                               ✓
                             </button>
                           )}
-                          {isAltPressed && (
-                            <span className="mr-1 text-xs font-bold opacity-70">
-                              {isDraggedSchedule ? '📋' : '⚡'}
-                            </span>
-                          )}
-                          <span className={`truncate pointer-events-none text-[0.8rem] font-bold ${schedule.isTask ? 'text-gray-700' : 'text-gray-800'}`}>
-                            {displayText}
-                          </span>
                         </div>
                       </div>
                     );
