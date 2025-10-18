@@ -340,13 +340,34 @@ function App() {
       // 実際のビューポート高さを取得してCSS変数に設定
       const vh = window.innerHeight * 0.01;
       document.documentElement.style.setProperty('--vh', `${vh}px`);
+      
+      // デバッグログ
+      if (isMobile) {
+        console.log('📐 Viewport height updated:', {
+          innerHeight: window.innerHeight,
+          vh: vh,
+          calculated: window.innerHeight * 0.01 * 100
+        });
+      }
     };
 
+    // 初期設定
     setViewportHeight();
+    
+    // 短い遅延後にもう一度実行（初期レンダリング後）
+    setTimeout(setViewportHeight, 100);
+    setTimeout(setViewportHeight, 500);
     
     // リサイズ時とオリエンテーション変更時に更新
     window.addEventListener('resize', setViewportHeight);
     window.addEventListener('orientationchange', setViewportHeight);
+    
+    // ビューポートの変更を検知（よりアグレッシブに）
+    const visualViewport = window.visualViewport;
+    if (visualViewport) {
+      visualViewport.addEventListener('resize', setViewportHeight);
+      visualViewport.addEventListener('scroll', setViewportHeight);
+    }
     
     // iOS Safariでスクロール時にアドレスバーが表示/非表示になる場合に対応
     let ticking = false;
@@ -365,8 +386,12 @@ function App() {
       window.removeEventListener('resize', setViewportHeight);
       window.removeEventListener('orientationchange', setViewportHeight);
       window.removeEventListener('scroll', handleScroll);
+      if (visualViewport) {
+        visualViewport.removeEventListener('resize', setViewportHeight);
+        visualViewport.removeEventListener('scroll', setViewportHeight);
+      }
     };
-  }, []);
+  }, [isMobile]);
 
   // 予定が変更されたらローカルストレージに保存
   useEffect(() => {

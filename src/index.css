@@ -282,6 +282,9 @@ input[type="number"].notification-input:focus {
   html, body {
     width: 100vw;
     height: 100vh;
+    /* モバイルブラウザのアドレスバーを考慮 - 複数の方法を試す */
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
     height: 100dvh;
     overflow: hidden;
     position: fixed;
@@ -293,6 +296,8 @@ input[type="number"].notification-input:focus {
   #root {
     width: 100vw;
     height: 100vh;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
     height: 100dvh;
     overflow: hidden;
     position: fixed;
@@ -300,21 +305,24 @@ input[type="number"].notification-input:focus {
     padding: 0;
   }
 
-  /* Safari/Chrome のアドレスバー対応（フォールバック） */
-  @supports not (height: 100dvh) {
-    html, body, #root {
-      height: calc(var(--vh, 1vh) * 100);
-    }
+  /* JavaScriptによる動的な高さ設定を最優先 */
+  html, body, #root {
+    height: calc(var(--vh, 1vh) * 100) !important;
   }
 
   /* カレンダーの角丸を削除してスペース節約 */
   .rounded-lg {
-    border-radius: 0 !important;
+    border-radius: 0.25rem !important;
   }
 
   /* グリッドのギャップを小さく */
   .grid-cols-7 {
     gap: 0.125rem !important;
+  }
+
+  /* カレンダーグリッドの調整 */
+  .grid-rows-6 {
+    grid-auto-rows: minmax(0, 1fr);
   }
 
   /* タッチ操作を改善（チェックボックスボタンとサイズ指定されたボタンは除外） */
