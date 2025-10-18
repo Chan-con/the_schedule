@@ -29,6 +29,8 @@ html, body, #root {
   height: 100dvh; /* Dynamic Viewport Height */
   overflow: hidden;
   font-family: 'Zen Maru Gothic', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+  /* iOS Safari対応: safe-area-insetで下部の安全領域を確保 */
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Safari/Chrome のアドレスバー対応（フォールバック） */
@@ -291,6 +293,8 @@ input[type="number"].notification-input:focus {
     overscroll-behavior: none;
     margin: 0;
     padding: 0;
+    /* iOS Safari対応: safe-area-insetで下部の安全領域を確保 */
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   #root {
@@ -303,6 +307,8 @@ input[type="number"].notification-input:focus {
     position: fixed;
     margin: 0;
     padding: 0;
+    /* iOS Safari対応: safe-area-insetで下部の安全領域を確保 */
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   /* JavaScriptによる動的な高さ設定を最優先 */
