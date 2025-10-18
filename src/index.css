@@ -286,6 +286,8 @@ input[type="number"].notification-input:focus {
     overflow: hidden;
     position: fixed;
     overscroll-behavior: none;
+    margin: 0;
+    padding: 0;
   }
 
   #root {
@@ -294,6 +296,8 @@ input[type="number"].notification-input:focus {
     height: 100dvh;
     overflow: hidden;
     position: fixed;
+    margin: 0;
+    padding: 0;
   }
 
   /* Safari/Chrome のアドレスバー対応（フォールバック） */
@@ -301,6 +305,16 @@ input[type="number"].notification-input:focus {
     html, body, #root {
       height: calc(var(--vh, 1vh) * 100);
     }
+  }
+
+  /* カレンダーの角丸を削除してスペース節約 */
+  .rounded-lg {
+    border-radius: 0 !important;
+  }
+
+  /* グリッドのギャップを小さく */
+  .grid-cols-7 {
+    gap: 0.125rem !important;
   }
 
   /* タッチ操作を改善（チェックボックスボタンとサイズ指定されたボタンは除外） */

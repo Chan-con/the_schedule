@@ -1095,7 +1095,7 @@ function App() {
 
   return (
     <div 
-      className="w-screen h-screen bg-gradient-to-br from-indigo-900 to-gray-900 text-gray-900 font-sans flex flex-col overflow-hidden"
+      className={`w-screen h-screen bg-gradient-to-br from-indigo-900 to-gray-900 text-gray-900 font-sans flex flex-col overflow-hidden ${isMobile ? 'm-0 p-0' : ''}`}
       onWheel={(e) => {
         // モーダルが開いている場合は全体のスクロールを防止
         if (showSettings || showForm) {
@@ -1120,7 +1120,7 @@ function App() {
         </>
       )}
       <main 
-        className="flex-1 px-2 py-2 overflow-hidden flex relative"
+        className={`flex-1 overflow-hidden flex relative ${isMobile ? 'p-0' : 'px-2 py-2'}`}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseDown={handleMouseDown}

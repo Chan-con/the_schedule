@@ -686,10 +686,10 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
   return (
     <div 
       ref={calendarRef}
-      className="bg-white rounded-lg shadow-lg p-3 w-full h-full flex flex-col overflow-hidden"
+      className="bg-white rounded-lg shadow-lg p-2 md:p-3 w-full h-full flex flex-col overflow-hidden"
       onMouseDown={handleMiddleClick}
     >
-      <div className="flex justify-between items-center mb-3 flex-shrink-0">
+      <div className="flex justify-between items-center mb-2 md:mb-3 flex-shrink-0">
         <button 
           onClick={prevMonth}
           className="text-gray-600 hover:text-white p-2 rounded-full bg-gray-100 hover:bg-indigo-500 transition-colors duration-200 shadow-sm"
@@ -717,11 +717,11 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
         </button>
       </div>
       
-      <div className="grid grid-cols-7 gap-1 mb-2 flex-shrink-0">
+      <div className="grid grid-cols-7 gap-1 mb-1 md:mb-2 flex-shrink-0">
         {["月","火","水","木","金","土","日"].map((w, i) => (
           <div 
             key={i} 
-            className={`text-center font-bold text-xs py-1 ${i === 5 ? 'text-blue-500' : i === 6 ? 'text-red-500' : 'text-gray-600'}`}
+            className={`text-center font-bold text-xs py-0.5 md:py-1 ${i === 5 ? 'text-blue-500' : i === 6 ? 'text-red-500' : 'text-gray-600'}`}
           >
             {w}
           </div>
