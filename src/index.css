@@ -25,8 +25,8 @@ input, textarea, [contenteditable="true"] {
 html, body, #root {
   width: 100vw;
   height: 100vh;
-  /* モバイルブラウザのアドレスバーを考慮 */
-  height: 100dvh; /* Dynamic Viewport Height */
+  /* iOS Safari対応: Small Viewport Heightを使用（ツールバー表示時の高さ） */
+  height: 100svh;
   overflow: hidden;
   font-family: 'Zen Maru Gothic', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
 }
@@ -40,7 +40,7 @@ html, body, #root {
 }
 
 /* Safari/Chrome のアドレスバー対応（フォールバック） */
-@supports not (height: 100dvh) {
+@supports not (height: 100svh) {
   html, body, #root {
     height: calc(var(--vh, 1vh) * 100);
   }
@@ -289,7 +289,8 @@ input[type="number"].notification-input:focus {
 @media (max-width: 768px) {
   html {
     width: 100vw;
-    height: 100vh;
+    /* iOS Safari対応: Small Viewport Heightを優先 */
+    height: 100svh;
     height: -webkit-fill-available;
     overflow: hidden;
     position: fixed;
@@ -300,7 +301,8 @@ input[type="number"].notification-input:focus {
 
   body {
     width: 100vw;
-    height: 100vh;
+    /* iOS Safari対応: Small Viewport Heightを優先 */
+    height: 100svh;
     height: -webkit-fill-available;
     overflow: hidden;
     position: fixed;
@@ -311,17 +313,13 @@ input[type="number"].notification-input:focus {
 
   #root {
     width: 100vw;
-    /* iOS Safari対応: safe-area-insetを考慮した高さ計算 */
-    height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    height: calc((var(--vh, 1vh) * 100) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    /* iOS Safari対応: Small Viewport Heightを使用 */
+    height: 100svh;
+    min-height: 100svh;
     overflow: hidden;
     position: relative;
     margin: 0;
     padding: 0;
-    /* safe-areaのパディングを追加 */
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
     box-sizing: border-box;
   }
 
