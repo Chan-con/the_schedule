@@ -334,6 +334,40 @@ function App() {
     return () => window.removeEventListener('resize', checkScreenSize);
   }, []);
 
+  // モバイルブラウザのビューポート高さを動的に設定
+  useEffect(() => {
+    const setViewportHeight = () => {
+      // 実際のビューポート高さを取得してCSS変数に設定
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    };
+
+    setViewportHeight();
+    
+    // リサイズ時とオリエンテーション変更時に更新
+    window.addEventListener('resize', setViewportHeight);
+    window.addEventListener('orientationchange', setViewportHeight);
+    
+    // iOS Safariでスクロール時にアドレスバーが表示/非表示になる場合に対応
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          setViewportHeight();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('resize', setViewportHeight);
+      window.removeEventListener('orientationchange', setViewportHeight);
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
   // 予定が変更されたらローカルストレージに保存
   useEffect(() => {
     localStorage.setItem('schedules', JSON.stringify(schedules));
