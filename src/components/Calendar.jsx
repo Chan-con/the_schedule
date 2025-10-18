@@ -946,11 +946,11 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                         >
                           <span className="flex items-center justify-center gap-[2px]">
                             <span className="text-[0.42rem] text-gray-400">↑</span>
-                            <span>他{scrollOffset}件</span>
+                            <span>{scrollOffset}</span>
                           </span>
                           <span className="text-gray-400 text-[0.42rem] tracking-[0.2em]">•••</span>
                           <span className="flex items-center justify-center gap-[2px]">
-                            <span>他{hiddenSchedules}件</span>
+                            <span>{hiddenSchedules}</span>
                             <span className="text-[0.42rem] text-gray-400">↓</span>
                           </span>
                         </div>
@@ -965,7 +965,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                         >
                           <span className="flex items-center justify-center gap-[2px]">
                             <span className="text-[0.42rem] text-gray-400">↑</span>
-                            <span>他{scrollOffset}件</span>
+                            <span>{scrollOffset}</span>
                           </span>
                         </div>
                       );
@@ -978,7 +978,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                           aria-label={`隠れた予定: 下に${hiddenSchedules}件。スクロールで確認できます`}
                         >
                           <span className="flex items-center justify-center gap-[2px]">
-                            <span>他{hiddenSchedules}件</span>
+                            <span>{hiddenSchedules}</span>
                             <span className="text-[0.42rem] text-gray-400">↓</span>
                           </span>
                         </div>
