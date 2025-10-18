@@ -315,5 +315,15 @@ input[type="number"].notification-input:focus {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
   }
+
+  /* タイムラインのリサイズハンドルをタップしやすく */
+  .cursor-row-resize {
+    min-height: 44px !important;
+    touch-action: none;
+  }
+
+  .cursor-row-resize > div {
+    min-height: 8px !important;
+  }
 }
 

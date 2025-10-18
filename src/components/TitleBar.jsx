@@ -78,7 +78,7 @@ const TitleBar = ({ onSettingsClick, auth }) => {
                 <button
                   onClick={handleLogout}
                   disabled={isAuthProcessing}
-                  className={`px-2 py-0.5 rounded text-[11px] border border-white/40 transition-all duration-200 ${isAuthProcessing ? 'opacity-60 cursor-not-allowed' : 'hover:bg-white/20'}`}
+                  className={`h-auto px-2 py-0.5 rounded text-[11px] border border-white/40 transition-all duration-200 ${isAuthProcessing ? 'opacity-60 cursor-not-allowed' : 'hover:bg-white/20'}`}
                   style={{ WebkitAppRegion: 'no-drag' }}
                 >
                   ログアウト
@@ -88,7 +88,7 @@ const TitleBar = ({ onSettingsClick, auth }) => {
               <button
                 onClick={handleLogin}
                 disabled={isAuthLoading || isAuthProcessing}
-                className={`px-2 py-0.5 rounded text-[11px] border border-white/50 bg-white/10 backdrop-blur-sm transition-all duration-200 ${isAuthLoading || isAuthProcessing ? 'opacity-60 cursor-not-allowed' : 'hover:bg-white/20'}`}
+                className={`h-auto px-2 py-0.5 rounded text-[11px] border border-white/50 bg-white/10 backdrop-blur-sm transition-all duration-200 ${isAuthLoading || isAuthProcessing ? 'opacity-60 cursor-not-allowed' : 'hover:bg-white/20'}`}
                 style={{ WebkitAppRegion: 'no-drag' }}
               >
                 Googleでログイン

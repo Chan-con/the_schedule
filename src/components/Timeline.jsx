@@ -292,7 +292,23 @@ const Timeline = ({
 			if (!isResizing) return;
 
 			const maxHeight = resizeLimitsRef.current?.maxHeight ?? computeAllDayMaxHeight();
-			const deltaY = event.clientY - resizeStartY;
+			const clientY = event.clientY || (event.touches && event.touches[0]?.clientY) || 0;
+			const deltaY = clientY - resizeStartY;
+			const candidateHeight = resizeStartHeight + deltaY;
+			const clampedHeight = Math.max(
+				ALL_DAY_MIN_HEIGHT,
+				Math.min(maxHeight, candidateHeight)
+			);
+			setAllDayHeight(clampedHeight);
+		};
+
+		const handleTouchMove = (event) => {
+			if (!isResizing || !event.touches || event.touches.length === 0) return;
+			event.preventDefault();
+
+			const maxHeight = resizeLimitsRef.current?.maxHeight ?? computeAllDayMaxHeight();
+			const clientY = event.touches[0].clientY;
+			const deltaY = clientY - resizeStartY;
 			const candidateHeight = resizeStartHeight + deltaY;
 			const clampedHeight = Math.max(
 				ALL_DAY_MIN_HEIGHT,
@@ -305,15 +321,23 @@ const Timeline = ({
 			setIsResizing(false);
 		};
 
+		const handleTouchEnd = () => {
+			setIsResizing(false);
+		};
+
 		if (isResizing) {
 			document.addEventListener('mousemove', handleMouseMove);
 			document.addEventListener('mouseup', handleMouseUp);
+			document.addEventListener('touchmove', handleTouchMove, { passive: false });
+			document.addEventListener('touchend', handleTouchEnd);
 			document.body.style.userSelect = 'none';
 		}
 
 		return () => {
 			document.removeEventListener('mousemove', handleMouseMove);
 			document.removeEventListener('mouseup', handleMouseUp);
+			document.removeEventListener('touchmove', handleTouchMove);
+			document.removeEventListener('touchend', handleTouchEnd);
 			document.body.style.userSelect = '';
 		};
 	}, [computeAllDayMaxHeight, isResizing, resizeStartY, resizeStartHeight]);
@@ -321,7 +345,20 @@ const Timeline = ({
 	const handleResizeStart = (event) => {
 		event.preventDefault();
 		setIsResizing(true);
-		setResizeStartY(event.clientY);
+		const clientY = event.clientY || (event.touches && event.touches[0]?.clientY) || 0;
+		setResizeStartY(clientY);
+		setResizeStartHeight(allDayHeight);
+		resizeLimitsRef.current = {
+			maxHeight: computeAllDayMaxHeight(),
+		};
+	};
+
+	const handleTouchStartResize = (event) => {
+		if (!event.touches || event.touches.length === 0) return;
+		event.preventDefault();
+		setIsResizing(true);
+		const clientY = event.touches[0].clientY;
+		setResizeStartY(clientY);
 		setResizeStartHeight(allDayHeight);
 		resizeLimitsRef.current = {
 			maxHeight: computeAllDayMaxHeight(),
@@ -726,6 +763,7 @@ const Timeline = ({
 						isResizing ? 'bg-indigo-100/60' : 'bg-transparent'
 					}`}
 					onMouseDown={handleResizeStart}
+					onTouchStart={handleTouchStartResize}
 				>
 					<div
 						className={`h-1 w-16 rounded-full transition-colors duration-200 ${
