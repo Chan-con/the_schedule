@@ -101,7 +101,7 @@ const TitleBar = ({ onSettingsClick, auth }) => {
       <div className="flex items-center space-x-1 text-white" style={{ WebkitAppRegion: 'no-drag' }}>
         <button
           onClick={onSettingsClick}
-          className="w-6 h-6 flex items-center justify-center bg-transparent hover:bg-white hover:bg-opacity-20 rounded text-xs"
+          className="w-6 h-6 hidden md:flex items-center justify-center bg-transparent hover:bg-white hover:bg-opacity-20 rounded text-xs"
           title="設定"
         >
           ⚙️
@@ -109,7 +109,7 @@ const TitleBar = ({ onSettingsClick, auth }) => {
         
         <button
           onClick={handleMinimize}
-          className="w-6 h-6 flex items-center justify-center bg-transparent hover:bg-black hover:bg-opacity-10 text-xs font-bold"
+          className="w-6 h-6 hidden md:flex items-center justify-center bg-transparent hover:bg-black hover:bg-opacity-10 text-xs font-bold"
           title="最小化"
         >
           −
@@ -117,7 +117,7 @@ const TitleBar = ({ onSettingsClick, auth }) => {
         
         <button
           onClick={handleMaximize}
-          className="w-6 h-6 flex items-center justify-center bg-transparent hover:bg-black hover:bg-opacity-10 text-xs font-bold"
+          className="w-6 h-6 hidden md:flex items-center justify-center bg-transparent hover:bg-black hover:bg-opacity-10 text-xs font-bold"
           title={isMaximized ? "元のサイズに戻す" : "最大化"}
         >
           {isMaximized ? '⧉' : '□'}
@@ -125,7 +125,7 @@ const TitleBar = ({ onSettingsClick, auth }) => {
         
         <button
           onClick={handleClose}
-          className="w-6 h-6 flex items-center justify-center bg-transparent hover:bg-red-500 text-xs font-bold"
+          className="w-6 h-6 hidden md:flex items-center justify-center bg-transparent hover:bg-red-500 text-xs font-bold"
           title="閉じる"
         >
           ×

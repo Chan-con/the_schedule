@@ -420,6 +420,35 @@ function App() {
     event.preventDefault();
     setIsDragging(true);
   }, []);
+
+  // タッチダウンハンドラー（モバイル用リサイズ）
+  const handleTouchStartResize = useCallback((event) => {
+    if (!event || !event.touches || event.touches.length === 0) {
+      return;
+    }
+
+    const target = event.target;
+    if (!target || !target.closest('[data-layout-handle]')) {
+      return;
+    }
+
+    event.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  // タッチムーブハンドラー（モバイル用リサイズ）
+  const handleTouchMoveResize = useCallback((event) => {
+    if (!isDragging || !event.touches || event.touches.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    handleMouseMove({ clientX: event.touches[0].clientX });
+  }, [isDragging, handleMouseMove]);
+
+  // タッチエンドハンドラー（モバイル用リサイズ）
+  const handleTouchEndResize = useCallback(() => {
+    setIsDragging(false);
+  }, []);
   
   // タイムライン開閉ハンドラー
   const closeTimeline = () => {
@@ -481,14 +510,21 @@ function App() {
 
     const onMouseMove = (event) => handleMouseMove(event);
     const onMouseUp = () => handleMouseUp();
+    const onTouchMove = (event) => handleTouchMoveResize(event);
+    const onTouchEnd = () => handleTouchEndResize();
 
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', onTouchEnd);
+    
     return () => {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('touchend', onTouchEnd);
     };
-  }, [handleMouseMove, handleMouseUp, isDragging]);
+  }, [handleMouseMove, handleMouseUp, handleTouchMoveResize, handleTouchEndResize, isDragging]);
 
   // 日付クリック時の処理
   const handleDateClick = (date) => {
@@ -1054,6 +1090,8 @@ function App() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseDown={handleMouseDown}
+        onTouchMove={handleTouchMoveResize}
+        onTouchEnd={handleTouchEndResize}
         ref={layoutContainerRef}
       >
         
@@ -1154,6 +1192,7 @@ function App() {
                 ${isDragging ? '' : ''}
               `}
               onMouseDown={handleMouseDown}
+              onTouchStart={handleTouchStartResize}
             >
               <div className="w-full h-full flex items-center justify-center">
                 <div className={`

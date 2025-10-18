@@ -267,3 +267,53 @@ input[type="number"].notification-input:focus {
 .custom-checkbox:hover {
   border-color: #6366f1 !important;
 }
+
+/* モバイル対応 */
+@media (max-width: 768px) {
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    position: fixed;
+    overscroll-behavior: none;
+  }
+
+  #root {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    position: fixed;
+  }
+
+  /* タッチ操作を改善（チェックボックスボタンとサイズ指定されたボタンは除外） */
+  button:not([class*="size-"]):not([class*="h-"]):not([class*="w-"]), 
+  a:not([class*="size-"]):not([class*="h-"]):not([class*="w-"]), 
+  [role="button"]:not([class*="size-"]):not([class*="h-"]):not([class*="w-"]) {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+
+  /* リサイズハンドルをタッチに最適化 */
+  [data-layout-handle] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .cursor-col-resize {
+    cursor: grab;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+  }
+
+  .cursor-col-resize:active {
+    cursor: grabbing;
+  }
+
+  /* スクロール領域の改善 */
+  .overflow-auto, .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+}
+
