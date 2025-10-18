@@ -23,10 +23,10 @@ input, textarea, [contenteditable="true"] {
 }
 
 html, body, #root {
+  width: 100vw;
   height: 100vh;
   /* モバイルブラウザのアドレスバーを考慮 */
   height: 100dvh; /* Dynamic Viewport Height */
-  width: 100vw;
   overflow: hidden;
   font-family: 'Zen Maru Gothic', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
 }
@@ -34,8 +34,7 @@ html, body, #root {
 /* Safari/Chrome のアドレスバー対応（フォールバック） */
 @supports not (height: 100dvh) {
   html, body, #root {
-    height: 100vh;
-    height: calc(100vh - env(safe-area-inset-bottom));
+    height: calc(var(--vh, 1vh) * 100);
   }
 }
 
@@ -283,7 +282,6 @@ input[type="number"].notification-input:focus {
   html, body {
     width: 100vw;
     height: 100vh;
-    /* モバイルブラウザのアドレスバーを考慮 */
     height: 100dvh;
     overflow: hidden;
     position: fixed;
@@ -293,7 +291,6 @@ input[type="number"].notification-input:focus {
   #root {
     width: 100vw;
     height: 100vh;
-    /* モバイルブラウザのアドレスバーを考慮 */
     height: 100dvh;
     overflow: hidden;
     position: fixed;
@@ -302,15 +299,8 @@ input[type="number"].notification-input:focus {
   /* Safari/Chrome のアドレスバー対応（フォールバック） */
   @supports not (height: 100dvh) {
     html, body, #root {
-      height: calc(100vh - env(safe-area-inset-bottom));
-      /* JavaScriptで設定されるCSS変数を使用 */
       height: calc(var(--vh, 1vh) * 100);
     }
-  }
-
-  /* CSS変数を使用した高さ設定（最優先） */
-  html[style*="--vh"], body[style*="--vh"], #root {
-    height: calc(var(--vh, 1vh) * 100) !important;
   }
 
   /* タッチ操作を改善（チェックボックスボタンとサイズ指定されたボタンは除外） */
@@ -352,16 +342,6 @@ input[type="number"].notification-input:focus {
 
   .cursor-row-resize > div {
     min-height: 8px !important;
-  }
-
-  /* カレンダーの下部に余白を追加して最下行が見切れないように */
-  .grid-rows-6 {
-    padding-bottom: 8px;
-  }
-
-  /* mainコンテナの調整 */
-  main {
-    padding-bottom: 12px !important;
   }
 }
 
