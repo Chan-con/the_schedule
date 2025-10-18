@@ -1100,7 +1100,7 @@ function App() {
         {isMobile ? (
           <>
             {/* カレンダー部分（モバイル） */}
-            <div className="flex flex-col w-full overflow-hidden">
+            <div className="flex flex-col w-full h-full overflow-hidden">
               <Calendar 
                 schedules={schedules} 
                 onDateClick={handleDateClick} 
@@ -1167,7 +1167,7 @@ function App() {
           <>
             {/* カレンダー部分 */}
             <div 
-              className="flex flex-col overflow-hidden pr-1"
+              className="flex flex-col h-full overflow-hidden pr-1"
               style={{ width: `${splitRatio}%` }}
             >
               <Calendar 

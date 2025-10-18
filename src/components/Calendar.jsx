@@ -729,7 +729,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       </div>
       
       <div 
-        className="grid grid-cols-7 grid-rows-6 gap-1 flex-1"
+        className="grid grid-cols-7 grid-rows-6 gap-1 flex-1 min-h-0 overflow-hidden"
       >
         {calendarDays.map((date, index) => {
           // ローカル時間で日付文字列を生成
@@ -810,7 +810,9 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
               </div>
               
               {/* 予定部分 - 残りのスペースを使用（表示中の全日付で予定を表示） */}
-              <div className="schedules-container flex-1 w-full overflow-hidden space-y-0.5">
+              <div className="schedules-container flex-1 min-h-0 w-full overflow-hidden flex flex-col">
+                {/* 予定リスト */}
+                <div className="flex-1 min-h-0 overflow-hidden space-y-0.5">
                 {(() => {
                   // スクロールオフセットを取得
                   const scrollOffset = parseInt(document.querySelector(`[data-date="${dateStr}"]`)?.getAttribute('data-scroll-offset') || '0');
@@ -929,7 +931,9 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
 
                   return rendered;
                 })()}
+                </div>
 
+                {/* 残り件数表示 */}
                 {(() => {
                   const scrollOffset = parseInt(document.querySelector(`[data-date="${dateStr}"]`)?.getAttribute('data-scroll-offset') || '0');
                   const totalSchedules = daySchedules.length;
@@ -940,16 +944,16 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                       // 上にも下にも隠れた予定がある場合
                       return (
                         <div
-                          className="schedule-hidden-indicator flex items-center justify-center gap-2 text-center px-1 py-[1px] text-[0.5rem] font-medium leading-[0.7rem] text-gray-500"
+                          className="schedule-hidden-indicator flex-shrink-0 flex items-center justify-center gap-1 text-center px-1 py-[1px] text-[0.5rem] font-medium leading-[0.7rem] text-gray-500 min-h-[12px]"
                           title="スクロールすると隠れた予定を表示できます"
                           aria-label={`隠れた予定: 上に${scrollOffset}件、下に${hiddenSchedules}件。スクロールで確認できます`}
                         >
-                          <span className="flex items-center justify-center gap-[2px]">
+                          <span className="flex items-center justify-center gap-[1px] whitespace-nowrap">
                             <span className="text-[0.42rem] text-gray-400">↑</span>
                             <span>{scrollOffset}</span>
                           </span>
-                          <span className="text-gray-400 text-[0.42rem] tracking-[0.2em]">•••</span>
-                          <span className="flex items-center justify-center gap-[2px]">
+                          <span className="text-gray-400 text-[0.42rem]">•</span>
+                          <span className="flex items-center justify-center gap-[1px] whitespace-nowrap">
                             <span>{hiddenSchedules}</span>
                             <span className="text-[0.42rem] text-gray-400">↓</span>
                           </span>
@@ -959,11 +963,11 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                       // 上にのみ隠れた予定がある場合
                       return (
                         <div
-                          className="schedule-hidden-indicator flex items-center justify-center gap-2 text-center px-1 py-[1px] text-[0.5rem] font-medium leading-[0.7rem] text-gray-500"
+                          className="schedule-hidden-indicator flex-shrink-0 flex items-center justify-center gap-1 text-center px-1 py-[1px] text-[0.5rem] font-medium leading-[0.7rem] text-gray-500 min-h-[12px]"
                           title="上方向にスクロールすると隠れた予定を表示できます"
                           aria-label={`隠れた予定: 上に${scrollOffset}件。スクロールで確認できます`}
                         >
-                          <span className="flex items-center justify-center gap-[2px]">
+                          <span className="flex items-center justify-center gap-[1px] whitespace-nowrap">
                             <span className="text-[0.42rem] text-gray-400">↑</span>
                             <span>{scrollOffset}</span>
                           </span>
@@ -973,11 +977,11 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                       // 下にのみ隠れた予定がある場合
                       return (
                         <div
-                          className="schedule-hidden-indicator flex items-center justify-center gap-2 text-center px-1 py-[1px] text-[0.5rem] font-medium leading-[0.7rem] text-gray-500"
+                          className="schedule-hidden-indicator flex-shrink-0 flex items-center justify-center gap-1 text-center px-1 py-[1px] text-[0.5rem] font-medium leading-[0.7rem] text-gray-500 min-h-[12px]"
                           title="下方向にスクロールすると隠れた予定を表示できます"
                           aria-label={`隠れた予定: 下に${hiddenSchedules}件。スクロールで確認できます`}
                         >
-                          <span className="flex items-center justify-center gap-[2px]">
+                          <span className="flex items-center justify-center gap-[1px] whitespace-nowrap">
                             <span>{hiddenSchedules}</span>
                             <span className="text-[0.42rem] text-gray-400">↓</span>
                           </span>

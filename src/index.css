@@ -325,5 +325,15 @@ input[type="number"].notification-input:focus {
   .cursor-row-resize > div {
     min-height: 8px !important;
   }
+
+  /* カレンダーの下部に余白を追加して最下行が見切れないように */
+  .grid-rows-6 {
+    padding-bottom: 8px;
+  }
+
+  /* mainコンテナの調整 */
+  main {
+    padding-bottom: 12px !important;
+  }
 }
 
