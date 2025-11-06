@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toDateStrLocal } from '../utils/date';
 import { isJapaneseHoliday, getJapaneseHolidayName } from '../utils/holidays';
 
+const WHEEL_NAVIGATION_DELAY_MS = 150;
+
 // 予定が過去かどうかを判定する関数
 const isSchedulePast = (schedule) => {
   const now = new Date();
@@ -48,6 +50,8 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
   // 終日予定の並び替え用（未使用のため削除）
   
   const calendarRef = useRef(null);
+  const wheelNavigationLockRef = useRef(false);
+  const wheelNavigationTimeoutRef = useRef(null);
 
   const adjustDateCellScroll = useCallback((dateCell, deltaY) => {
     if (!dateCell) return false;
@@ -565,22 +569,41 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
     // 月切り替え処理
     const handleMonthNavigation = (e) => {
       // ホイールイベントを処理（ドラッグ中でも通常時でも動作）
+      const deltaY = e.deltaY;
       e.preventDefault();
       e.stopPropagation();
-      
-      console.log('✅ Month navigation:', {
-        direction: e.deltaY < 0 ? 'up (previous)' : 'down (next)',
-        currentMonth: month,
-        currentYear: year
-      });
-      
-      if (e.deltaY < 0) {
-        console.log('⬆️ Wheel up: previous month');
-        prevMonth();
-      } else {
-        console.log('⬇️ Wheel down: next month');
-        nextMonth();
+
+      if (wheelNavigationLockRef.current) {
+        console.log('⛔ Wheel navigation suppressed: cooldown active');
+        return;
       }
+
+      wheelNavigationLockRef.current = true;
+      const goingPrev = deltaY < 0;
+      const directionLabel = goingPrev ? 'up (previous)' : 'down (next)';
+      console.log('⏳ Wheel navigation queued:', {
+        direction: directionLabel,
+        delayMs: WHEEL_NAVIGATION_DELAY_MS
+      });
+
+  wheelNavigationTimeoutRef.current = setTimeout(() => {
+        console.log('✅ Month navigation:', {
+          direction: directionLabel,
+          currentMonth: month,
+          currentYear: year
+        });
+
+        if (goingPrev) {
+          console.log('⬆️ Wheel up: previous month');
+          prevMonth();
+        } else {
+          console.log('⬇️ Wheel down: next month');
+          nextMonth();
+        }
+
+        wheelNavigationLockRef.current = false;
+        wheelNavigationTimeoutRef.current = null;
+      }, WHEEL_NAVIGATION_DELAY_MS);
     };
 
     // グローバルイベントリスナーを追加
@@ -592,6 +615,11 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('wheel', handleWheel);
+      if (wheelNavigationTimeoutRef.current) {
+        clearTimeout(wheelNavigationTimeoutRef.current);
+        wheelNavigationTimeoutRef.current = null;
+      }
+      wheelNavigationLockRef.current = false;
     };
   }, [
     isCustomDragging,
