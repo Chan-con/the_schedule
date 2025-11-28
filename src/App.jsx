@@ -8,6 +8,8 @@ import CurrentDateTimeBar from './components/CurrentDateTimeBar';
 import ScheduleForm from './components/ScheduleForm';
 import TitleBar from './components/TitleBar';
 import SettingsModal from './components/SettingsModal';
+import QuickMemoPad from './components/QuickMemoPad';
+import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQuickMemo';
 import { useNotifications } from './hooks/useNotifications';
 import { useHistory } from './hooks/useHistory';
 import { AuthContext } from './context/AuthContextBase';
@@ -39,6 +41,19 @@ const normalizeSchedules = (schedules) => {
 };
 
 const createTempId = () => Date.now();
+
+const QUICK_MEMO_STORAGE_KEY = 'quickMemoPadContent';
+const MEMO_SPLIT_STORAGE_KEY = 'memoSplitRatio';
+const DEFAULT_MEMO_SPLIT_RATIO = 70;
+const MEMO_TIMELINE_MIN = 35;
+const MEMO_TIMELINE_MAX = 90;
+
+const clampMemoSplitRatio = (value) => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return DEFAULT_MEMO_SPLIT_RATIO;
+  }
+  return Math.min(Math.max(value, MEMO_TIMELINE_MIN), MEMO_TIMELINE_MAX);
+};
 
 const rebalanceAllDayOrdersForDates = (schedules, dates) => {
   if (!Array.isArray(schedules)) return [];
@@ -94,6 +109,23 @@ function App() {
     return normalizeSchedules(initialSchedules);
   }, []);
 
+  const loadLocalQuickMemo = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+
+    try {
+      const stored = window.localStorage.getItem(QUICK_MEMO_STORAGE_KEY);
+      if (typeof stored === 'string') {
+        return stored;
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to load quick memo from localStorage:', error);
+    }
+
+    return '';
+  }, []);
+
   const initialLoadedSchedules = useMemo(() => loadLocalSchedules(), [loadLocalSchedules]);
   const historyApi = useHistory({ schedules: initialLoadedSchedules }, 100);
 
@@ -128,6 +160,8 @@ function App() {
   const schedulesRef = useRef(schedules);
   const hasFetchedRemoteRef = useRef(false);
   const supabaseJobsRef = useRef(0);
+  const quickMemoSkipSyncRef = useRef(false);
+  const quickMemoLastSavedRef = useRef('');
 
   const beginSupabaseJob = useCallback((meta = {}) => {
     supabaseJobsRef.current += 1;
@@ -150,6 +184,28 @@ function App() {
       }
     }
   }, []);
+
+  const persistQuickMemoToSupabase = useCallback(async (content) => {
+    if (!userId) return;
+    const safeContent = typeof content === 'string' ? content : '';
+    if (quickMemoLastSavedRef.current === safeContent) {
+      return;
+    }
+
+    const jobMeta = { kind: 'quickMemoSave' };
+    beginSupabaseJob(jobMeta);
+    try {
+      await saveQuickMemoForUser(safeContent, userId);
+      quickMemoLastSavedRef.current = safeContent;
+      setSupabaseError(null);
+    } catch (error) {
+      console.error('[Supabase] Failed to save quick memo:', error);
+      setSupabaseError(error.message || 'クイックメモの同期に失敗しました。');
+      throw error;
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, endSupabaseJob, setSupabaseError, userId]);
 
   const commitSchedules = useCallback((nextSchedules, actionType = 'unknown') => {
     const normalizedSchedules = normalizeSchedules(nextSchedules);
@@ -222,11 +278,47 @@ function App() {
   const [mouseStart, setMouseStart] = useState(null);
   const [mouseEnd, setMouseEnd] = useState(null);
   const [isMouseDown, setIsMouseDown] = useState(false);
+  const [memoSplitRatio, setMemoSplitRatio] = useState(DEFAULT_MEMO_SPLIT_RATIO);
+  const [isMemoResizing, setIsMemoResizing] = useState(false);
+  const [quickMemo, setQuickMemo] = useState('');
+  const [isQuickMemoLoaded, setIsQuickMemoLoaded] = useState(false);
+  const applyQuickMemoValue = useCallback((value = '') => {
+    const safeValue = typeof value === 'string' ? value : '';
+    quickMemoSkipSyncRef.current = true;
+    quickMemoLastSavedRef.current = safeValue;
+    setQuickMemo(safeValue);
+  }, []);
+  const desktopTimelineRef = useRef(null);
+  const mobileTimelineRef = useRef(null);
+  const memoResizeContextRef = useRef(null);
   
   // ハンバーガーメニューの開閉状態
   
   // 通知システム
   const { cancelScheduleNotifications, sendTestNotification } = useNotifications(notificationEntries);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem(MEMO_SPLIT_STORAGE_KEY);
+      if (!stored) return;
+      const parsed = parseFloat(stored);
+      if (!Number.isNaN(parsed)) {
+        setMemoSplitRatio(clampMemoSplitRatio(parsed));
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to load memo split ratio:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(MEMO_SPLIT_STORAGE_KEY, String(memoSplitRatio));
+    } catch (error) {
+      console.warn('⚠️ Failed to persist memo split ratio:', error);
+    }
+  }, [memoSplitRatio]);
 
   const refreshFromSupabase = useCallback(
     async (actionType = 'supabase_resync', options = {}) => {
@@ -248,10 +340,14 @@ function App() {
       }));
       beginSupabaseJob({ actionType, kind: 'fetchData' });
       try {
-        const remoteSchedules = await fetchSchedulesForUser(userId);
+        const [remoteSchedules, remoteQuickMemo] = await Promise.all([
+          fetchSchedulesForUser(userId),
+          fetchQuickMemoForUser(userId),
+        ]);
         if (isCancelledFn()) return;
 
         replaceAppState(remoteSchedules, actionType);
+        applyQuickMemoValue(remoteQuickMemo);
         setSupabaseError(null);
         hasFetchedRemoteRef.current = true;
         console.info('[SupabaseSync] payload', JSON.stringify({
@@ -292,7 +388,7 @@ function App() {
         }));
       }
     },
-    [beginSupabaseJob, endSupabaseJob, replaceAppState, userId]
+    [applyQuickMemoValue, beginSupabaseJob, endSupabaseJob, replaceAppState, userId]
   );
 
   useEffect(() => {
@@ -302,7 +398,9 @@ function App() {
       hasFetchedRemoteRef.current = false;
       setSupabaseError(null);
       setIsSupabaseSyncing(false);
-  replaceAppState(loadLocalSchedules(), 'local_restore');
+      replaceAppState(loadLocalSchedules(), 'local_restore');
+      const localMemo = loadLocalQuickMemo();
+      applyQuickMemoValue(localMemo);
       return;
     }
 
@@ -315,7 +413,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [auth?.isLoading, userId, loadLocalSchedules, refreshFromSupabase, replaceAppState]);
+  }, [applyQuickMemoValue, auth?.isLoading, loadLocalQuickMemo, loadLocalSchedules, refreshFromSupabase, replaceAppState, userId]);
   
   // メニュー外クリックでメニューを閉じる
   
@@ -398,6 +496,39 @@ function App() {
       }
     };
   }, [isMobile]);
+
+  // シンプルメモの読み込み
+  useEffect(() => {
+    const localMemo = loadLocalQuickMemo();
+    applyQuickMemoValue(localMemo);
+    setIsQuickMemoLoaded(true);
+  }, [applyQuickMemoValue, loadLocalQuickMemo]);
+
+  // シンプルメモの保存
+  useEffect(() => {
+    if (!isQuickMemoLoaded || typeof window === 'undefined') return;
+
+    try {
+      window.localStorage.setItem(QUICK_MEMO_STORAGE_KEY, quickMemo);
+    } catch (error) {
+      console.warn('⚠️ Failed to persist quick memo:', error);
+    }
+  }, [isQuickMemoLoaded, quickMemo]);
+
+  useEffect(() => {
+    if (!isQuickMemoLoaded || !userId) return;
+
+    if (quickMemoSkipSyncRef.current) {
+      quickMemoSkipSyncRef.current = false;
+      return;
+    }
+
+    const handler = setTimeout(() => {
+      persistQuickMemoToSupabase(quickMemo).catch(() => {});
+    }, 800);
+
+    return () => clearTimeout(handler);
+  }, [isQuickMemoLoaded, persistQuickMemoToSupabase, quickMemo, userId]);
 
   // 予定が変更されたらローカルストレージに保存
   useEffect(() => {
@@ -520,6 +651,42 @@ function App() {
     setIsTimelineOpen(false);
   };
 
+  const handleQuickMemoChange = useCallback((value) => {
+    setQuickMemo(value);
+  }, [setQuickMemo]);
+
+  const updateMemoSplitFromClientY = useCallback((clientY) => {
+    const context = memoResizeContextRef.current;
+    if (!context || !context.rect || typeof clientY !== 'number') return;
+    const { top, height } = context.rect;
+    if (!height) return;
+    const relative = ((clientY - top) / height) * 100;
+    setMemoSplitRatio((prev) => {
+      const next = clampMemoSplitRatio(relative);
+      return prev === next ? prev : next;
+    });
+  }, []);
+
+  const handleMemoResizeStart = useCallback((event, containerRef) => {
+    if (!containerRef?.current) return;
+    if ('button' in event && event.button !== 0) {
+      return;
+    }
+
+    const rect = containerRef.current.getBoundingClientRect();
+    if (!rect || !rect.height) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    memoResizeContextRef.current = { rect };
+    setIsMemoResizing(true);
+
+    const clientY = 'touches' in event ? event.touches?.[0]?.clientY : event.clientY;
+    if (typeof clientY === 'number') {
+      updateMemoSplitFromClientY(clientY);
+    }
+  }, [updateMemoSplitFromClientY]);
+
   // スワイプジェスチャーのハンドラー
   const handleTouchStart = (e) => {
     setTouchEnd(null);
@@ -590,6 +757,42 @@ function App() {
       document.removeEventListener('touchend', onTouchEnd);
     };
   }, [handleMouseMove, handleMouseUp, handleTouchMoveResize, handleTouchEndResize, isDragging]);
+
+  useEffect(() => {
+    if (!isMemoResizing) return undefined;
+
+    const handleMove = (event) => {
+      const clientY = event.touches ? event.touches[0]?.clientY : event.clientY;
+      if (typeof clientY === 'number') {
+        if (event.cancelable) {
+          event.preventDefault();
+        }
+        updateMemoSplitFromClientY(clientY);
+      }
+    };
+
+    const stopResizing = () => {
+      setIsMemoResizing(false);
+      memoResizeContextRef.current = null;
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', stopResizing);
+    document.addEventListener('touchmove', handleMove, { passive: false });
+    document.addEventListener('touchend', stopResizing);
+    document.addEventListener('touchcancel', stopResizing);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', stopResizing);
+      document.removeEventListener('touchmove', handleMove);
+      document.removeEventListener('touchend', stopResizing);
+      document.removeEventListener('touchcancel', stopResizing);
+      document.body.style.userSelect = '';
+    };
+  }, [isMemoResizing, updateMemoSplitFromClientY]);
 
   // 日付クリック時の処理
   const handleDateClick = (date) => {
@@ -1208,22 +1411,51 @@ function App() {
                   onMouseUp={handleMouseUpOnTimeline}
                   onMouseLeave={handleMouseUpOnTimeline}
                 >
-                  <div className="h-full flex flex-col">
-                    {/* タイムラインコンテンツ */}
-                    <div className="flex-1 overflow-hidden flex flex-col">
+                  <div className="flex h-full flex-col gap-2 overflow-hidden" ref={mobileTimelineRef}>
+                    <div
+                      className="flex flex-col overflow-hidden rounded-tl-2xl rounded-tr-2xl bg-white/95 pb-1 pt-2 shadow-lg shadow-indigo-900/20 min-h-0"
+                      style={{ flexGrow: memoSplitRatio, flexShrink: 1, flexBasis: 0 }}
+                    >
                       <CurrentDateTimeBar />
-                      <Timeline 
-                        schedules={filteredSchedules} 
-                        selectedDate={selectedDate} 
-                        onEdit={handleEdit}
-                        onAdd={handleAdd}
-                        onAddTask={handleAddTask}
-                        onScheduleUpdate={handleScheduleUpdate}
-                        onToggleTask={handleToggleTask}
-                        onScheduleDelete={handleScheduleDelete}
-                        activeTab={timelineActiveTab}
-                        onTabChange={setTimelineActiveTab}
-                        tasks={taskSchedules}
+                      <div className="flex-1 overflow-hidden">
+                        <Timeline 
+                          schedules={filteredSchedules} 
+                          selectedDate={selectedDate} 
+                          onEdit={handleEdit}
+                          onAdd={handleAdd}
+                          onAddTask={handleAddTask}
+                          onScheduleUpdate={handleScheduleUpdate}
+                          onToggleTask={handleToggleTask}
+                          onScheduleDelete={handleScheduleDelete}
+                          activeTab={timelineActiveTab}
+                          onTabChange={setTimelineActiveTab}
+                          tasks={taskSchedules}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center justify-center">
+                      <div className="flex h-4 w-full max-w-[100px] items-center justify-center">
+                        <div
+                          className={`h-1 w-12 rounded-full transition-colors duration-200 ${
+                            isMemoResizing ? 'bg-indigo-500' : 'bg-gray-400 hover:bg-indigo-400'
+                          }`}
+                          role="separator"
+                          aria-label="タイムラインとメモの表示比率を変更"
+                          onMouseDown={(event) => handleMemoResizeStart(event, mobileTimelineRef)}
+                          onTouchStart={(event) => handleMemoResizeStart(event, mobileTimelineRef)}
+                          data-memo-handle
+                        />
+                      </div>
+                    </div>
+                    <div
+                      className="flex flex-col min-h-0 pb-2"
+                      style={{ flexGrow: Math.max(1, 100 - memoSplitRatio), flexShrink: 1, flexBasis: 0 }}
+                    >
+                      <QuickMemoPad
+                        value={quickMemo}
+                        onChange={handleQuickMemoChange}
+                        className="flex h-full flex-col"
+                        textareaClassName="flex-1"
                       />
                     </div>
                   </div>
@@ -1275,23 +1507,56 @@ function App() {
             
             {/* タイムライン部分 */}
             <div 
-              className="flex flex-col overflow-hidden pl-1"
+              className="flex min-h-0 flex-col gap-2 pl-1 overflow-hidden"
               style={{ width: `${100 - splitRatio}%` }}
+              ref={desktopTimelineRef}
             >
-              <CurrentDateTimeBar />
-              <Timeline 
-                schedules={filteredSchedules} 
-                selectedDate={selectedDate} 
-                onEdit={handleEdit}
-                onAdd={handleAdd}
-                onAddTask={handleAddTask}
-                onScheduleUpdate={handleScheduleUpdate}
-                onToggleTask={handleToggleTask}
-                onScheduleDelete={handleScheduleDelete}
-                activeTab={timelineActiveTab}
-                onTabChange={setTimelineActiveTab}
-                tasks={taskSchedules}
-              />
+              <div
+                className="flex flex-col overflow-hidden rounded-2xl bg-white/95 px-2 pb-2 pt-3 shadow-xl shadow-indigo-900/20 min-h-0"
+                style={{ flexGrow: memoSplitRatio, flexShrink: 1, flexBasis: 0 }}
+              >
+                <CurrentDateTimeBar />
+                <div className="flex-1 overflow-hidden">
+                  <Timeline 
+                    schedules={filteredSchedules} 
+                    selectedDate={selectedDate} 
+                    onEdit={handleEdit}
+                    onAdd={handleAdd}
+                    onAddTask={handleAddTask}
+                    onScheduleUpdate={handleScheduleUpdate}
+                    onToggleTask={handleToggleTask}
+                    onScheduleDelete={handleScheduleDelete}
+                    activeTab={timelineActiveTab}
+                    onTabChange={setTimelineActiveTab}
+                    tasks={taskSchedules}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-shrink-0 items-center justify-center">
+                <div className="flex h-4 w-full max-w-[120px] items-center justify-center">
+                  <div
+                    className={`h-1 w-12 rounded-full transition-colors duration-200 ${
+                      isMemoResizing ? 'bg-indigo-500' : 'bg-gray-400 hover:bg-indigo-400'
+                    }`}
+                    role="separator"
+                    aria-label="タイムラインとメモの表示比率を変更"
+                    onMouseDown={(event) => handleMemoResizeStart(event, desktopTimelineRef)}
+                    onTouchStart={(event) => handleMemoResizeStart(event, desktopTimelineRef)}
+                    data-memo-handle
+                  />
+                </div>
+              </div>
+              <div
+                className="flex flex-col min-h-0"
+                style={{ flexGrow: Math.max(1, 100 - memoSplitRatio), flexShrink: 1, flexBasis: 0 }}
+              >
+                <QuickMemoPad
+                  value={quickMemo}
+                  onChange={handleQuickMemoChange}
+                  className="flex h-full flex-col"
+                  textareaClassName="flex-1"
+                />
+              </div>
             </div>
           </>
         )}

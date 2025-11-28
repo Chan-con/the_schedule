@@ -24,3 +24,26 @@
 .read-the-docs {
   color: #888;
 }
+
+.quick-memo-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #6366f1 #eef2ff;
+}
+
+.quick-memo-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.quick-memo-scrollbar::-webkit-scrollbar-track {
+  background: #eef2ff;
+  border-radius: 999px;
+}
+
+.quick-memo-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #6366f1, #38bdf8);
+  border-radius: 999px;
+}
+
+.quick-memo-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #4f46e5, #0ea5e9);
+}
