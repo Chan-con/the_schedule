@@ -133,7 +133,7 @@ button:focus-visible {
 .custom-scrollbar {
   scrollbar-width: thin !important;
   scrollbar-color: #94a3b8 #f8fafc !important;
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
