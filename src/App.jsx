@@ -1411,9 +1411,9 @@ function App() {
                   onMouseUp={handleMouseUpOnTimeline}
                   onMouseLeave={handleMouseUpOnTimeline}
                 >
-                  <div className="flex h-full flex-col gap-2 overflow-hidden" ref={mobileTimelineRef}>
+                  <div className="flex h-full flex-col gap-1 overflow-hidden" ref={mobileTimelineRef}>
                     <div
-                      className="flex flex-col overflow-hidden rounded-tl-2xl rounded-tr-2xl bg-white/95 pb-1 pt-2 shadow-lg shadow-indigo-900/20 min-h-0"
+                      className="flex flex-col min-h-0 gap-2 overflow-hidden"
                       style={{ flexGrow: memoSplitRatio, flexShrink: 1, flexBasis: 0 }}
                     >
                       <CurrentDateTimeBar />
@@ -1434,9 +1434,9 @@ function App() {
                       </div>
                     </div>
                     <div className="flex flex-shrink-0 items-center justify-center">
-                      <div className="flex h-4 w-full max-w-[100px] items-center justify-center">
+                      <div className="flex h-3 w-full max-w-[96px] items-center justify-center">
                         <div
-                          className={`h-1 w-12 rounded-full transition-colors duration-200 ${
+                          className={`h-1 w-11 rounded-full transition-colors duration-200 ${
                             isMemoResizing ? 'bg-indigo-500' : 'bg-gray-400 hover:bg-indigo-400'
                           }`}
                           role="separator"
@@ -1507,12 +1507,12 @@ function App() {
             
             {/* タイムライン部分 */}
             <div 
-              className="flex min-h-0 flex-col gap-2 pl-1 overflow-hidden"
+              className="flex min-h-0 flex-col gap-1 pl-1 overflow-hidden"
               style={{ width: `${100 - splitRatio}%` }}
               ref={desktopTimelineRef}
             >
               <div
-                className="flex flex-col overflow-hidden rounded-2xl bg-white/95 px-2 pb-2 pt-3 shadow-xl shadow-indigo-900/20 min-h-0"
+                className="flex flex-col min-h-0 gap-2 overflow-hidden"
                 style={{ flexGrow: memoSplitRatio, flexShrink: 1, flexBasis: 0 }}
               >
                 <CurrentDateTimeBar />
@@ -1533,9 +1533,9 @@ function App() {
                 </div>
               </div>
               <div className="flex flex-shrink-0 items-center justify-center">
-                <div className="flex h-4 w-full max-w-[120px] items-center justify-center">
+                <div className="flex h-3 w-full max-w-[100px] items-center justify-center">
                   <div
-                    className={`h-1 w-12 rounded-full transition-colors duration-200 ${
+                    className={`h-1 w-11 rounded-full transition-colors duration-200 ${
                       isMemoResizing ? 'bg-indigo-500' : 'bg-gray-400 hover:bg-indigo-400'
                     }`}
                     role="separator"
