@@ -170,6 +170,16 @@ button:focus-visible {
   border-radius: 6px !important;
 }
 
+/* スクロールは維持しつつスクロールバーを非表示 */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .card-stack {
   display: flex;
   flex-direction: column;
