@@ -178,7 +178,7 @@ const QuickMemoPad = ({ value, onChange, className = '', textareaClassName = '' 
       <div className="flex flex-1 min-h-0 flex-col">
         <div className="flex items-end justify-between px-1 -mb-px">
           <div
-            className="no-scrollbar flex max-w-full items-end gap-1 overflow-x-auto overflow-y-hidden pr-1"
+            className="no-scrollbar flex max-w-full items-end gap-px overflow-x-auto overflow-y-hidden pr-1"
             role="tablist"
             aria-label="メモタブ"
           >
