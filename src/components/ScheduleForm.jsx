@@ -78,7 +78,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
         if (!wasAllDay && isNowAllDay) {
           next.notifications = prev.notifications.map((notification) => {
             if (notification.unit === 'minutes' || notification.unit === 'hours') {
-              return { ...notification, unit: 'days', value: 1 };
+              return { ...notification, unit: 'days', value: 0 };
             }
             return notification;
           });
@@ -104,7 +104,15 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
     setFormError(null);
     setIsSaving(true);
     try {
-      await onSave(formData);
+      const normalizedFormData = {
+        ...formData,
+        notifications: (formData.notifications || []).map((notification) => ({
+          ...notification,
+          value: Number(notification.value) || 0
+        }))
+      };
+
+      await onSave(normalizedFormData);
     } catch (error) {
       console.error('❌ Failed to save schedule:', error);
       setFormError(error?.message || '予定の保存に失敗しました。');
@@ -136,8 +144,8 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
       }
 
       const defaultNotification = prev.allDay
-        ? { value: 1, unit: 'days' }
-        : { value: 15, unit: 'minutes' };
+        ? { value: 0, unit: 'days' }
+        : { value: 0, unit: 'hours' };
 
       return {
         ...prev,
@@ -157,10 +165,20 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
     setFormData((prev) => {
       const notifications = prev.notifications.map((notification, i) => {
         if (i !== index) return notification;
-        return {
-          ...notification,
-          [field]: field === 'value' ? Math.max(0, value || 0) : value
-        };
+
+        if (field === 'value') {
+          if (value === '') {
+            return { ...notification, value: '' };
+          }
+
+          const numericValue = Number(value);
+          return {
+            ...notification,
+            value: Math.max(0, Number.isFinite(numericValue) ? numericValue : 0)
+          };
+        }
+
+        return { ...notification, [field]: value };
       });
 
       return {
@@ -173,6 +191,8 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
   const isNotificationPast = (notification) => {
     if (!formData.date) return false;
 
+    const notificationValue = Number(notification?.value) || 0;
+
     const now = new Date();
     const [year, month, day] = formData.date.split('-').map(Number);
     const scheduleDate = new Date(year, (month || 1) - 1, day || 1);
@@ -182,7 +202,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
       notificationTime.setHours(9, 0, 0, 0);
 
       if (notification.unit === 'days') {
-        notificationTime.setDate(notificationTime.getDate() - notification.value);
+        notificationTime.setDate(notificationTime.getDate() - notificationValue);
       }
 
       return now > notificationTime;
@@ -198,13 +218,13 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
 
     switch (notification.unit) {
       case 'minutes':
-        notificationTime.setMinutes(notificationTime.getMinutes() - notification.value);
+        notificationTime.setMinutes(notificationTime.getMinutes() - notificationValue);
         break;
       case 'hours':
-        notificationTime.setHours(notificationTime.getHours() - notification.value);
+        notificationTime.setHours(notificationTime.getHours() - notificationValue);
         break;
       case 'days':
-        notificationTime.setDate(notificationTime.getDate() - notification.value);
+        notificationTime.setDate(notificationTime.getDate() - notificationValue);
         break;
       default:
         break;
@@ -422,9 +442,17 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                         min="0"
                         max="999"
                         value={notification.value}
-                        onChange={(e) =>
-                          updateNotification(index, 'value', parseInt(e.target.value, 10) || 0)
-                        }
+                        onChange={(e) => updateNotification(index, 'value', e.target.value)}
+                        onFocus={() => {
+                          if ((Number(notification.value) || 0) === 0) {
+                            updateNotification(index, 'value', '');
+                          }
+                        }}
+                        onBlur={() => {
+                          if (notification.value === '') {
+                            updateNotification(index, 'value', 0);
+                          }
+                        }}
                         className={`w-16 text-center border border-gray-300 rounded px-2 py-1 text-sm notification-input focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                           isPast ? 'bg-gray-100 text-gray-500' : 'bg-white'
                         }`}
