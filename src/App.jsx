@@ -396,6 +396,12 @@ function App() {
   const calendarVisibleRangeRef = useRef(null);
   const notePendingPatchRef = useRef(new Map());
   const noteSaveTimersRef = useRef(new Map());
+  const supabaseSyncStateRef = useRef({
+    timerId: null,
+    inFlight: false,
+    pending: false,
+    lastReason: null,
+  });
   const applyQuickMemoValue = useCallback((value = '') => {
     const safeValue = typeof value === 'string' ? value : '';
     quickMemoSkipSyncRef.current = true;
@@ -454,14 +460,56 @@ function App() {
       }));
       beginSupabaseJob({ actionType, kind: 'fetchData' });
       try {
-        const [remoteSchedules, remoteQuickMemo] = await Promise.all([
+        const visibleRange = calendarVisibleRangeRef.current;
+        const hasVisibleRange = !!(visibleRange?.startDate && visibleRange?.endDate);
+
+        const [remoteSchedules, remoteQuickMemo, remoteNotes, remoteNoteDates] = await Promise.all([
           fetchSchedulesForUser(userId),
           fetchQuickMemoForUser(userId),
+          fetchNotesForUser(userId),
+          hasVisibleRange
+            ? fetchNoteDatesForUserInRange({
+                userId,
+                startDate: visibleRange.startDate,
+                endDate: visibleRange.endDate,
+              })
+            : Promise.resolve(null),
         ]);
         if (isCancelledFn()) return;
 
         replaceAppState(remoteSchedules, actionType);
         applyQuickMemoValue(remoteQuickMemo);
+
+        // ノート同期: pending patch（未送信の編集）と下書きを保持して上書き事故を防ぐ
+        {
+          const remoteList = Array.isArray(remoteNotes) ? remoteNotes : [];
+          const pendingMap = notePendingPatchRef.current;
+          const localList = Array.isArray(notesRef.current) ? notesRef.current : [];
+          const draftNotes = localList.filter((note) => note?.__isDraft);
+          const draftIdSet = new Set(draftNotes.map((note) => note?.id).filter((id) => id != null));
+
+          const mergedRemote = remoteList.map((note) => {
+            const id = note?.id ?? null;
+            if (id == null) return note;
+            const pendingPatch = pendingMap.get(id);
+            if (!pendingPatch) return note;
+            const localNote = localList.find((n) => (n?.id ?? null) === id) || null;
+            const nextUpdatedAt = localNote?.updated_at ?? note?.updated_at;
+            return {
+              ...note,
+              ...pendingPatch,
+              ...(nextUpdatedAt ? { updated_at: nextUpdatedAt } : {}),
+            };
+          });
+
+          const combined = [...draftNotes, ...mergedRemote.filter((note) => !draftIdSet.has(note?.id ?? null))];
+          setNotes(applyArchiveFlagsToNotes(combined, noteArchiveFlagsRef.current));
+        }
+
+        if (Array.isArray(remoteNoteDates)) {
+          setCalendarNoteDates(remoteNoteDates);
+        }
+
         setSupabaseError(null);
         hasFetchedRemoteRef.current = true;
         console.info('[SupabaseSync] payload', JSON.stringify({
@@ -505,6 +553,46 @@ function App() {
     [applyQuickMemoValue, beginSupabaseJob, endSupabaseJob, replaceAppState, userId]
   );
 
+  const requestSupabaseSync = useCallback(
+    (reason = 'unknown', options = {}) => {
+      if (!userId) return;
+      const { showSpinner = false } = options;
+      const state = supabaseSyncStateRef.current;
+      state.pending = true;
+      state.lastReason = reason;
+
+      if (state.timerId) {
+        clearTimeout(state.timerId);
+      }
+
+      state.timerId = setTimeout(async () => {
+        const runState = supabaseSyncStateRef.current;
+        runState.timerId = null;
+
+        if (runState.inFlight) {
+          runState.pending = true;
+          return;
+        }
+
+        runState.inFlight = true;
+        const actionType = `supabase_resync:${String(runState.lastReason || 'unknown')}`;
+        runState.pending = false;
+        try {
+          await refreshFromSupabase(actionType, { showSpinner });
+        } catch {
+          // refreshFromSupabase がエラー状態を保持するためここでは握りつぶす
+        } finally {
+          runState.inFlight = false;
+          if (runState.pending) {
+            // 直近の要求が残っていればもう一度（短いデバウンス）
+            requestSupabaseSync(runState.lastReason || 'pending', { showSpinner: false });
+          }
+        }
+      }, 250);
+    },
+    [refreshFromSupabase, userId]
+  );
+
   useEffect(() => {
     if (auth?.isLoading) return;
 
@@ -536,33 +624,28 @@ function App() {
     };
   }, [applyQuickMemoValue, auth?.isLoading, loadLocalNotes, loadLocalQuickMemo, loadLocalSchedules, refreshFromSupabase, replaceAppState, selectedDateStr, userId]);
 
-  // ノートを取得（選択日に依存して絞り込まない）
+  // Web: フォーカス復帰/表示復帰/オンライン復帰で安全に再同期
   useEffect(() => {
-    if (!userId) {
-      const allNotes = loadLocalNotes();
-      const nextNotes = allNotes
-        .slice()
-        .sort((a, b) => String(b?.updated_at ?? '').localeCompare(String(a?.updated_at ?? '')));
-      setNotes(applyArchiveFlagsToNotes(nextNotes, noteArchiveFlagsRef.current));
-      return;
-    }
+    if (!userId) return;
+    if (typeof window === 'undefined') return;
 
-    let cancelled = false;
-    fetchNotesForUser(userId)
-      .then((data) => {
-        if (cancelled) return;
-        setNotes(applyArchiveFlagsToNotes(Array.isArray(data) ? data : [], noteArchiveFlagsRef.current));
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.error('[Supabase] Failed to fetch notes:', error);
-        setSupabaseError(error.message || 'ノートの取得に失敗しました。');
-      });
-
-    return () => {
-      cancelled = true;
+    const handleFocus = () => requestSupabaseSync('focus');
+    const handleOnline = () => requestSupabaseSync('online');
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        requestSupabaseSync('visibility');
+      }
     };
-  }, [loadLocalNotes, userId]);
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('online', handleOnline);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('online', handleOnline);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [requestSupabaseSync, userId]);
 
   const refreshCalendarNoteDates = useCallback(async () => {
     const range = calendarVisibleRangeRef.current;
@@ -1373,6 +1456,7 @@ function App() {
     try {
       await deleteScheduleForUser(scheduleId, userId);
       setSupabaseError(null);
+      requestSupabaseSync('schedule_delete_success');
       console.info('[ScheduleDelete] synced', JSON.stringify({
         scheduleId,
         durationMs:
@@ -1383,14 +1467,14 @@ function App() {
     } catch (error) {
       console.error('[Supabase] Failed to delete schedule:', error);
       setSupabaseError(error.message || '予定の削除に失敗しました。');
-      refreshFromSupabase('supabase_resync').catch(() => {});
+      requestSupabaseSync('schedule_delete_error');
       if (throwOnError) {
         throw error;
       }
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, cancelScheduleNotifications, commitSchedules, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, cancelScheduleNotifications, commitSchedules, endSupabaseJob, requestSupabaseSync, setSupabaseError, userId]);
 
   // 予定移動ハンドラー（ドラッグ&ドロップ用）
   const handleScheduleMove = useCallback((schedule, nextDate) => {
@@ -1441,6 +1525,7 @@ function App() {
           }
           commitSchedules(synced, 'schedule_move_sync');
           setSupabaseError(null);
+          requestSupabaseSync('schedule_move_success');
           console.info('[ScheduleMove] synced', JSON.stringify({
             scheduleId: persisted.id,
             toDate: persisted.date,
@@ -1452,13 +1537,13 @@ function App() {
         } catch (error) {
           console.error('[Supabase] Failed to move schedule:', error);
           setSupabaseError(error.message || '予定の移動に失敗しました。');
-          refreshFromSupabase('supabase_resync').catch(() => {});
+          requestSupabaseSync('schedule_move_error');
         } finally {
           endSupabaseJob(jobMeta);
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, requestSupabaseSync, setSupabaseError, userId]);
 
   // 予定コピー（ALTドラッグ複製など）
   const handleScheduleCopy = useCallback((schedule) => {
@@ -1514,6 +1599,7 @@ function App() {
 
           commitSchedules(replaced, 'schedule_copy_sync');
           setSupabaseError(null);
+          requestSupabaseSync('schedule_copy_success');
           console.info('[ScheduleCopy] synced', JSON.stringify({
             createdId: created.id,
             date: created.date,
@@ -1525,13 +1611,13 @@ function App() {
         } catch (error) {
           console.error('[Supabase] Failed to copy schedule:', error);
           setSupabaseError(error.message || '予定のコピーに失敗しました。');
-          refreshFromSupabase('supabase_resync').catch(() => {});
+          requestSupabaseSync('schedule_copy_error');
         } finally {
           endSupabaseJob(jobMeta);
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, handleScheduleMove, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, handleScheduleMove, requestSupabaseSync, setSupabaseError, userId]);
 
   // 予定更新ハンドラー（並び替え用）
   const handleScheduleUpdate = useCallback((updatedSchedule, actionType = 'schedule_reorder') => {
@@ -1587,6 +1673,7 @@ function App() {
             commitSchedules(synced, `${actionType}_sync`);
           }
           setSupabaseError(null);
+          requestSupabaseSync('schedule_update_success');
           console.info('[ScheduleUpdate] synced', JSON.stringify({
             actionType,
             count: Array.isArray(persisted) ? persisted.length : 0,
@@ -1598,13 +1685,13 @@ function App() {
         } catch (error) {
           console.error('[Supabase] Failed to update schedules:', error);
           setSupabaseError(error.message || '予定の更新に失敗しました。');
-          refreshFromSupabase('supabase_resync').catch(() => {});
+          requestSupabaseSync('schedule_update_error');
         } finally {
           endSupabaseJob(jobMeta);
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, requestSupabaseSync, setSupabaseError, userId]);
 
   // タスクのチェック状態トグル
   const handleToggleTask = useCallback((target, completed) => {
@@ -1651,6 +1738,7 @@ function App() {
           const synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
           commitSchedules(synced, 'task_toggle_sync');
           setSupabaseError(null);
+          requestSupabaseSync('task_toggle_success');
           console.info('[TaskToggle] synced', JSON.stringify({
             scheduleId: persisted.id,
             completed: persisted.completed,
@@ -1662,13 +1750,13 @@ function App() {
         } catch (error) {
           console.error('[Supabase] Failed to toggle task state:', error);
           setSupabaseError(error.message || 'タスク状態の更新に失敗しました。');
-          refreshFromSupabase('supabase_resync').catch(() => {});
+          requestSupabaseSync('task_toggle_error');
         } finally {
           endSupabaseJob(jobMeta);
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, refreshFromSupabase, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, requestSupabaseSync, setSupabaseError, userId]);
 
   const handleAdd = (targetDate = null) => {
     // ターゲット日付が指定されていればその日付を使用、なければ選択中の日付を使用
@@ -1753,6 +1841,7 @@ function App() {
           }
           commitSchedules(synced, 'schedule_edit_sync');
           setSupabaseError(null);
+          requestSupabaseSync('schedule_save_success');
           console.info('[ScheduleSave] update synced', JSON.stringify({
             scheduleId: persisted.id,
             date: persisted.date,
@@ -1764,7 +1853,7 @@ function App() {
         } catch (error) {
           console.error('[Supabase] Failed to update schedule:', error);
           setSupabaseError(error.message || '予定の更新に失敗しました。');
-          refreshFromSupabase('supabase_resync').catch(() => {});
+          requestSupabaseSync('schedule_save_error');
           throw error;
         } finally {
           endSupabaseJob(jobMeta);
@@ -1812,6 +1901,7 @@ function App() {
           }
           commitSchedules(replaced, 'schedule_create_sync');
           setSupabaseError(null);
+          requestSupabaseSync('schedule_create_success');
           console.info('[ScheduleSave] create synced', JSON.stringify({
             scheduleId: created.id,
             date: created.date,
@@ -1823,7 +1913,7 @@ function App() {
         } catch (error) {
           console.error('[Supabase] Failed to create schedule:', error);
           setSupabaseError(error.message || '予定の作成に失敗しました。');
-          refreshFromSupabase('supabase_resync').catch(() => {});
+          requestSupabaseSync('schedule_create_error');
           throw error;
         } finally {
           endSupabaseJob(jobMeta);
@@ -1832,7 +1922,7 @@ function App() {
     }
 
     setShowForm(false);
-  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, refreshFromSupabase, setShowForm, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, requestSupabaseSync, setShowForm, setSupabaseError, userId]);
 
   // 予定削除ハンドラー（フォーム用）
   const handleDelete = useCallback(async (id) => {
