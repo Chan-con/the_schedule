@@ -259,6 +259,8 @@ function App() {
     noteArchiveFlagsRef.current = loadNoteArchiveFlags(noteArchiveUserKey);
   }, [loadNoteArchiveFlags, noteArchiveUserKey]);
   const [isSupabaseSyncing, setIsSupabaseSyncing] = useState(false);
+  const [isSupabaseSyncBlocking, setIsSupabaseSyncBlocking] = useState(false);
+  const supabaseSyncOverlayTimerRef = useRef(null);
   const [supabaseError, setSupabaseError] = useState(null);
   const schedulesRef = useRef(schedules);
   const hasFetchedRemoteRef = useRef(false);
@@ -512,6 +514,14 @@ function App() {
 
       if (showSpinner) {
         setIsSupabaseSyncing(true);
+        setIsSupabaseSyncBlocking(false);
+        if (supabaseSyncOverlayTimerRef.current) {
+          clearTimeout(supabaseSyncOverlayTimerRef.current);
+          supabaseSyncOverlayTimerRef.current = null;
+        }
+        supabaseSyncOverlayTimerRef.current = setTimeout(() => {
+          setIsSupabaseSyncBlocking(true);
+        }, 1000);
       }
 
       const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
@@ -605,6 +615,11 @@ function App() {
         endSupabaseJob({ actionType, kind: 'fetchData' });
         if (showSpinner && !isCancelledFn()) {
           setIsSupabaseSyncing(false);
+          setIsSupabaseSyncBlocking(false);
+          if (supabaseSyncOverlayTimerRef.current) {
+            clearTimeout(supabaseSyncOverlayTimerRef.current);
+            supabaseSyncOverlayTimerRef.current = null;
+          }
         }
         console.info('[SupabaseSync] finished', JSON.stringify({
           actionType,
@@ -615,6 +630,16 @@ function App() {
     },
     [applyQuickMemoValue, beginSupabaseJob, endSupabaseJob, replaceAppState, userId]
   );
+
+  useEffect(() => {
+    // ログイン/ログアウトやユーザー切替で確実に解除
+    setIsSupabaseSyncing(false);
+    setIsSupabaseSyncBlocking(false);
+    if (supabaseSyncOverlayTimerRef.current) {
+      clearTimeout(supabaseSyncOverlayTimerRef.current);
+      supabaseSyncOverlayTimerRef.current = null;
+    }
+  }, [userId]);
 
   const requestSupabaseSync = useCallback(
     (reason = 'unknown', options = {}) => {
@@ -2082,12 +2107,22 @@ function App() {
               Supabase同期でエラーが発生しました: {supabaseError}
             </div>
           )}
-          {!supabaseError && isSupabaseSyncing && (
-            <div className="bg-indigo-700 text-white text-sm px-4 py-2 shadow-inner">
-              Supabaseと同期中です…
-            </div>
-          )}
         </>
+      )}
+
+      {isAuthenticated && !supabaseError && isSupabaseSyncing && isSupabaseSyncBlocking && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-6" role="alert" aria-live="polite">
+          <div className="w-full max-w-sm rounded-xl bg-white px-6 py-5 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div
+                className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-indigo-500"
+                aria-hidden="true"
+              />
+              <div className="text-sm font-semibold text-gray-800">Supabaseと同期中です…</div>
+            </div>
+            <div className="mt-2 text-xs text-gray-500">少し時間がかかっています。完了までお待ちください。</div>
+          </div>
+        </div>
       )}
       <main 
         className={`flex-1 overflow-hidden flex relative ${isMobile ? 'p-0' : 'px-2 py-2'}`}
