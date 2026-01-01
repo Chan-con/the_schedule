@@ -420,7 +420,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
               <div>
                 <label className="block text-gray-700 font-medium mb-2">本文</label>
                 <div
-                  className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800"
+                  className="note-markdown w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800"
                   style={{ minHeight: '55vh' }}
                 >
                   {content.trim() ? (

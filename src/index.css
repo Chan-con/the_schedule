@@ -218,6 +218,104 @@ input[type="number"].notification-input {
   border: 1px solid #d1d5db !important;
   border-radius: 0.375rem !important;
   padding: 0.25rem 0.5rem !important;
+
+}
+
+@layer components {
+  /* ノート本文（Markdown表示）の見た目を整える（Notion/Qiita寄り） */
+  .note-markdown {
+    @apply leading-7;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  .note-markdown * {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  .note-markdown > * + * {
+    @apply mt-3;
+  }
+
+  .note-markdown h1 {
+    @apply mt-4 text-2xl font-bold tracking-tight;
+  }
+
+  .note-markdown h2 {
+    @apply mt-4 text-xl font-bold tracking-tight;
+  }
+
+  .note-markdown h3 {
+    @apply mt-4 text-lg font-semibold;
+  }
+
+  .note-markdown h4 {
+    @apply mt-3 text-base font-semibold;
+  }
+
+  .note-markdown h5 {
+    @apply mt-3 text-sm font-semibold;
+  }
+
+  .note-markdown h6 {
+    @apply mt-3 text-sm font-semibold;
+  }
+
+  .note-markdown p {
+    @apply leading-7;
+  }
+
+  .note-markdown ul {
+    @apply list-disc pl-6;
+  }
+
+  .note-markdown ol {
+    @apply list-decimal pl-6;
+  }
+
+  .note-markdown li {
+    @apply my-1;
+  }
+
+  .note-markdown blockquote {
+    @apply border-l-4 border-gray-200 pl-4 text-gray-700;
+  }
+
+  .note-markdown hr {
+    @apply border-gray-200;
+  }
+
+  .note-markdown code {
+    @apply rounded bg-gray-100 px-1 py-0.5 font-mono text-[0.9em];
+  }
+
+  .note-markdown pre {
+    @apply overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3;
+  }
+
+  .note-markdown pre code {
+    @apply bg-transparent p-0;
+  }
+
+  .note-markdown table {
+    @apply w-full border-collapse text-sm;
+  }
+
+  .note-markdown th,
+  .note-markdown td {
+    @apply border border-gray-200 px-2 py-1 align-top;
+  }
+
+  .note-markdown th {
+    @apply bg-gray-50 font-semibold;
+  }
+
+  .note-markdown img {
+    @apply max-w-full rounded;
+  }
 }
 
 input[type="number"].notification-input:focus {
