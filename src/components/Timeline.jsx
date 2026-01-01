@@ -5,8 +5,6 @@ import NoteArea from './NoteArea';
 
 const ALL_DAY_MIN_HEIGHT = 120;
 const TIMELINE_MIN_HEIGHT = 120;
-const VIEWPORT_PADDING = 8;
-const CARD_BOTTOM_MARGIN = 0;
 const RESIZE_HANDLE_HEIGHT = 12;
 
 const isSchedulePast = (schedule, selectedDate) => {
@@ -88,7 +86,6 @@ const Timeline = ({
 	const [resizeStartHeight, setResizeStartHeight] = useState(0);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
 	const [isAltPressed, setIsAltPressed] = useState(false);
-	const [cardMaxHeight, setCardMaxHeight] = useState(null);
 	const cardRef = useRef(null);
 	const timelineRef = useRef(null);
 	const allDaySectionRef = useRef(null);
@@ -123,17 +120,19 @@ const Timeline = ({
 		};
 	}, []);
 
-	const computeAllDayMaxHeight = useCallback(
-		(fallback = 600) => {
-			const minHeight = ALL_DAY_MIN_HEIGHT;
-			const headerHeight = headerRef.current?.offsetHeight ?? 0;
-			const effectiveCardMax = cardMaxHeight ?? fallback;
-			const structuralReserve = headerHeight + TIMELINE_MIN_HEIGHT + RESIZE_HANDLE_HEIGHT;
-			const limit = effectiveCardMax - structuralReserve;
-			return Math.max(minHeight, limit);
-		},
-		[cardMaxHeight]
-	);
+	const computeAllDayMaxHeight = useCallback((fallback = 600) => {
+		const minHeight = ALL_DAY_MIN_HEIGHT;
+		const headerHeight = headerRef.current?.offsetHeight ?? 0;
+		const cardHeight = cardRef.current?.clientHeight;
+		const parentHeight = cardRef.current?.parentElement?.clientHeight;
+		const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : undefined;
+		const effectiveCardMax = [cardHeight, parentHeight, viewportHeight, fallback]
+			.map((value) => Number(value))
+			.find((value) => Number.isFinite(value) && value > 0);
+		const structuralReserve = headerHeight + TIMELINE_MIN_HEIGHT + RESIZE_HANDLE_HEIGHT;
+		const limit = (effectiveCardMax ?? fallback) - structuralReserve;
+		return Math.max(minHeight, limit);
+	}, []);
 
 	const currentTab = ['timeline', 'tasks', 'notes'].includes(activeTab) ? activeTab : 'timeline';
 	const showTimeline = currentTab === 'timeline';
@@ -148,54 +147,8 @@ const Timeline = ({
 		return count + 1;
 	}, 0);
 
-	useLayoutEffect(() => {
-		if (!showTimeline) return undefined;
-		if (typeof window === 'undefined') return undefined;
-
-		let frame = null;
-		const measure = () => {
-			const cardEl = cardRef.current;
-			if (!cardEl) return;
-			const cardRect = cardEl.getBoundingClientRect();
-			const viewportAvailable = window.innerHeight - cardRect.top - VIEWPORT_PADDING - CARD_BOTTOM_MARGIN;
-			const parentEl = cardEl.parentElement;
-			const parentAvailable = parentEl ? parentEl.clientHeight - CARD_BOTTOM_MARGIN : Number.POSITIVE_INFINITY;
-			const candidates = [viewportAvailable, parentAvailable].filter((value) => Number.isFinite(value) && value > 0);
-			if (!candidates.length) return;
-			const headerHeight = headerRef.current?.offsetHeight ?? 0;
-			const minimumCardHeight = headerHeight + ALL_DAY_MIN_HEIGHT + TIMELINE_MIN_HEIGHT + RESIZE_HANDLE_HEIGHT;
-			const nextMax = Math.max(minimumCardHeight, Math.min(...candidates));
-			setCardMaxHeight(nextMax);
-		};
-
-		const update = () => {
-			if (frame) {
-				cancelAnimationFrame(frame);
-			}
-			frame = requestAnimationFrame(measure);
-		};
-
-		update();
-		window.addEventListener('resize', update);
-
-		const cardEl = cardRef.current;
-		const parentEl = cardEl?.parentElement;
-		let resizeObserver;
-		if (parentEl && typeof ResizeObserver !== 'undefined') {
-			resizeObserver = new ResizeObserver(update);
-			resizeObserver.observe(parentEl);
-		}
-
-		return () => {
-			window.removeEventListener('resize', update);
-			if (resizeObserver) {
-				resizeObserver.disconnect();
-			}
-			if (frame) {
-				cancelAnimationFrame(frame);
-			}
-		};
-	}, [showTimeline]);
+	// NOTE: カードの最大縦幅をJSで固定すると、親のレイアウト次第で余白が発生しやすいので
+	// ここでは height/maxHeight を強制せず、親コンテナ（flex + overflow）に任せる。
 
 	useEffect(() => {
 		if (typeof window === 'undefined' || !showTimeline) return undefined;
@@ -843,17 +796,10 @@ const Timeline = ({
 		</div>
 	);
 
-	const cardStyle = useMemo(() => {
-		if (!cardMaxHeight) return undefined;
-		const value = `${cardMaxHeight}px`;
-		return { height: value, maxHeight: value };
-	}, [cardMaxHeight]);
-
 	return (
 		<div
 			ref={cardRef}
 			className="flex h-full min-h-0 flex-col rounded-lg border border-slate-200 bg-white shadow-xl"
-			style={cardStyle}
 		>
 			<header ref={headerRef} className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 rounded-t-lg">
 				<div className="flex flex-wrap items-center gap-3">
