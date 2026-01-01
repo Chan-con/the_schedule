@@ -20,9 +20,30 @@ const toLocalDateStr = (value) => {
   return `${y}-${m}-${d}`;
 };
 
-const NoteArea = ({ notes = [], onUpdateNote, onDeleteNote, isAltPressed = false, selectedDateStr = '' }) => {
+const NoteArea = ({
+  notes = [],
+  onUpdateNote,
+  onDeleteNote,
+  isAltPressed = false,
+  selectedDateStr = '',
+  activeNoteId: controlledActiveNoteId,
+  onActiveNoteIdChange,
+  onRequestClose,
+}) => {
   const [query, setQuery] = useState('');
-  const [activeNoteId, setActiveNoteId] = useState(null);
+  const [internalActiveNoteId, setInternalActiveNoteId] = useState(null);
+
+  const resolvedActiveNoteId = controlledActiveNoteId !== undefined ? controlledActiveNoteId : internalActiveNoteId;
+  const setActiveNoteId = useCallback(
+    (nextId) => {
+      if (controlledActiveNoteId !== undefined) {
+        if (onActiveNoteIdChange) onActiveNoteIdChange(nextId);
+        return;
+      }
+      setInternalActiveNoteId(nextId);
+    },
+    [controlledActiveNoteId, onActiveNoteIdChange]
+  );
 
   const noteList = useMemo(() => (Array.isArray(notes) ? notes : []), [notes]);
 
@@ -55,12 +76,12 @@ const NoteArea = ({ notes = [], onUpdateNote, onDeleteNote, isAltPressed = false
   }, [noteList, selectedDateStr]);
 
   useEffect(() => {
-    if (activeNoteId == null) return;
-    const exists = noteList.some((n) => (n?.id ?? null) === activeNoteId);
+    if (resolvedActiveNoteId == null) return;
+    const exists = noteList.some((n) => (n?.id ?? null) === resolvedActiveNoteId);
     if (!exists) {
       setActiveNoteId(null);
     }
-  }, [noteList, activeNoteId]);
+  }, [noteList, resolvedActiveNoteId, setActiveNoteId]);
 
   const filteredNotes = useMemo(() => {
     const q = normalizeText(query).trim().toLowerCase();
@@ -76,7 +97,7 @@ const NoteArea = ({ notes = [], onUpdateNote, onDeleteNote, isAltPressed = false
   const handleOpen = useCallback((noteId) => {
     if (noteId == null) return;
     setActiveNoteId(noteId);
-  }, []);
+  }, [setActiveNoteId]);
 
   const renderNoteCard = (note) => {
     if (!note) return null;
@@ -128,9 +149,17 @@ const NoteArea = ({ notes = [], onUpdateNote, onDeleteNote, isAltPressed = false
   };
 
   const activeNote = useMemo(() => {
-    if (activeNoteId == null) return null;
-    return noteList.find((n) => (n?.id ?? null) === activeNoteId) || null;
-  }, [activeNoteId, noteList]);
+    if (resolvedActiveNoteId == null) return null;
+    return noteList.find((n) => (n?.id ?? null) === resolvedActiveNoteId) || null;
+  }, [resolvedActiveNoteId, noteList]);
+
+  const handleClose = useCallback(() => {
+    if (onRequestClose) {
+      onRequestClose(resolvedActiveNoteId);
+      return;
+    }
+    setActiveNoteId(null);
+  }, [onRequestClose, resolvedActiveNoteId, setActiveNoteId]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
@@ -161,9 +190,9 @@ const NoteArea = ({ notes = [], onUpdateNote, onDeleteNote, isAltPressed = false
       </div>
 
       <NoteModal
-        isOpen={activeNoteId != null}
+        isOpen={resolvedActiveNoteId != null}
         note={activeNote}
-        onClose={() => setActiveNoteId(null)}
+        onClose={handleClose}
         onUpdate={onUpdateNote}
       />
     </div>

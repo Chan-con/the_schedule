@@ -68,6 +68,9 @@ const Timeline = ({
 	onAddNote,
 	onUpdateNote,
 	onDeleteNote,
+	activeNoteId,
+	onActiveNoteIdChange,
+	onRequestCloseNote,
 	onScheduleUpdate,
 	onToggleTask,
 	onScheduleDelete,
@@ -911,6 +914,9 @@ const Timeline = ({
 						onDeleteNote={onDeleteNote}
 						isAltPressed={isAltPressed}
 						selectedDateStr={selectedDateStr}
+						activeNoteId={activeNoteId}
+						onActiveNoteIdChange={onActiveNoteIdChange}
+						onRequestClose={onRequestCloseNote}
 					/>
 				) : (
 					<div

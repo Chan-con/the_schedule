@@ -146,6 +146,29 @@ export const deleteNoteForUser = async ({ userId, id }) => {
   logNotes('delete', 'success', { userId, id, durationMs: buildDuration(startedAt) });
 };
 
+export const fetchNoteForUserById = async ({ userId, id }) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+  if (id == null) throw new Error('ノートIDが指定されていません。');
+
+  const startedAt = nowPerf();
+  logNotes('fetchOne', 'request', { userId, id });
+
+  const { data, error } = await supabase
+    .from(TABLE_NAME)
+    .select('id, date, title, content, created_at, updated_at')
+    .eq('user_id', userId)
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    logNotes('fetchOne', 'error', { userId, id, durationMs: buildDuration(startedAt), message: error.message });
+    throw new Error(`ノートを取得できませんでした: ${error.message}`);
+  }
+
+  logNotes('fetchOne', 'success', { userId, id, durationMs: buildDuration(startedAt) });
+  return data;
+};
+
 export const fetchNoteDatesForUserInRange = async ({ userId, startDate, endDate }) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   if (!startDate || !endDate) return [];

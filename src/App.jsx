@@ -12,6 +12,7 @@ import QuickMemoPad from './components/QuickMemoPad';
 import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQuickMemo';
 import {
   fetchNotesForUser,
+  fetchNoteForUserById,
   createNoteForUser,
   updateNoteForUser,
   deleteNoteForUser,
@@ -320,6 +321,12 @@ function App() {
   const [isQuickMemoLoaded, setIsQuickMemoLoaded] = useState(false);
 
   const [notes, setNotes] = useState([]);
+  const [activeNoteId, setActiveNoteId] = useState(null);
+  const notesRef = useRef([]);
+
+  useEffect(() => {
+    notesRef.current = Array.isArray(notes) ? notes : [];
+  }, [notes]);
   const [calendarNoteDates, setCalendarNoteDates] = useState([]);
   const calendarVisibleRangeRef = useRef(null);
   const notePendingPatchRef = useRef(new Map());
@@ -534,39 +541,25 @@ function App() {
     if (!selectedDateStr) return;
     const nowIso = new Date().toISOString();
 
+    const draftNote = {
+      id: createTempId(),
+      date: selectedDateStr,
+      title: '',
+      content: '',
+      created_at: nowIso,
+      updated_at: nowIso,
+      __isDraft: !!userId,
+    };
+
+    // 「＋」を押したら即モーダルを開く（DB待ちしない）
+    setNotes((prev) => [draftNote, ...(Array.isArray(prev) ? prev : [])]);
+    setActiveNoteId(draftNote.id);
+
     if (!userId) {
-      const newNote = {
-        id: createTempId(),
-        date: selectedDateStr,
-        title: '',
-        content: '',
-        created_at: nowIso,
-        updated_at: nowIso,
-      };
-      const allNotes = [...loadLocalNotes(), newNote];
+      const allNotes = [...loadLocalNotes(), { ...draftNote, __isDraft: false }];
       saveLocalNotes(allNotes);
-      setNotes((prev) => [newNote, ...(Array.isArray(prev) ? prev : [])]);
       refreshCalendarNoteDates().catch(() => {});
       return;
-    }
-
-    const jobMeta = { kind: 'noteCreate' };
-    beginSupabaseJob(jobMeta);
-    try {
-      const created = await createNoteForUser({
-        userId,
-        date: selectedDateStr,
-        title: '',
-        content: '',
-      });
-      setNotes((prev) => [created, ...(Array.isArray(prev) ? prev : [])]);
-      setSupabaseError(null);
-      refreshCalendarNoteDates().catch(() => {});
-    } catch (error) {
-      console.error('[Supabase] Failed to create note:', error);
-      setSupabaseError(error.message || 'ノートの作成に失敗しました。');
-    } finally {
-      endSupabaseJob(jobMeta);
     }
   }, [beginSupabaseJob, endSupabaseJob, loadLocalNotes, refreshCalendarNoteDates, saveLocalNotes, selectedDateStr, userId]);
 
@@ -590,6 +583,12 @@ function App() {
         return { ...note, ...safePatch, updated_at: nowIso };
       });
       saveLocalNotes(nextAllNotes);
+      return;
+    }
+
+    const currentNote = notesRef.current.find((note) => (note?.id ?? null) === noteId) || null;
+    if (currentNote?.__isDraft) {
+      // 下書き（未保存）はDBへ送らない。閉じるタイミングで作成する。
       return;
     }
 
@@ -624,6 +623,125 @@ function App() {
 
     timers.set(noteId, timeoutId);
   }, [beginSupabaseJob, endSupabaseJob, loadLocalNotes, saveLocalNotes, userId]);
+
+  const handleRequestCloseNote = useCallback((noteId) => {
+    setActiveNoteId(null);
+    if (noteId == null) return;
+
+    const currentNote = notesRef.current.find((note) => (note?.id ?? null) === noteId) || null;
+    if (!currentNote) return;
+
+    if (!userId) {
+      return;
+    }
+
+    if (currentNote.__isDraft) {
+      const title = typeof currentNote.title === 'string' ? currentNote.title.trim() : '';
+      const content = typeof currentNote.content === 'string' ? currentNote.content.trim() : '';
+
+      if (!title && !content) {
+        setNotes((prev) => (Array.isArray(prev) ? prev.filter((n) => (n?.id ?? null) !== noteId) : []));
+        return;
+      }
+
+      const jobMeta = { kind: 'noteCreate' };
+      beginSupabaseJob(jobMeta);
+      createNoteForUser({
+        userId,
+        date: currentNote.date || selectedDateStr,
+        title: currentNote.title ?? '',
+        content: currentNote.content ?? '',
+      })
+        .then(async (created) => {
+          setNotes((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const filtered = list.filter((n) => (n?.id ?? null) !== noteId);
+            return [created, ...filtered];
+          });
+          setSupabaseError(null);
+          refreshCalendarNoteDates().catch(() => {});
+          try {
+            const freshAll = await fetchNotesForUser(userId);
+            setNotes(Array.isArray(freshAll) ? freshAll : []);
+          } catch {
+            // 失敗しても作成済みのローカル状態は維持
+          }
+        })
+        .catch((error) => {
+          console.error('[Supabase] Failed to create note:', error);
+          setSupabaseError(error.message || 'ノートの作成に失敗しました。');
+        })
+        .finally(() => {
+          endSupabaseJob(jobMeta);
+        });
+      return;
+    }
+
+    // 既存ノート: 閉じるタイミングで、未送信のpatchがあれば即flush
+    const pendingMap = notePendingPatchRef.current;
+    const timers = noteSaveTimersRef.current;
+    const mergedPatch = pendingMap.get(noteId);
+
+    if (timers.has(noteId)) {
+      clearTimeout(timers.get(noteId));
+      timers.delete(noteId);
+    }
+
+    if (!mergedPatch || Object.keys(mergedPatch).length === 0) {
+      return;
+    }
+
+    pendingMap.delete(noteId);
+    const jobMeta = { kind: 'noteUpdate' };
+    beginSupabaseJob(jobMeta);
+    updateNoteForUser({ userId, id: noteId, patch: mergedPatch })
+      .then(async (updated) => {
+        setNotes((prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          return list.map((note) => ((note?.id ?? null) === noteId ? updated : note));
+        });
+        setSupabaseError(null);
+        try {
+          const freshAll = await fetchNotesForUser(userId);
+          setNotes(Array.isArray(freshAll) ? freshAll : []);
+        } catch {
+          // ignore
+        }
+      })
+      .catch((error) => {
+        console.error('[Supabase] Failed to update note:', error);
+        setSupabaseError(error.message || 'ノートの更新に失敗しました。');
+      })
+      .finally(() => {
+        endSupabaseJob(jobMeta);
+      });
+  }, [beginSupabaseJob, endSupabaseJob, refreshCalendarNoteDates, selectedDateStr, userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    if (activeNoteId == null) return;
+
+    const currentNote = notesRef.current.find((note) => (note?.id ?? null) === activeNoteId) || null;
+    if (!currentNote || currentNote.__isDraft) return;
+
+    let cancelled = false;
+    fetchNoteForUserById({ userId, id: activeNoteId })
+      .then((fresh) => {
+        if (cancelled) return;
+        setNotes((prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          return list.map((note) => ((note?.id ?? null) === activeNoteId ? fresh : note));
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('[Supabase] Failed to fetch note:', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeNoteId, userId]);
 
   const handleDeleteNote = useCallback(async (note) => {
     if (!note) return;
@@ -1668,6 +1786,9 @@ function App() {
                           onAddNote={handleAddNote}
                           onUpdateNote={handleUpdateNote}
                           onDeleteNote={handleDeleteNote}
+                          activeNoteId={activeNoteId}
+                          onActiveNoteIdChange={setActiveNoteId}
+                          onRequestCloseNote={handleRequestCloseNote}
                           onScheduleUpdate={handleScheduleUpdate}
                           onToggleTask={handleToggleTask}
                           onScheduleDelete={handleScheduleDelete}
@@ -1774,6 +1895,9 @@ function App() {
                     onAddNote={handleAddNote}
                     onUpdateNote={handleUpdateNote}
                     onDeleteNote={handleDeleteNote}
+                    activeNoteId={activeNoteId}
+                    onActiveNoteIdChange={setActiveNoteId}
+                    onRequestCloseNote={handleRequestCloseNote}
                     onScheduleUpdate={handleScheduleUpdate}
                     onToggleTask={handleToggleTask}
                     onScheduleDelete={handleScheduleDelete}
