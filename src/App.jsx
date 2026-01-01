@@ -635,6 +635,12 @@ function App() {
     if (noteId == null) return;
     if (note?.__isDraft) return;
 
+    // ログイン中はDBへ同期（Web/Electron間で共有）
+    if (userId) {
+      handleUpdateNote(noteId, { archived: !!nextArchived });
+      return;
+    }
+
     const idKey = String(noteId);
     const archived = !!nextArchived;
     const nextFlags = { ...(noteArchiveFlagsRef.current || {}) };
@@ -652,12 +658,10 @@ function App() {
       return list.map((n) => ((n?.id ?? null) === noteId ? { ...n, archived } : n));
     });
 
-    if (!userId) {
-      const allNotes = loadLocalNotes();
-      const nextAllNotes = allNotes.map((n) => ((n?.id ?? null) === noteId ? { ...n, archived } : n));
-      saveLocalNotes(nextAllNotes);
-    }
-  }, [loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteArchiveFlags, userId]);
+    const allNotes = loadLocalNotes();
+    const nextAllNotes = allNotes.map((n) => ((n?.id ?? null) === noteId ? { ...n, archived } : n));
+    saveLocalNotes(nextAllNotes);
+  }, [handleUpdateNote, loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteArchiveFlags, userId]);
 
   const handleUpdateNote = useCallback((noteId, patch) => {
     if (noteId == null) return;

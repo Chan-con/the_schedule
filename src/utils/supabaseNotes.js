@@ -28,7 +28,7 @@ export const fetchNotesForUserByDate = async (userId, dateStr) => {
 
   const { data, error } = await supabase
     .from(TABLE_NAME)
-    .select('id, date, title, content, created_at, updated_at')
+    .select('id, date, title, content, archived, created_at, updated_at')
     .eq('user_id', userId)
     .eq('date', dateStr)
     .order('updated_at', { ascending: false });
@@ -51,7 +51,7 @@ export const fetchNotesForUser = async (userId) => {
 
   const { data, error } = await supabase
     .from(TABLE_NAME)
-    .select('id, date, title, content, created_at, updated_at')
+    .select('id, date, title, content, archived, created_at, updated_at')
     .eq('user_id', userId)
     .order('updated_at', { ascending: false });
 
@@ -74,6 +74,7 @@ export const createNoteForUser = async ({ userId, date, title = '', content = ''
     date,
     title: title ?? '',
     content: content ?? '',
+    archived: false,
     updated_at: new Date().toISOString(),
   };
 
@@ -83,7 +84,7 @@ export const createNoteForUser = async ({ userId, date, title = '', content = ''
   const { data, error } = await supabase
     .from(TABLE_NAME)
     .insert(payload)
-    .select('id, date, title, content, created_at, updated_at')
+    .select('id, date, title, content, archived, created_at, updated_at')
     .single();
 
   if (error) {
@@ -113,7 +114,7 @@ export const updateNoteForUser = async ({ userId, id, patch }) => {
     .update(payload)
     .eq('user_id', userId)
     .eq('id', id)
-    .select('id, date, title, content, created_at, updated_at')
+    .select('id, date, title, content, archived, created_at, updated_at')
     .single();
 
   if (error) {
@@ -155,7 +156,7 @@ export const fetchNoteForUserById = async ({ userId, id }) => {
 
   const { data, error } = await supabase
     .from(TABLE_NAME)
-    .select('id, date, title, content, created_at, updated_at')
+    .select('id, date, title, content, archived, created_at, updated_at')
     .eq('user_id', userId)
     .eq('id', id)
     .single();
