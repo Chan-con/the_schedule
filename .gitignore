@@ -198,5 +198,8 @@ public/icon.png
 coverage/
 test-results/
 
+# Lint output artifacts
+lint-*.json
+
 # Debug files
 *.map
