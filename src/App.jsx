@@ -2170,7 +2170,7 @@ function App() {
                 {/* タイムラインパネル */}
                 <div 
                   className={`
-                    fixed top-0 right-0 h-full w-80 bg-white z-50 slide-transition
+                    fixed top-0 right-0 h-full w-full bg-white z-50 slide-transition
                     ${isTimelineOpen ? 'translate-x-0' : 'translate-x-full'}
                   `}
                   onTouchStart={handleTouchStart}
