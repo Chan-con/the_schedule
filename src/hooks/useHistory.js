@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useReducer, useMemo } from 'react';
 
 const isHistoryDebugEnabled =
   typeof import.meta !== 'undefined' && import.meta.env?.VITE_DEBUG_HISTORY === 'true';
@@ -23,162 +23,104 @@ export const useHistory = (initialState, maxHistorySize = 100) => {
 
   const maxSize = clampMaxSize(maxHistorySize);
 
-  // 現在の状態
-  const [state, setInternalState] = useState(initialState);
+  const initial = useMemo(
+    () => ({ history: [initialState], index: 0, lastActionType: null }),
+    // initialState は初回のみ評価したい
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
-  // 履歴スタック（全履歴）
-  const [history, setHistory] = useState([initialState]);
+  const reducer = (prev, action) => {
+    const currentHistory = Array.isArray(prev?.history) && prev.history.length > 0 ? prev.history : [initialState];
+    const currentIndex = Math.max(0, Math.min(Number(prev?.index) || 0, currentHistory.length - 1));
 
-  // 現在の履歴インデックス
-  const [currentIndex, setCurrentIndex] = useState(0);
+    switch (action?.type) {
+      case 'push': {
+        const nextState = action.state;
+        const actionType = action.actionType || 'unknown';
+        const trimmed = currentHistory.slice(0, currentIndex + 1);
+        trimmed.push(nextState);
 
-  // 操作タイプの追跡（デバッグ用）
-  const [lastActionType, setLastActionType] = useState(null);
+        let nextHistory = trimmed;
+        let nextIndex = nextHistory.length - 1;
 
-  // 履歴追加を一時的に無効化するフラグ
-  const skipHistoryRef = useRef(false);
+        if (nextHistory.length > maxSize) {
+          const overflow = nextHistory.length - maxSize;
+          nextHistory = nextHistory.slice(overflow);
+          nextIndex = Math.max(0, nextIndex - overflow);
+        }
 
-  // state/index/history の最新値を参照するためのref
-  const historyRef = useRef(history);
-  const indexRef = useRef(currentIndex);
+        return { history: nextHistory, index: nextIndex, lastActionType: actionType };
+      }
+      case 'undo': {
+        if (currentIndex <= 0) return { ...prev, lastActionType: 'undo' };
+        return { history: currentHistory, index: currentIndex - 1, lastActionType: 'undo' };
+      }
+      case 'redo': {
+        if (currentIndex >= currentHistory.length - 1) return { ...prev, lastActionType: 'redo' };
+        return { history: currentHistory, index: currentIndex + 1, lastActionType: 'redo' };
+      }
+      case 'clear': {
+        const current = currentHistory[currentIndex];
+        return { history: [current], index: 0, lastActionType: 'clear' };
+      }
+      case 'replace': {
+        const nextState = action.state;
+        return { history: [nextState], index: 0, lastActionType: action.actionType || 'replace' };
+      }
+      case 'overwrite': {
+        const nextState = action.state;
+        const actionType = action.actionType || 'overwrite';
+        const nextHistory = [...currentHistory];
+        nextHistory[currentIndex] = nextState;
+        return { history: nextHistory, index: currentIndex, lastActionType: actionType };
+      }
+      default:
+        return prev;
+    }
+  };
+
+  const [historyState, dispatch] = useReducer(reducer, initial);
+  const history = Array.isArray(historyState?.history) && historyState.history.length > 0 ? historyState.history : [initialState];
+  const currentIndex = Math.max(0, Math.min(Number(historyState?.index) || 0, history.length - 1));
+  const state = history[currentIndex];
+  const lastActionType = historyState?.lastActionType ?? null;
+
+  // 既存コードのために ref は維持（外部から参照される可能性を避ける）
   const stateRef = useRef(state);
-
-  useEffect(() => {
-    historyRef.current = history;
-  }, [history]);
-
-  useEffect(() => {
-    indexRef.current = currentIndex;
-  }, [currentIndex]);
-
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
   const setState = useCallback((newState, actionType = 'unknown') => {
-    if (skipHistoryRef.current) {
-      setInternalState(newState);
-      return;
-    }
-
-    setHistory((prevHistory) => {
-      const baseIndex = indexRef.current;
-      const trimmed = Array.isArray(prevHistory)
-        ? prevHistory.slice(0, Math.max(0, baseIndex) + 1)
-        : [];
-      trimmed.push(newState);
-
-      let nextHistory = trimmed;
-      let nextIndex = nextHistory.length - 1;
-
-      if (nextHistory.length > maxSize) {
-        const overflow = nextHistory.length - maxSize;
-        nextHistory = nextHistory.slice(overflow);
-        nextIndex = Math.max(0, nextIndex - overflow);
-      }
-
-      // index の更新は history 更新と同期させる
-      setCurrentIndex(nextIndex);
-      return nextHistory;
-    });
-
-    setInternalState(newState);
-    setLastActionType(actionType);
-
-    historyDebugLog('📚 History: Added new state', {
-      actionType,
-      nextIndex: indexRef.current + 1,
-    });
-  }, [maxSize]);
+    dispatch({ type: 'push', state: newState, actionType });
+    historyDebugLog('📚 History: Added new state', { actionType });
+  }, []);
 
   const undo = useCallback(() => {
-    const h = historyRef.current;
-    const idx = indexRef.current;
-    if (!Array.isArray(h) || h.length === 0) return;
-    if (idx <= 0) return;
-
-    const newIndex = idx - 1;
-    const previousState = h[newIndex];
-
-    setCurrentIndex(newIndex);
-    skipHistoryRef.current = true;
-    setInternalState(previousState);
-    skipHistoryRef.current = false;
-    setLastActionType('undo');
-
-    historyDebugLog('↩️ Undo: Restored state', {
-      fromIndex: idx,
-      toIndex: newIndex,
-    });
+    dispatch({ type: 'undo' });
   }, []);
 
   const redo = useCallback(() => {
-    const h = historyRef.current;
-    const idx = indexRef.current;
-    if (!Array.isArray(h) || h.length === 0) return;
-    if (idx >= h.length - 1) return;
-
-    const newIndex = idx + 1;
-    const nextState = h[newIndex];
-
-    setCurrentIndex(newIndex);
-    skipHistoryRef.current = true;
-    setInternalState(nextState);
-    skipHistoryRef.current = false;
-    setLastActionType('redo');
-
-    historyDebugLog('↪️ Redo: Restored state', {
-      fromIndex: idx,
-      toIndex: newIndex,
-    });
+    dispatch({ type: 'redo' });
   }, []);
 
   const canUndo = currentIndex > 0;
   const canRedo = currentIndex < history.length - 1;
 
   const clearHistory = useCallback(() => {
-    const current = stateRef.current;
-    setHistory([current]);
-    setCurrentIndex(0);
-    setLastActionType('clear');
+    dispatch({ type: 'clear' });
     historyDebugLog('🗑️ History: Cleared all history');
   }, []);
 
   const replaceState = useCallback((newState, actionType = 'replace') => {
-    skipHistoryRef.current = true;
-    setInternalState(newState);
-    skipHistoryRef.current = false;
-
-    setHistory([newState]);
-    setCurrentIndex(0);
-    setLastActionType(actionType);
-
-    historyDebugLog('🔄 History: State replaced', {
-      actionType,
-      historyLength: 1,
-      currentIndex: 0,
-    });
+    dispatch({ type: 'replace', state: newState, actionType });
+    historyDebugLog('🔄 History: State replaced', { actionType });
   }, []);
 
   const overwriteState = useCallback((newState, actionType = 'overwrite') => {
-    skipHistoryRef.current = true;
-    setInternalState(newState);
-    skipHistoryRef.current = false;
-
-    setHistory((prevHistory) => {
-      const list = Array.isArray(prevHistory) && prevHistory.length > 0 ? [...prevHistory] : [newState];
-      const idx = Math.max(0, Math.min(indexRef.current, list.length - 1));
-      list[idx] = newState;
-      return list;
-    });
-
-    setLastActionType(actionType);
-
-    historyDebugLog('📝 History: Overwrote current state', {
-      actionType,
-      currentIndex: indexRef.current,
-      historyLength: historyRef.current?.length,
-    });
+    dispatch({ type: 'overwrite', state: newState, actionType });
+    historyDebugLog('📝 History: Overwrote current state', { actionType });
   }, []);
   
   // キーボードショートカットの処理
