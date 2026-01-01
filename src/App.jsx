@@ -432,6 +432,7 @@ function App() {
   const [notes, setNotes] = useState([]);
   const [activeNoteId, setActiveNoteId] = useState(null);
   const [sharedNoteId, setSharedNoteId] = useState(null);
+  const noteLinkReturnStateRef = useRef(null);
   const lastLoginRequestForNoteRef = useRef(null);
   const notesRef = useRef([]);
 
@@ -454,6 +455,19 @@ function App() {
     },
     [isMobile]
   );
+
+  // メモ等のリンク（hash）からノートを開いた場合、閉じた時に戻せるよう現在の表示状態を記憶
+  useEffect(() => {
+    if (sharedNoteId == null) return;
+    if (activeNoteId != null) return;
+    if (noteLinkReturnStateRef.current) return;
+
+    noteLinkReturnStateRef.current = {
+      sharedNoteId,
+      timelineActiveTab,
+      isTimelineOpen,
+    };
+  }, [activeNoteId, isTimelineOpen, sharedNoteId, timelineActiveTab]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1101,9 +1115,24 @@ function App() {
   const handleRequestCloseNote = useCallback((noteId) => {
     setActiveNoteId(null);
 
+    const restoreFromLink = () => {
+      const snapshot = noteLinkReturnStateRef.current;
+      if (!snapshot) return;
+      if (noteId == null) return;
+      if (snapshot.sharedNoteId == null) return;
+      if (String(snapshot.sharedNoteId) !== String(noteId)) return;
+
+      if (typeof snapshot.timelineActiveTab === 'string') {
+        setTimelineActiveTab(snapshot.timelineActiveTab);
+      }
+      setIsTimelineOpen(!!snapshot.isTimelineOpen);
+      noteLinkReturnStateRef.current = null;
+    };
+
     if (typeof window !== 'undefined') {
       const fromHash = parseNoteIdFromHash(window.location.hash);
       if (fromHash != null && noteId != null && String(fromHash) === String(noteId)) {
+        restoreFromLink();
         clearNoteHash();
         // clearNoteHash() は replaceState を使うので hashchange が発火しない。
         // sharedNoteId を明示的にリセットしないと、同じ共有リンクを再クリックしても
@@ -1111,6 +1140,8 @@ function App() {
         setSharedNoteId(null);
       }
     }
+
+    // hashリンク以外（例: ノート一覧から開いた）の場合は復元しない。
     if (noteId == null) return;
 
     const currentNote = notesRef.current.find((note) => (note?.id ?? null) === noteId) || null;
