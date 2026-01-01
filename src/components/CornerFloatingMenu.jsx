@@ -108,7 +108,7 @@ export default function CornerFloatingMenu({ enabled = false, items = [] }) {
           {/* 外側タップで閉じる */}
           <button
             type="button"
-            className="fixed inset-0 z-[70] cursor-default"
+            className="fixed inset-0 z-[70] cursor-default bg-transparent border-0 p-0 appearance-none"
             onClick={close}
             aria-label="メニューを閉じる"
           />
@@ -119,7 +119,7 @@ export default function CornerFloatingMenu({ enabled = false, items = [] }) {
                 <button
                   key={item.key}
                   type="button"
-                  className={`inline-flex h-11 w-11 items-center justify-center rounded-xl border text-gray-600 transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                  className={`inline-flex h-12 w-12 items-center justify-center rounded-xl border text-gray-700 transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
                     item.disabled
                       ? 'cursor-not-allowed border-gray-200 bg-white opacity-40'
                       : 'border-gray-200 bg-white hover:bg-indigo-50'
