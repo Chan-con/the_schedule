@@ -34,7 +34,6 @@ const TitleBar = ({ onSettingsClick, auth }) => {
   return (
     <div className="flex items-center justify-between bg-gradient-to-r from-indigo-800 to-purple-800 text-white h-8 px-4 select-none">
       <div className="flex items-center space-x-3">
-        <span className="text-sm font-semibold tracking-wide">スケジュール帳</span>
         {auth && (
           <div className="flex items-center space-x-2">
             {user ? (
