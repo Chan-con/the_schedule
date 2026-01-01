@@ -935,6 +935,10 @@ function App() {
       const fromHash = parseNoteIdFromHash(window.location.hash);
       if (fromHash != null && noteId != null && String(fromHash) === String(noteId)) {
         clearNoteHash();
+        // clearNoteHash() は replaceState を使うので hashchange が発火しない。
+        // sharedNoteId を明示的にリセットしないと、同じ共有リンクを再クリックしても
+        // state が変わらず「2回目以降に開けない」ことがある。
+        setSharedNoteId(null);
       }
     }
     if (noteId == null) return;

@@ -4,8 +4,6 @@ import { parseNoteIdFromUrl, setNoteHash } from '../utils/noteShare';
 const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
   if (!memo) return null;
 
-  console.log('🔍 MemoWithLinks received memo:', memo);
-
   const handleMouseEnter = () => {
     if (onHoverChange) {
       onHoverChange(true);
@@ -18,16 +16,8 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
     }
   };
 
-  const handleUrlRightClick = (url, e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    console.log('🖱️ URL right-clicked:', url);
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
   // 改行で分割して各行を処理
   const lines = memo.split('\n');
-  console.log('📄 Split into lines:', lines);
 
   const formatUrlForDisplay = (urlStr, maxLen = 30) => {
     try {
@@ -78,32 +68,39 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
     // URLがある場合は分割して処理
     const urlPattern = /(https?:\/\/[^\s]+)/gi;
     const parts = line.split(urlPattern);
-    console.log(`🧩 Line ${lineIndex} split parts:`, parts);
 
     return (
       <span key={`line-${lineIndex}`}>
         {parts.map((part, partIndex) => {
           const isUrl = part.toLowerCase().startsWith('http://') || part.toLowerCase().startsWith('https://');
-          console.log(`🧩 Part ${partIndex}: "${part}" isUrl: ${isUrl}`);
           
           if (isUrl) {
             const sharedNoteId = parseNoteIdFromUrl(part);
             const display = formatUrlForDisplay(part);
             return (
-              <span
+              <a
                 key={`url-${lineIndex}-${partIndex}`}
                 className="text-blue-600 underline hover:text-blue-800 transition-colors font-medium select-text"
-                onContextMenu={(e) => handleUrlRightClick(part, e)}
+                href={part}
+                target={sharedNoteId == null ? '_blank' : undefined}
+                rel={sharedNoteId == null ? 'noopener noreferrer' : undefined}
                 onClick={(e) => {
+                  // 共有ノートURLは「通常の左クリック」だけアプリ内で開く。
+                  // 右クリック/別タブ/コピーはブラウザ標準のリンク挙動に任せる。
+                  if (sharedNoteId == null) return;
+
+                  const isPlainLeftClick = e.button === 0
+                    && !e.metaKey
+                    && !e.ctrlKey
+                    && !e.shiftKey
+                    && !e.altKey;
+                  if (!isPlainLeftClick) return;
+
                   e.preventDefault();
                   e.stopPropagation();
-                  if (sharedNoteId != null) {
-                    setNoteHash(sharedNoteId);
-                    return;
-                  }
-                  window.open(part, '_blank', 'noopener,noreferrer');
+                  setNoteHash(sharedNoteId);
                 }}
-                title={`${part}\n(右クリックでブラウザで開く)`}
+                title={part}
                 style={{ 
                   color: '#2563eb', 
                   textDecoration: 'underline',
@@ -112,7 +109,7 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
                 }}
               >
                 {display}
-              </span>
+              </a>
             );
           }
           return <span 
