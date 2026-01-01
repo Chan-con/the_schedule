@@ -19,7 +19,7 @@ import {
   deleteNoteForUser,
   fetchNoteDatesForUserInRange,
 } from './utils/supabaseNotes';
-import { clearNoteHash, parseDateStrFromHash, parseNoteIdFromHash } from './utils/noteShare';
+import { clearDateHash, clearNoteHash, parseDateStrFromHash, parseNoteIdFromHash } from './utils/noteShare';
 import { useNotifications } from './hooks/useNotifications';
 import { useHistory } from './hooks/useHistory';
 import { AuthContext } from './context/AuthContextBase';
@@ -458,11 +458,36 @@ function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    const parseDateStrFromSearch = () => {
+      try {
+        const params = new URLSearchParams(window.location.search || '');
+        const value = params.get('date');
+        if (value == null) return null;
+        const trimmed = String(value).trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+        return trimmed;
+      } catch {
+        return null;
+      }
+    };
+
+    const clearDateSearchParam = () => {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('date');
+        window.history.replaceState(null, '', url.toString());
+      } catch {
+        // ignore
+      }
+    };
+
     const applyFromHash = () => {
       const noteId = parseNoteIdFromHash(window.location.hash);
       setSharedNoteId(noteId);
 
-      const dateStr = parseDateStrFromHash(window.location.hash);
+      const dateStrFromHash = parseDateStrFromHash(window.location.hash);
+      const dateStrFromSearch = parseDateStrFromSearch();
+      const dateStr = dateStrFromHash || dateStrFromSearch;
       if (dateStr) {
         const nextDate = fromDateStrLocal(dateStr);
         if (nextDate) {
@@ -471,6 +496,14 @@ function App() {
           if (isMobile) {
             setIsTimelineOpen(true);
           }
+        }
+
+        // 通知クリックなど一時的な深いリンク用途なので、適用後にURLをクリーンにする。
+        if (dateStrFromHash) {
+          clearDateHash();
+        }
+        if (dateStrFromSearch) {
+          clearDateSearchParam();
         }
       }
     };

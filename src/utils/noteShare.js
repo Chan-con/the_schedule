@@ -137,3 +137,19 @@ export const clearNoteHash = () => {
     window.location.hash = '';
   }
 };
+
+export const clearDateHash = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    const url = new URL(window.location.href);
+    const rawHash = String(url.hash || '').replace(/^#/, '');
+    const params = new URLSearchParams(rawHash);
+    params.delete(DATE_HASH_KEY);
+    const next = params.toString();
+    url.hash = next ? `#${next}` : '';
+    window.history.replaceState(null, '', url.toString());
+  } catch {
+    // Fallback: clear everything if we cannot parse.
+    window.location.hash = '';
+  }
+};
