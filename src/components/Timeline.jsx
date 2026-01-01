@@ -143,18 +143,6 @@ const Timeline = ({
 	const showNotes = currentTab === 'notes';
 	const availableTasks = Array.isArray(tasks) ? tasks : [];
 	const availableNotes = Array.isArray(notes) ? notes : [];
-	const incompleteTaskCount = availableTasks.reduce((count, task) => {
-		if (!task || task.completed) {
-			return count;
-		}
-		return count + 1;
-	}, 0);
-	const activeNoteCount = availableNotes.reduce((count, note) => {
-		if (!note || note.archived) {
-			return count;
-		}
-		return count + 1;
-	}, 0);
 
 	// NOTE: カードの最大縦幅をJSで固定すると、親のレイアウト次第で余白が発生しやすいので
 	// ここでは height/maxHeight を強制せず、親コンテナ（flex + overflow）に任せる。
@@ -815,18 +803,11 @@ const Timeline = ({
 							);
 						})}
 					</div>
-					<span className="text-xs font-medium text-slate-400">
-						{showTasks
-							? `タスク ${incompleteTaskCount}件`
-							: showNotes
-								? `ノート ${activeNoteCount}件`
-								: `予定 ${timelineEntries.length}件`}
-					</span>
 				</div>
 				<div className="flex items-center gap-2">
 					<button
 						type="button"
-						className={`inline-flex h-9 w-9 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-600 transition-all duration-200 ${
+						className={`inline-flex h-9 w-9 p-1 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-600 transition-all duration-200 ${
 							isAddDisabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-indigo-50 hover:shadow'
 						}`}
 						onClick={handleAddClick}
@@ -838,7 +819,7 @@ const Timeline = ({
 					{typeof onClosePanel === 'function' && (
 						<button
 							type="button"
-							className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-600 transition-all duration-200 hover:bg-indigo-50 hover:shadow"
+							className="inline-flex h-9 w-9 p-1 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-600 transition-all duration-200 hover:bg-indigo-50 hover:shadow"
 							onClick={onClosePanel}
 							title="閉じる"
 							aria-label="閉じる"
