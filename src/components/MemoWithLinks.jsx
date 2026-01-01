@@ -129,8 +129,11 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
           
           if (isUrl) {
             const sharedNoteId = parseNoteIdFromUrl(part);
+            const cachedTitle = sharedNoteId != null && userId
+              ? getCachedNoteTitle({ userId, id: sharedNoteId })
+              : null;
             const display = sharedNoteId != null
-              ? (noteTitles[String(sharedNoteId)] || '共有ノート')
+              ? (noteTitles[String(sharedNoteId)] || cachedTitle || '無題のノート')
               : formatUrlForDisplay(part);
             return (
               <a
