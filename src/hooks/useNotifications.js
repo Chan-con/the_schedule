@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { fromDateStrLocal } from '../utils/date';
+import { setDateHash } from '../utils/noteShare';
 
 // Web Notifications API の権限をリクエスト
 const requestNotificationPermission = async () => {
@@ -21,7 +22,7 @@ const requestNotificationPermission = async () => {
 };
 
 // Web通知を表示
-const showWebNotification = (title, body) => {
+const showWebNotification = (title, body, { dateStr } = {}) => {
   if (!('Notification' in window) || Notification.permission !== 'granted') {
     console.warn('通知の権限がありません');
     return;
@@ -37,6 +38,21 @@ const showWebNotification = (title, body) => {
   
   notification.onclick = () => {
     window.focus();
+    if (dateStr) {
+      // 同じhashだとhashchangeが発火しないケースがあるので一度クリア
+      try {
+        const nextHash = new URLSearchParams({ date: String(dateStr) }).toString();
+        const current = String(window.location.hash || '').replace(/^#/, '');
+        if (current === nextHash) {
+          window.location.hash = '';
+          setTimeout(() => setDateHash(dateStr), 0);
+        } else {
+          setDateHash(dateStr);
+        }
+      } catch {
+        setDateHash(dateStr);
+      }
+    }
     notification.close();
   };
   
@@ -128,7 +144,7 @@ export const useNotifications = (schedules) => {
   }, []);
   
   // Web版で通知をスケジュール
-  const scheduleWebNotification = useCallback(async (notificationId, notificationTime, title, body) => {
+  const scheduleWebNotification = useCallback(async (notificationId, notificationTime, title, body, { dateStr } = {}) => {
     const now = new Date();
     const delay = notificationTime.getTime() - now.getTime();
     
@@ -154,7 +170,7 @@ export const useNotifications = (schedules) => {
     
     // タイマーをセット
     const timerId = setTimeout(() => {
-      showWebNotification(title, body);
+      showWebNotification(title, body, { dateStr });
       notificationTimersRef.current.delete(notificationId);
     }, delay);
     
@@ -181,7 +197,7 @@ export const useNotifications = (schedules) => {
           const notificationId = `${schedule.id}-${i}`;
           const { title, body } = generateNotificationText(schedule, notification);
 
-          await scheduleWebNotification(notificationId, notificationTime, title, body);
+          await scheduleWebNotification(notificationId, notificationTime, title, body, { dateStr: schedule.date });
         }
       }
     }

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useContext, useMemo } from 'react';
-import { toDateStrLocal } from './utils/date';
+import { toDateStrLocal, fromDateStrLocal } from './utils/date';
 
 import Calendar from './components/Calendar';
 import Timeline from './components/Timeline';
@@ -19,7 +19,7 @@ import {
   deleteNoteForUser,
   fetchNoteDatesForUserInRange,
 } from './utils/supabaseNotes';
-import { clearNoteHash, parseNoteIdFromHash } from './utils/noteShare';
+import { clearNoteHash, parseDateStrFromHash, parseNoteIdFromHash } from './utils/noteShare';
 import { useNotifications } from './hooks/useNotifications';
 import { useHistory } from './hooks/useHistory';
 import { AuthContext } from './context/AuthContextBase';
@@ -457,14 +457,28 @@ function App() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
     const applyFromHash = () => {
       const noteId = parseNoteIdFromHash(window.location.hash);
       setSharedNoteId(noteId);
+
+      const dateStr = parseDateStrFromHash(window.location.hash);
+      if (dateStr) {
+        const nextDate = fromDateStrLocal(dateStr);
+        if (nextDate) {
+          setSelectedDate(nextDate);
+          setTimelineActiveTab('timeline');
+          if (isMobile) {
+            setIsTimelineOpen(true);
+          }
+        }
+      }
     };
+
     applyFromHash();
     window.addEventListener('hashchange', applyFromHash);
     return () => window.removeEventListener('hashchange', applyFromHash);
-  }, []);
+  }, [isMobile]);
 
   useEffect(() => {
     if (sharedNoteId == null) return;

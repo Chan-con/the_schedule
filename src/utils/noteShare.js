@@ -1,4 +1,16 @@
 const NOTE_HASH_KEY = 'note';
+const DATE_HASH_KEY = 'date';
+
+const isValidDateStr = (raw) => {
+  if (raw == null) return false;
+  const value = String(raw).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return false;
+  if (m < 1 || m > 12) return false;
+  if (d < 1 || d > 31) return false;
+  return true;
+};
 
 const normalizeBaseUrl = (raw) => {
   if (!raw || typeof raw !== 'string') return null;
@@ -59,6 +71,21 @@ export const parseNoteIdFromHash = (hash) => {
   }
 };
 
+export const parseDateStrFromHash = (hash) => {
+  const raw = typeof hash === 'string' ? hash : '';
+  const trimmed = raw.replace(/^#/, '');
+  if (!trimmed) return null;
+
+  try {
+    const params = new URLSearchParams(trimmed);
+    const value = params.get(DATE_HASH_KEY);
+    if (!isValidDateStr(value)) return null;
+    return String(value).trim();
+  } catch {
+    return null;
+  }
+};
+
 export const parseNoteIdFromUrl = (urlString) => {
   if (!urlString || typeof urlString !== 'string') return null;
   try {
@@ -88,6 +115,15 @@ export const setNoteHash = (noteId) => {
   if (!id) return;
   const params = new URLSearchParams();
   params.set(NOTE_HASH_KEY, id);
+  window.location.hash = params.toString();
+};
+
+export const setDateHash = (dateStr) => {
+  if (typeof window === 'undefined') return;
+  const value = dateStr == null ? '' : String(dateStr).trim();
+  if (!isValidDateStr(value)) return;
+  const params = new URLSearchParams();
+  params.set(DATE_HASH_KEY, value);
   window.location.hash = params.toString();
 };
 
