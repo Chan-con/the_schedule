@@ -29,7 +29,7 @@ const showWebNotification = (title, body) => {
   
   const notification = new Notification(title, {
     body,
-    icon: '/vite.svg', // アイコンのパスを指定
+    icon: '/favicon.ico', // アイコンのパスを指定
     badge: '/vite.svg',
     requireInteraction: false,
     tag: 'schedule-notification'

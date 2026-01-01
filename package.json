@@ -9,6 +9,8 @@
   "author": "Your Name",
   "homepage": "./",
   "scripts": {
+    "predev": "node scripts/copy-web-assets.cjs",
+    "prebuild": "node scripts/copy-web-assets.cjs",
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "start": "npm run dev",
     "build": "vite build",
@@ -16,10 +18,10 @@
     "preview": "vite preview",
     "electron": "electron .",
     "build:icon": "echo 'ICOファイルを手動で作成してください'",
-    "build:electron": "vite build && electron-builder",
-    "package:win": "vite build && electron-builder --win",
-    "package:mac": "vite build && electron-builder --mac",
-    "package:linux": "vite build && electron-builder --linux"
+    "build:electron": "node scripts/copy-web-assets.cjs && vite build && electron-builder",
+    "package:win": "node scripts/copy-web-assets.cjs && vite build && electron-builder --win",
+    "package:mac": "node scripts/copy-web-assets.cjs && vite build && electron-builder --mac",
+    "package:linux": "node scripts/copy-web-assets.cjs && vite build && electron-builder --linux"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.0",
