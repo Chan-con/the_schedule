@@ -561,7 +561,7 @@ function App() {
       refreshCalendarNoteDates().catch(() => {});
       return;
     }
-  }, [beginSupabaseJob, endSupabaseJob, loadLocalNotes, refreshCalendarNoteDates, saveLocalNotes, selectedDateStr, userId]);
+  }, [loadLocalNotes, refreshCalendarNoteDates, saveLocalNotes, selectedDateStr, userId]);
 
   const handleUpdateNote = useCallback((noteId, patch) => {
     if (noteId == null) return;
@@ -759,7 +759,18 @@ function App() {
       .finally(() => {
         endSupabaseJob(jobMeta);
       });
-  }, [beginSupabaseJob, endSupabaseJob, refreshCalendarNoteDates, selectedDateStr, userId]);
+  }, [
+    beginSupabaseJob,
+    createNoteForUser,
+    deleteNoteForUser,
+    endSupabaseJob,
+    fetchNotesForUser,
+    loadLocalNotes,
+    refreshCalendarNoteDates,
+    saveLocalNotes,
+    selectedDateStr,
+    userId,
+  ]);
 
   useEffect(() => {
     if (!userId) return;
