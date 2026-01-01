@@ -185,7 +185,7 @@ function createWindow() {
     minHeight: 480, // スマホサイズまで縮小可能
     icon: iconPath, // 環境に応じたアイコンパス
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: true,
       contextIsolation: false,
     },

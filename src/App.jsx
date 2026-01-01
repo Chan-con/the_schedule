@@ -10,6 +10,7 @@ import TitleBar from './components/TitleBar';
 import SettingsModal from './components/SettingsModal';
 import QuickMemoPad from './components/QuickMemoPad';
 import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQuickMemo';
+import { supabase } from './lib/supabaseClient';
 import {
   fetchNotesForUser,
   fetchNoteForUserById,
@@ -644,6 +645,60 @@ function App() {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('online', handleOnline);
       document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [requestSupabaseSync, userId]);
+
+  // Supabase Realtime: 他端末/他ウィンドウのノート変更を検知して再同期
+  useEffect(() => {
+    if (!userId) return;
+
+    let isDisposed = false;
+    const channel = supabase
+      .channel(`notes:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notes',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (isDisposed) return;
+          console.info('[SupabaseRealtime] notes changed', JSON.stringify({
+            eventType: payload?.eventType,
+            table: payload?.table,
+            timestamp: new Date().toISOString(),
+          }));
+          requestSupabaseSync('realtime:notes');
+        }
+      )
+      .subscribe((status) => {
+        console.info('[SupabaseRealtime] notes subscription', JSON.stringify({ status }));
+      });
+
+    return () => {
+      isDisposed = true;
+      try {
+        supabase.removeChannel(channel);
+      } catch {
+        // ignore
+      }
+    };
+  }, [requestSupabaseSync, userId]);
+
+  // フォーカスが変わらない（デスクトップアプリ等）環境向けの保険: 定期的に再同期
+  useEffect(() => {
+    if (!userId) return;
+    if (typeof window === 'undefined') return;
+
+    const intervalId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      requestSupabaseSync('interval');
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(intervalId);
     };
   }, [requestSupabaseSync, userId]);
 

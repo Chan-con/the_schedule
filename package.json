@@ -63,6 +63,7 @@
     "files": [
       "dist/**/*",
       "main.cjs",
+      "preload.cjs",
       "preload.js",
       "asset/icon.PNG",
       "!dist-electron/**/*",
