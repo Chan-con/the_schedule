@@ -251,6 +251,7 @@ function App() {
     state: historyState,
     setState: setHistoryState,
     replaceState,
+    overwriteState,
     undo,
     redo,
     canUndo,
@@ -369,11 +370,18 @@ function App() {
   }, [setHistoryState]);
 
   const replaceAppState = useCallback(
-    (nextSchedules, actionType = 'replace') => {
+    (nextSchedules, actionType = 'replace', options = {}) => {
       const normalizedSchedules = normalizeSchedules(nextSchedules);
       schedulesRef.current = normalizedSchedules;
 
-      const applyHistory = typeof replaceState === 'function' ? replaceState : historySetterRef.current;
+      const mode = options?.mode === 'overwrite' ? 'overwrite' : 'replace';
+
+      const applyHistory =
+        mode === 'overwrite' && typeof overwriteState === 'function'
+          ? overwriteState
+          : typeof replaceState === 'function'
+            ? replaceState
+            : historySetterRef.current;
       applyHistory(
         {
           schedules: normalizedSchedules,
@@ -381,7 +389,7 @@ function App() {
         actionType
       );
     },
-    [replaceState]
+    [overwriteState, replaceState]
   );
 
   useEffect(() => {
@@ -708,7 +716,9 @@ function App() {
         ]);
         if (isCancelledFn()) return;
 
-        replaceAppState(remoteSchedules, actionType);
+        replaceAppState(remoteSchedules, actionType, {
+          mode: actionType === 'supabase_initial_sync' ? 'replace' : 'overwrite',
+        });
         applyQuickMemoValue(remoteQuickMemo);
 
         // ノート同期: pending patch（未送信の編集）と下書きを保持して上書き事故を防ぐ
@@ -849,7 +859,7 @@ function App() {
       hasFetchedRemoteRef.current = false;
       setSupabaseError(null);
       setIsSupabaseSyncing(false);
-      replaceAppState(loadLocalSchedules(), 'local_restore');
+      replaceAppState(loadLocalSchedules(), 'local_restore', { mode: 'replace' });
       const localMemo = loadLocalQuickMemo();
       applyQuickMemoValue(localMemo);
 
