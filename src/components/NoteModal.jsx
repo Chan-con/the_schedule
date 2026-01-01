@@ -350,7 +350,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
         }
       }}
     >
-      <div className="note-modal-content flex w-full max-w-[980px] max-h-[calc(100svh-2rem)] flex-col overflow-hidden rounded-lg bg-white shadow-xl">
+      <div className="note-modal-content flex h-[calc(100svh-2rem)] w-full max-w-[980px] flex-col overflow-hidden rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between gap-3 border-b border-gray-200 p-4">
           <div className="min-w-0">
             <div className="text-sm font-semibold text-gray-800 truncate">
@@ -365,37 +365,68 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
               type="button"
               disabled={!canShareThisNote}
               onClick={handleCopyShareUrl}
-              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
                 !canShareThisNote
                   ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
                   : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
               }`}
               title={canShareThisNote ? (copied ? 'コピーしました' : '共有URLをコピー') : 'ログイン後に共有できます'}
+              aria-label={canShareThisNote ? (copied ? '共有URLをコピーしました' : '共有URLをコピー') : 'ログイン後に共有できます'}
             >
-              {copied ? 'コピー済み' : '共有URL'}
+              {copied ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M10 13a5 5 0 0 1 0-7l1-1a5 5 0 0 1 7 7l-1 1" />
+                  <path d="M14 11a5 5 0 0 1 0 7l-1 1a5 5 0 0 1-7-7l1-1" />
+                </svg>
+              )}
             </button>
 
             <button
               type="button"
               disabled={!canCopyMarkdownBody}
               onClick={handleCopyMarkdownBody}
-              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
                 !canCopyMarkdownBody
                   ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
                   : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
               }`}
               title={canCopyMarkdownBody ? (bodyCopied ? 'コピーしました' : '本文をMarkdownでコピー') : '本文が空です'}
+              aria-label={canCopyMarkdownBody ? (bodyCopied ? '本文をコピーしました' : '本文をMarkdownでコピー') : '本文が空です'}
             >
-              {bodyCopied ? 'コピー済み' : '本文コピー'}
+              {bodyCopied ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              )}
             </button>
 
             <button
               type="button"
               onClick={() => setIsEditing((prev) => !prev)}
-              className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition-colors duration-200 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-colors duration-200 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
               title={isEditing ? '表示モードへ' : '編集モードへ'}
+              aria-label={isEditing ? '表示モードへ' : '編集モードへ'}
             >
-              {isEditing ? '表示' : '編集'}
+              {isEditing ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                </svg>
+              )}
             </button>
 
             <button
@@ -411,7 +442,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
                   onUpdate(note.id, { archived: !isArchived });
                 }
               }}
-              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
                 !canToggleArchive
                   ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
                   : isArchived
@@ -419,8 +450,21 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
                     : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
               }`}
               title={isArchived ? 'アーカイブから戻す' : 'アーカイブ'}
+              aria-label={isArchived ? 'アーカイブから戻す' : 'アーカイブ'}
             >
-              {isArchived ? 'アーカイブ解除' : 'アーカイブ'}
+              {isArchived ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 8v13H3V8" />
+                  <path d="M1 3h22v5H1z" />
+                  <path d="M10 12h4" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 8v13H3V8" />
+                  <path d="M1 3h22v5H1z" />
+                  <path d="M10 12h4" />
+                </svg>
+              )}
             </button>
 
             <button
