@@ -23,7 +23,8 @@ input, textarea, [contenteditable="true"] {
 }
 
 html, body, #root {
-  width: 100vw;
+  width: 100%;
+  max-width: 100%;
   height: 100vh;
   /* iOS Safari対応: Small Viewport Heightを使用（ツールバー表示時の高さ） */
   height: 100svh;
