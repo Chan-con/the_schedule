@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { buildNoteShareUrl } from '../utils/noteShare';
 
 const formatUpdatedDateTime = (value) => {
@@ -10,6 +10,8 @@ const formatUpdatedDateTime = (value) => {
 
 const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare = false }) => {
   const titleRef = useRef(null);
+  const contentTextareaRef = useRef(null);
+  const lastRightClickCaretRef = useRef(null);
   const [copied, setCopied] = useState(false);
 
   const canShareThisNote = !!canShare && !!note && note?.id != null && !note?.__isDraft;
@@ -67,9 +69,44 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
   const isArchived = !!note?.archived;
   const canToggleArchive = !!note && note?.id != null && !note?.__isDraft;
 
-  if (!isOpen) return null;
+  const extractUrlAt = useCallback((text, caretIndex) => {
+    if (typeof text !== 'string' || !text) return null;
+    if (typeof caretIndex !== 'number' || !Number.isFinite(caretIndex)) return null;
+    const idx = Math.min(Math.max(0, Math.floor(caretIndex)), Math.max(0, text.length - 1));
 
-  const handleCopyShareUrl = async () => {
+    // 左右の空白までを「単語」として取り出す
+    const isDelimiter = (ch) => {
+      if (!ch) return true;
+      return /\s/.test(ch);
+    };
+
+    let start = idx;
+    while (start > 0 && !isDelimiter(text[start - 1])) start -= 1;
+    let end = idx;
+    while (end < text.length && !isDelimiter(text[end])) end += 1;
+
+    let token = text.slice(start, end).trim();
+    if (!token) return null;
+
+    // URLの末尾/先頭に付くことが多い記号を取り除く（正規表現より安全に）
+    const stripLeading = new Set(['(', '[', '{', '<']);
+    const stripTrailing = new Set([')', ']', '}', '>', ',', '.', '。', '．', '、', '…']);
+    while (token.length > 0 && stripLeading.has(token[0])) token = token.slice(1);
+    while (token.length > 0 && stripTrailing.has(token[token.length - 1])) token = token.slice(0, -1);
+    if (!token) return null;
+
+    if (!/^https?:\/\//i.test(token)) return null;
+
+    try {
+      // URLとして妥当か軽くチェック
+      new URL(token);
+      return token;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const handleCopyShareUrl = useCallback(async () => {
     if (!canShareThisNote) return;
     if (!shareUrl) return;
     try {
@@ -92,7 +129,32 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
     } catch (error) {
       console.error('[Share] Failed to copy note URL:', error);
     }
-  };
+  }, [canShareThisNote, shareUrl]);
+
+  const handleContentMouseDown = useCallback(() => {
+    const el = contentTextareaRef.current;
+    if (!el) return;
+    if (typeof el.selectionStart !== 'number') return;
+    lastRightClickCaretRef.current = el.selectionStart;
+  }, []);
+
+  const handleContentContextMenu = useCallback((event) => {
+    const el = contentTextareaRef.current;
+    if (!el) return;
+    const caret = typeof el.selectionStart === 'number'
+      ? el.selectionStart
+      : (typeof lastRightClickCaretRef.current === 'number' ? lastRightClickCaretRef.current : null);
+    const url = extractUrlAt(content, caret);
+    if (!url) {
+      return;
+    }
+    // URL上での右クリックだけは、即「新しいタブで開く」にする
+    event.preventDefault();
+    event.stopPropagation();
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, [content, extractUrlAt]);
+
+  if (!isOpen) return null;
 
   return (
     <div
@@ -190,10 +252,22 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
             <div>
               <label className="block text-gray-700 font-medium mb-2">本文</label>
               <textarea
+                ref={contentTextareaRef}
                 value={content}
                 placeholder="本文"
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
                 style={{ minHeight: '55vh' }}
+                onMouseDown={(event) => {
+                  if (event.button === 2) {
+                    handleContentMouseDown();
+                  }
+                }}
+                onMouseUp={(event) => {
+                  if (event.button === 2) {
+                    handleContentMouseDown();
+                  }
+                }}
+                onContextMenu={handleContentContextMenu}
                 onChange={(e) => {
                   if (onUpdate && note?.id != null) {
                     onUpdate(note.id, { content: e.target.value });
