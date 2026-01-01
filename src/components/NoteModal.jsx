@@ -484,20 +484,14 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
                 </div>
               </>
             ) : (
-              <div>
-                <label className="block text-gray-700 font-medium mb-2">本文</label>
-                <div
-                  className="note-markdown w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800"
-                  style={{ minHeight: '55vh' }}
-                >
-                  {content.trim() ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: renderMarkdownLink }}>
-                      {content}
-                    </ReactMarkdown>
-                  ) : (
-                    <div className="text-gray-400">（本文なし）</div>
-                  )}
-                </div>
+              <div className="note-markdown w-full px-1 text-sm text-gray-800">
+                {content.trim() ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: renderMarkdownLink }}>
+                    {content}
+                  </ReactMarkdown>
+                ) : (
+                  <div className="text-gray-400">（本文なし）</div>
+                )}
               </div>
             )}
           </div>
