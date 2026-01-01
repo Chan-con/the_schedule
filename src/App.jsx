@@ -2182,6 +2182,19 @@ function App() {
                   onMouseLeave={handleMouseUpOnTimeline}
                 >
                   <div className="flex h-full flex-col gap-1 overflow-hidden" ref={mobileTimelineRef}>
+                    <div className="flex items-center justify-end px-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={closeTimeline}
+                        className="inline-flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-colors duration-200 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
+                        aria-label="閉じる"
+                        title="閉じる"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                     <div
                       className="flex flex-col min-h-0 gap-2 overflow-hidden"
                       style={{ flexGrow: memoSplitRatio, flexShrink: 1, flexBasis: 0 }}
