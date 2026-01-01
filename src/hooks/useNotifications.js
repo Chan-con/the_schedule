@@ -29,8 +29,8 @@ const showWebNotification = (title, body) => {
   
   const notification = new Notification(title, {
     body,
-    icon: '/favicon.ico', // アイコンのパスを指定
-    badge: '/favicon.ico',
+    icon: './icon.png', // アイコンのパスを指定
+    badge: './icon.png',
     requireInteraction: false,
     tag: 'schedule-notification'
   });
