@@ -446,7 +446,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                   return (
                     <div
                       key={index}
-                      className={`flex flex-wrap items-center gap-2 p-2 border border-gray-200 rounded-lg transition-colors ${
+                      className={`flex items-center gap-2 p-2 border border-gray-200 rounded-lg transition-colors ${
                         isPast ? 'bg-gray-100 opacity-60' : 'bg-white'
                       }`}
                     >
@@ -466,14 +466,14 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                             updateNotification(index, 'value', 0);
                           }
                         }}
-                        className={`w-16 text-center border border-gray-300 rounded px-2 py-1 text-sm notification-input focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                        className={`w-16 flex-shrink-0 text-center border border-gray-300 rounded px-2 py-1 text-sm notification-input focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                           isPast ? 'bg-gray-100 text-gray-500' : 'bg-white'
                         }`}
                       />
                       <select
                         value={notification.unit}
                         onChange={(e) => updateNotification(index, 'unit', e.target.value)}
-                        className={`border border-gray-300 rounded px-2 py-1 text-sm notification-select focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                        className={`w-20 flex-shrink-0 border border-gray-300 rounded px-2 py-1 text-sm notification-select focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                           isPast ? 'bg-gray-100 text-gray-500' : 'bg-white'
                         }`}
                       >
@@ -482,36 +482,38 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                         <option value="days" className="bg-white">日前</option>
                       </select>
                       <div
-                        className={`min-w-[7.5rem] flex-1 text-sm ${
+                        className={`min-w-0 flex-1 text-sm ${
                           isPast ? 'text-gray-400' : 'text-gray-600'
                         } bg-transparent`}
                       >
                         に通知{isPast ? ' (過去)' : ''}
                       </div>
-                      {sendTestNotification && !isPast && (
+                      <div className="ml-auto flex flex-shrink-0 items-center gap-1">
+                        {sendTestNotification && !isPast && (
+                          <button
+                            type="button"
+                            onClick={() => sendTestNotification(formData, notification)}
+                            className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 bg-white p-1 rounded transition-colors duration-200 text-xs px-2"
+                            title="テスト通知"
+                          >
+                            📢
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => sendTestNotification(formData, notification)}
-                          className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 bg-white p-1 rounded transition-colors duration-200 text-xs px-2"
-                          title="テスト通知"
+                          onClick={() => removeNotification(index)}
+                          className={`p-1 rounded transition-colors duration-200 ${
+                            isPast
+                              ? 'text-gray-300 hover:text-gray-400 hover:bg-gray-200 bg-gray-100'
+                              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 bg-white'
+                          }`}
+                          title="削除"
                         >
-                          📢
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => removeNotification(index)}
-                        className={`p-1 rounded transition-colors duration-200 ${
-                          isPast
-                            ? 'text-gray-300 hover:text-gray-400 hover:bg-gray-200 bg-gray-100'
-                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 bg-white'
-                        }`}
-                        title="削除"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+                      </div>
                     </div>
                   );
                 })}
