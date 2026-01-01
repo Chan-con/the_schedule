@@ -6,40 +6,6 @@ import { buildNoteShareUrl, parseNoteIdFromUrl, setNoteHash } from '../utils/not
 const formatUpdatedDateTime = (value) => {
   if (!value) return '';
   const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return '';
-  return dt.toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
-
-const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare = false }) => {
-  const titleRef = useRef(null);
-  const contentTextareaRef = useRef(null);
-  const lastRightClickCaretRef = useRef(null);
-  const [copied, setCopied] = useState(false);
-  const [bodyCopied, setBodyCopied] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-
-  const canShareThisNote = !!canShare && !!note && note?.id != null && !note?.__isDraft;
-
-  const shareUrl = useMemo(() => {
-    if (!canShareThisNote) return '';
-    return buildNoteShareUrl(note.id);
-  }, [canShareThisNote, note?.id]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleEsc = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        if (onClose) onClose();
-      }
-    };
-
-    const preventAllScroll = (e) => {
-      const isInModal = e.target.closest('.note-modal-content');
-      if (!isInModal) {
-        e.preventDefault();
-        e.stopPropagation();
         return false;
       }
     };
@@ -53,20 +19,54 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
     return () => {
       document.body.classList.remove('modal-open');
       document.body.style.overflow = '';
-      document.removeEventListener('keydown', handleEsc);
-      document.removeEventListener('wheel', preventAllScroll, { capture: true });
-      document.removeEventListener('touchmove', preventAllScroll, { capture: true });
-    };
-  }, [isOpen, onClose]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    // 開いた瞬間にタイトルへフォーカス（入力しやすく）
-    setTimeout(() => {
-      titleRef.current?.focus();
-    }, 0);
-  }, [isOpen]);
+            <button
+              type="button"
+              disabled={!canCopyMarkdownBody}
+              onClick={handleCopyMarkdownBody}
+              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                !canCopyMarkdownBody
+                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
+              }`}
+              title={canCopyMarkdownBody ? (bodyCopied ? 'コピーしました' : '本文をMarkdownでコピー') : '本文が空です'}
+            >
+              {bodyCopied ? 'コピー済み' : '本文コピー'}
+            </button>
 
+            <button
+              type="button"
+              onClick={() => setIsEditing((prev) => !prev)}
+              className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition-colors duration-200 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
+              title={isEditing ? '表示モードへ' : '編集モードへ'}
+            >
+              {isEditing ? '表示' : '編集'}
+            </button>
+
+            <button
+              type="button"
+              disabled={!canToggleArchive}
+              onClick={() => {
+                if (!canToggleArchive) return;
+                if (onToggleArchive) {
+                  onToggleArchive(note, !isArchived);
+                  return;
+                }
+                if (onUpdate && note?.id != null) {
+                  onUpdate(note.id, { archived: !isArchived });
+                }
+              }}
+              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                !canToggleArchive
+                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
+                  : isArchived
+                    ? 'bg-indigo-500 border-indigo-600 text-white hover:bg-indigo-600'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
+              }`}
+              title={isArchived ? 'アーカイブから戻す' : 'アーカイブ'}
+            >
+              {isArchived ? 'アーカイブ解除' : 'アーカイブ'}
+            </button>
   useEffect(() => {
     if (!isOpen) return;
     // デフォルトは表示モード
