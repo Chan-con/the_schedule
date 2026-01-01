@@ -164,78 +164,24 @@ export const useNotifications = (schedules) => {
   
   // 全ての通知をスケジュール
   const scheduleAllNotifications = useCallback(async () => {
-    const isElectron = !!window.electronAPI;
-    
-    if (isElectron) {
-      // Electron版の処理
-      try {
-        // 既存の通知をすべてキャンセル
-        await window.electronAPI.cancelAllNotifications();
-        
-        const now = new Date();
-        console.log('🔔 現在時刻:', now.toLocaleString());
-        
-        // 各予定の通知をスケジュール
-        for (const schedule of schedules) {
-          if (!schedule.notifications || schedule.notifications.length === 0) continue;
-          
-          for (let i = 0; i < schedule.notifications.length; i++) {
-            const notification = schedule.notifications[i];
-            const notificationTime = calculateNotificationTime(schedule, notification);
-            
-            console.log(`📅 予定: ${schedule.name}, 通知時間: ${notificationTime?.toLocaleString()}`);
-            
-            if (notificationTime && notificationTime > now) {
-              const notificationId = `${schedule.id}-${i}`;
-              const { title, body } = generateNotificationText(schedule, notification);
-              
-              const result = await window.electronAPI.scheduleNotification({
-                id: notificationId,
-                time: notificationTime.toISOString(),
-                title,
-                body
-              });
-              
-              if (result.success) {
-                console.log(`✅ 通知をスケジュールしました: ${title} - ${notificationTime.toLocaleString()}`);
-              } else {
-                console.error(`❌ 通知のスケジュールに失敗: ${result.error}`);
-                
-                // 遠すぎる未来の通知の場合の特別なメッセージ
-                if (result.error.includes('too far in the future')) {
-                  console.warn(`⚠️ 通知時間が遠すぎます（最大${result.maxDays || 24}日後まで）: ${title}`);
-                  console.warn(`📅 この通知はスケジュール当日に手動で確認してください`);
-                }
-              }
-            } else if (notificationTime) {
-              console.log(`⏰ 過去の通知時間のためスキップ: ${notificationTime.toLocaleString()}`);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('通知のスケジュールに失敗:', error);
-      }
-    } else {
-      // Web版の処理
-      clearAllWebTimers();
-      
-      const now = new Date();
-      console.log('🔔 Web通知 - 現在時刻:', now.toLocaleString());
-      
-      // 各予定の通知をスケジュール
-      for (const schedule of schedules) {
-        if (!schedule.notifications || schedule.notifications.length === 0) continue;
-        
-        for (let i = 0; i < schedule.notifications.length; i++) {
-          const notification = schedule.notifications[i];
-          const notificationTime = calculateNotificationTime(schedule, notification);
-          
-          if (notificationTime && notificationTime > now) {
-            const notificationId = `${schedule.id}-${i}`;
-            const { title, body } = generateNotificationText(schedule, notification);
-            
-            await scheduleWebNotification(notificationId, notificationTime, title, body);
-          }
+    clearAllWebTimers();
+
+    const now = new Date();
+    console.log('🔔 Web通知 - 現在時刻:', now.toLocaleString());
+
+    // 各予定の通知をスケジュール
+    for (const schedule of schedules) {
+      if (!schedule.notifications || schedule.notifications.length === 0) continue;
+
+      for (let i = 0; i < schedule.notifications.length; i++) {
+        const notification = schedule.notifications[i];
+        const notificationTime = calculateNotificationTime(schedule, notification);
+
+        if (notificationTime && notificationTime > now) {
+          const notificationId = `${schedule.id}-${i}`;
+          const { title, body } = generateNotificationText(schedule, notification);
+
+          await scheduleWebNotification(notificationId, notificationTime, title, body);
         }
       }
     }
@@ -243,77 +189,36 @@ export const useNotifications = (schedules) => {
 
   // 特定の予定の通知をキャンセル
   const cancelScheduleNotifications = useCallback(async (scheduleId) => {
-    const isElectron = !!window.electronAPI;
-    
-    if (isElectron) {
-      try {
-        const schedule = schedules.find(s => s.id === scheduleId);
-        if (!schedule || !schedule.notifications) return;
-        
-        for (let i = 0; i < schedule.notifications.length; i++) {
-          const notificationId = `${scheduleId}-${i}`;
-          await window.electronAPI.cancelNotification(notificationId);
-        }
-      } catch (error) {
-        console.error('通知のキャンセルに失敗:', error);
-      }
-    } else {
-      // Web版の処理
-      const schedule = schedules.find(s => s.id === scheduleId);
-      if (!schedule || !schedule.notifications) return;
-      
-      for (let i = 0; i < schedule.notifications.length; i++) {
-        const notificationId = `${scheduleId}-${i}`;
-        const timerId = notificationTimersRef.current.get(notificationId);
-        if (timerId) {
-          clearTimeout(timerId);
-          notificationTimersRef.current.delete(notificationId);
-        }
+    const schedule = schedules.find(s => s.id === scheduleId);
+    if (!schedule || !schedule.notifications) return;
+
+    for (let i = 0; i < schedule.notifications.length; i++) {
+      const notificationId = `${scheduleId}-${i}`;
+      const timerId = notificationTimersRef.current.get(notificationId);
+      if (timerId) {
+        clearTimeout(timerId);
+        notificationTimersRef.current.delete(notificationId);
       }
     }
   }, [schedules]);
 
   // テスト通知を送信
   const sendTestNotification = useCallback(async (schedule, notification) => {
-    const isElectron = !!window.electronAPI;
-    
-    if (isElectron) {
-      try {
-        const { title, body } = generateNotificationText(schedule, notification);
-        
-        const result = await window.electronAPI.showNotification({
-          title: `【テスト】${title}`,
-          body: `これはテスト通知です\n${body}`
-        });
-        
-        if (result.success) {
-          console.log('テスト通知を送信しました');
-        } else {
-          console.error(`テスト通知の送信に失敗: ${result.error}`);
-        }
-      } catch (error) {
-        console.error('テスト通知の送信に失敗:', error);
-      }
-    } else {
-      // Web版の処理
-      const hasPermission = await requestNotificationPermission();
-      if (!hasPermission) {
-        alert('通知の権限がありません。ブラウザの設定で通知を許可してください。');
-        return;
-      }
-      
-      const { title, body } = generateNotificationText(schedule, notification);
-      showWebNotification(`【テスト】${title}`, `これはテスト通知です\n${body}`);
-      console.log('Web版テスト通知を送信しました');
+    const hasPermission = await requestNotificationPermission();
+    if (!hasPermission) {
+      alert('通知の権限がありません。ブラウザの設定で通知を許可してください。');
+      return;
     }
+
+    const { title, body } = generateNotificationText(schedule, notification);
+    showWebNotification(`【テスト】${title}`, `これはテスト通知です\n${body}`);
+    console.log('Web版テスト通知を送信しました');
   }, []);
 
   // コンポーネントがアンマウントされたときにタイマーをクリア
   useEffect(() => {
     return () => {
-      if (!window.electronAPI) {
-        clearAllWebTimers();
-      }
+      clearAllWebTimers();
     };
   }, [clearAllWebTimers]);
 

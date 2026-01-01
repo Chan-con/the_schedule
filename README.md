@@ -1,6 +1,6 @@
-# スケジュール帳 – デスクトップ & Web 連携
+# スケジュール帳
 
-Electron + React で動作するカレンダーアプリを、Supabase と Google OAuth を利用してクラウド同期できるようにしました。Cloudflare Pages にデプロイすることで、これまで通りのデスクトップ版に加えて Web ブラウザからも同じ予定を閲覧・編集できます。
+React で動作するカレンダーアプリを、Supabase と Google OAuth を利用してクラウド同期できるようにしました。Cloudflare Pages にデプロイすることで Web ブラウザから予定を閲覧・編集できます。
 
 ## 主な機能
 
@@ -8,7 +8,7 @@ Electron + React で動作するカレンダーアプリを、Supabase と Googl
 - 🔐 Google アカウントによるサインイン（Supabase Auth / Google OAuth）
 - ☁️ Supabase PostgreSQL へユーザー毎に予定を保存（Row Level Security 対応）
 - 🔁 オフラインでも利用できるようにユーザー毎のローカルキャッシュを保持
-- 🖥️ Electron デスクトップアプリ + 🌐 Cloudflare Pages での Web 公開
+- 🌐 Cloudflare Pages での Web 公開
 
 ## 必要な環境変数
 
@@ -18,15 +18,12 @@ Electron + React で動作するカレンダーアプリを、Supabase と Googl
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
 VITE_SUPABASE_REDIRECT_URL=http://localhost:5173/auth/callback
-VITE_SUPABASE_ELECTRON_REDIRECT_URL=schedule-app://auth-callback
 ```
 
 - `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`
 	- Supabase プロジェクトの URL と anon キー。
 - `VITE_SUPABASE_REDIRECT_URL`
 	- ローカル開発時の OAuth リダイレクト先。Cloudflare Pages へ公開したら本番 URL（例: `https://<your-pages>.pages.dev/auth/callback`）に変更します。
-- `VITE_SUPABASE_ELECTRON_REDIRECT_URL`
-	- デスクトップアプリで利用するカスタムスキーム。カスタムプロトコル `schedule-app://auth-callback` が Electron 側に登録されています。
 
 > ⚠️ `.env` ファイルは `.gitignore` で除外されています。漏洩しないよう注意してください。
 
@@ -36,7 +33,6 @@ VITE_SUPABASE_ELECTRON_REDIRECT_URL=schedule-app://auth-callback
 	 - Supabase Auth の設定で Google プロバイダーを有効化し、Google Cloud Console の OAuth クライアント ID / シークレットを登録します。
 	 - Supabase の「Allowed Redirect URLs」に以下をすべて追加します。
 		 - `http://localhost:5173/auth/callback`
-		 - `schedule-app://auth-callback`
 		 - Web 公開先（例: `https://<your-pages>.pages.dev/auth/callback`）
 
 2. **データベース**
@@ -78,7 +74,6 @@ VITE_SUPABASE_ELECTRON_REDIRECT_URL=schedule-app://auth-callback
 Google Cloud Console で OAuth クライアントを作成し、以下のリダイレクト URI を登録します。
 
 - `http://localhost:5173/auth/callback`
-- `schedule-app://auth-callback`
 - Cloudflare Pages の公開 URL（例: `https://<your-pages>.pages.dev/auth/callback`）
 
 取得した「クライアント ID」「クライアント シークレット」は Supabase の Auth 設定にコピーします。
@@ -91,13 +86,9 @@ cp .env.example .env # 必要に応じて値を編集
 
 # Web (Vite) 開発サーバー
 npm run dev
-
-# Electron + Vite 同時起動
-npm run start
 ```
 
-- ブラウザからは `http://localhost:5173` にアクセスすると Web 版を確認できます。
-- Electron 開発時は `npm run start` で Vite と Electron を同時起動し、Google ログイン後のリダイレクトは外部ブラウザで処理されます。
+- ブラウザからは `http://localhost:5173` にアクセスすると確認できます。
 
 ## ビルド & デプロイ
 
@@ -106,13 +97,6 @@ npm run start
 1. Cloudflare Pages で新しいプロジェクトを作成し、ビルドコマンドを `npm run build`、ビルド出力ディレクトリを `dist` に設定します。
 2. Pages の環境変数に `.env` と同じキーを登録します。
 3. デプロイ後、該当ドメインを `VITE_SUPABASE_REDIRECT_URL` と Supabase / Google OAuth のリダイレクト先に追加します。
-
-### デスクトップアプリ (Electron)
-
-- 本番ビルド: `npm run build:electron`
-- Windows インストーラ生成例: `npm run package:win`
-
-Electron 版では `schedule-app://` カスタムプロトコルが登録されるため、Google 認証後に自動でアプリに戻ります。初回インストール後に、Windows の「既定のアプリ」でプロトコルが関連付いているか確認してください。
 
 ## 既知の注意点
 

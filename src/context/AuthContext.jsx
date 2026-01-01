@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabaseClient';
 import { AuthContext } from './AuthContextBase.js';
 
 const isBrowser = typeof window !== 'undefined';
-const isElectron = isBrowser && !!window.electronAPI;
 
 const isLocalhost = (hostname) => ['localhost', '127.0.0.1'].includes(hostname);
 
@@ -33,12 +32,6 @@ const getWebRedirectUrl = () => {
   }
 
   return `${origin.replace(/\/$/, '')}/auth/callback`;
-};
-
-const getElectronRedirectUrl = () => {
-  const envRedirect = import.meta.env.VITE_SUPABASE_ELECTRON_REDIRECT_URL;
-  if (envRedirect) return envRedirect;
-  return getWebRedirectUrl();
 };
 
 const parseOAuthParams = (rawUrl) => {
@@ -139,7 +132,7 @@ export function AuthProvider({ children }) {
             }, 100);
           }
 
-          if (!isElectron && isBrowser) {
+          if (isBrowser) {
             const shouldResetLocation = window.location.pathname.startsWith('/auth/callback')
               || window.location.href.includes('auth/callback')
               || window.location.href.includes('access_token=')
@@ -183,7 +176,7 @@ export function AuthProvider({ children }) {
             }, 100);
           }
 
-          if (!isElectron && isBrowser) {
+          if (isBrowser) {
             const shouldResetLocation = window.location.pathname.startsWith('/auth/callback')
               || window.location.href.includes('auth/callback')
               || window.location.href.includes('access_token=')
@@ -210,7 +203,7 @@ export function AuthProvider({ children }) {
   const signInWithGoogle = useCallback(async () => {
     setAuthError(null);
 
-    const redirectTo = isElectron ? getElectronRedirectUrl() : getWebRedirectUrl();
+    const redirectTo = getWebRedirectUrl();
 
     if (!redirectTo) {
       const message = 'リダイレクト先URLが構成されていません。環境変数を確認してください。';
@@ -223,21 +216,19 @@ export function AuthProvider({ children }) {
     let popup = null;
     let usePopupFlow = false;
 
-    if (!isElectron) {
-      try {
-        popup = window.open('', 'schedule-auth', 'width=600,height=720,menubar=no,toolbar=no,location=no,status=no');
-        if (popup) {
-          popup.document.write('<!doctype html><title>認証中…</title><p style="font-family:sans-serif;padding:1rem;">Googleでログインしています…</p>');
-          popup.focus();
-          authPopupRef.current = popup;
-          usePopupFlow = true;
-          startPopupMonitor();
-        }
-      } catch (popupError) {
-        console.warn('[Auth] Failed to open auth popup. Falling back to redirect flow.', popupError);
-        authPopupRef.current = null;
-        stopPopupMonitor();
+    try {
+      popup = window.open('', 'schedule-auth', 'width=600,height=720,menubar=no,toolbar=no,location=no,status=no');
+      if (popup) {
+        popup.document.write('<!doctype html><title>認証中…</title><p style="font-family:sans-serif;padding:1rem;">Googleでログインしています…</p>');
+        popup.focus();
+        authPopupRef.current = popup;
+        usePopupFlow = true;
+        startPopupMonitor();
       }
+    } catch (popupError) {
+      console.warn('[Auth] Failed to open auth popup. Falling back to redirect flow.', popupError);
+      authPopupRef.current = null;
+      stopPopupMonitor();
     }
 
     try {
@@ -245,7 +236,7 @@ export function AuthProvider({ children }) {
         provider: 'google',
         options: {
           redirectTo,
-          skipBrowserRedirect: isElectron || usePopupFlow,
+          skipBrowserRedirect: usePopupFlow,
         },
       });
 
@@ -261,24 +252,7 @@ export function AuthProvider({ children }) {
         throw error;
       }
 
-      if (isElectron) {
-        if (data?.url) {
-          const result = await window.electronAPI?.openUrl?.(data.url);
-          if (result && result.success === false) {
-            const err = new Error(result.error || '外部ブラウザを起動できませんでした。');
-            setAuthError(err.message);
-            setIsProcessing(false);
-            stopPopupMonitor();
-            throw err;
-          }
-        } else {
-          const fallbackError = new Error('Supabaseから認証URLを取得できませんでした。');
-          setAuthError(fallbackError.message);
-          setIsProcessing(false);
-          stopPopupMonitor();
-          throw fallbackError;
-        }
-      } else if (usePopupFlow) {
+      if (usePopupFlow) {
         if (data?.url && authPopupRef.current && !authPopupRef.current.closed) {
           authPopupRef.current.location.replace(data.url);
         } else {
@@ -298,13 +272,11 @@ export function AuthProvider({ children }) {
       }
       authPopupRef.current = null;
       stopPopupMonitor();
-      if (!isElectron) {
-        setIsProcessing(false);
-      }
+      setIsProcessing(false);
       throw error;
     }
 
-    if (isElectron || !usePopupFlow) {
+    if (!usePopupFlow) {
       setIsProcessing(false);
       stopPopupMonitor();
     }
@@ -429,43 +401,6 @@ export function AuthProvider({ children }) {
     }
   }, [handleOAuthResult]);
 
-  useEffect(() => {
-    if (!isElectron || !window.electronAPI?.getPendingAuthUrl) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const pending = await window.electronAPI.getPendingAuthUrl();
-        if (!cancelled && pending) {
-          await handleOAuthResult(pending);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error('[Auth] Failed to consume pending auth URL:', error);
-          setAuthError(error.message);
-          finishProcessing();
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [finishProcessing, handleOAuthResult]);
-
-  useEffect(() => {
-    if (!isElectron || !window.electronAPI?.onAuthCallback) return;
-    const unsubscribe = window.electronAPI.onAuthCallback((url) => {
-      handleOAuthResult(url);
-    });
-
-    return () => {
-      if (typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
-    };
-  }, [handleOAuthResult]);
-
   useEffect(() => () => {
     stopPopupMonitor();
     if (authPopupRef.current && !authPopupRef.current.closed) {
@@ -484,7 +419,6 @@ export function AuthProvider({ children }) {
     signInWithGoogle,
     signOut,
     clearAuthError: () => setAuthError(null),
-    isElectron,
   }), [authError, isLoading, isProcessing, session, signInWithGoogle, signOut, user]);
 
   return (

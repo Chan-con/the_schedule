@@ -1,27 +1,20 @@
 {
   "name": "the_schedule",
   "productName": "スケジュール帳",
-  "description": "Electron + React スケジュール管理アプリ",
-  "main": "main.cjs",
+  "description": "React スケジュール管理アプリ",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "author": "Your Name",
-  "homepage": "./",
+  "homepage": "/",
   "scripts": {
     "predev": "node scripts/copy-web-assets.cjs",
     "prebuild": "node scripts/copy-web-assets.cjs",
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev": "vite",
     "start": "npm run dev",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "electron": "electron .",
-    "build:icon": "echo 'ICOファイルを手動で作成してください'",
-    "build:electron": "node scripts/copy-web-assets.cjs && vite build && electron-builder",
-    "package:win": "node scripts/copy-web-assets.cjs && vite build && electron-builder --win",
-    "package:mac": "node scripts/copy-web-assets.cjs && vite build && electron-builder --mac",
-    "package:linux": "node scripts/copy-web-assets.cjs && vite build && electron-builder --linux"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.0",
@@ -35,78 +28,12 @@
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.4.21",
-    "concurrently": "^9.2.0",
-    "electron": "^37.2.4",
-    "electron-builder": "^26.0.12",
     "eslint": "^9.30.1",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.3.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
-    "vite": "^7.0.4",
-    "wait-on": "^8.0.4"
-  },
-  "build": {
-    "appId": "com.schedule.app",
-    "productName": "スケジュール帳",
-    "protocols": [
-      {
-        "name": "Schedule App Auth",
-        "schemes": [
-          "schedule-app"
-        ]
-      }
-    ],
-    "directories": {
-      "output": "dist-electron",
-      "buildResources": "build"
-    },
-    "files": [
-      "dist/**/*",
-      "main.cjs",
-      "preload.cjs",
-      "preload.js",
-      "asset/icon.PNG",
-      "!dist-electron/**/*",
-      "!node_modules/**/*",
-      "!src/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "asset/",
-        "to": "asset/",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "win": {
-      "icon": "asset/icon.PNG",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "requestedExecutionLevel": "asInvoker"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "スケジュール帳"
-    },
-    "mac": {
-      "icon": "asset/icon.PNG",
-      "category": "public.app-category.productivity"
-    },
-    "linux": {
-      "icon": "asset/icon.PNG",
-      "category": "Office"
-    }
+    "vite": "^7.0.4"
   }
 }

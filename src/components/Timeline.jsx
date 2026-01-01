@@ -338,49 +338,32 @@ const Timeline = ({
 	};
 
 	useLayoutEffect(() => {
-		let mounted = true;
 		const load = async () => {
 			try {
-				if (window.electronAPI) {
-					const settings = await window.electronAPI.getSettings();
-					if (!mounted) return;
-					const value = typeof settings.allDayHeight === 'number' ? settings.allDayHeight : 200;
-					const dynamicMax = computeAllDayMaxHeight();
-					const clamped = Math.min(Math.max(value, ALL_DAY_MIN_HEIGHT), dynamicMax);
-					setAllDayHeight(clamped);
+				const stored = localStorage.getItem('allDayHeight');
+				if (!stored) {
 					setHeightLoaded(true);
-				} else {
-					const stored = localStorage.getItem('allDayHeight');
-					if (!stored) {
-						setHeightLoaded(true);
-						return;
-					}
-					const raw = parseInt(stored, 10);
-					if (!Number.isNaN(raw)) {
-						const dynamicMax = computeAllDayMaxHeight();
-						const clamped = Math.min(Math.max(raw, ALL_DAY_MIN_HEIGHT), dynamicMax);
-						setAllDayHeight(clamped);
-					}
-					setHeightLoaded(true);
+					return;
 				}
+				const raw = parseInt(stored, 10);
+				if (!Number.isNaN(raw)) {
+					const dynamicMax = computeAllDayMaxHeight();
+					const clamped = Math.min(Math.max(raw, ALL_DAY_MIN_HEIGHT), dynamicMax);
+					setAllDayHeight(clamped);
+				}
+				setHeightLoaded(true);
 			} catch (error) {
 				console.warn('終日エリア高さの読み込みに失敗:', error);
 				setHeightLoaded(true);
 			}
 		};
 		load();
-		return () => {
-			mounted = false;
-		};
+		return undefined;
 	}, [computeAllDayMaxHeight]);
 
 	useEffect(() => {
 		if (!heightLoaded || isResizing) return;
-		if (window.electronAPI) {
-			window.electronAPI.saveLayout({ allDayHeight });
-		} else {
-			localStorage.setItem('allDayHeight', String(allDayHeight));
-		}
+		localStorage.setItem('allDayHeight', String(allDayHeight));
 	}, [allDayHeight, isResizing, heightLoaded]);
 
 

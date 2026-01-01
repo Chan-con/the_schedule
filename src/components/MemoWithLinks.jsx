@@ -22,23 +22,7 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
     e.preventDefault();
     e.stopPropagation();
     console.log('🖱️ URL right-clicked:', url);
-    
-    if (window.electronAPI && window.electronAPI.openUrl) {
-      console.log('📞 Calling electronAPI.openUrl...');
-      window.electronAPI.openUrl(url).then(result => {
-        console.log('📞 electronAPI.openUrl result:', result);
-        if (result && result.success) {
-          console.log('✅ URL opened successfully:', url);
-        } else {
-          console.error('❌ Failed to open URL:', result);
-        }
-      }).catch(error => {
-        console.error('❌ Error opening URL:', error);
-      });
-    } else {
-      console.error('❌ electronAPI.openUrl is not available');
-      console.error('❌ Available electronAPI methods:', Object.keys(window.electronAPI || {}));
-    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   // 改行で分割して各行を処理
@@ -111,16 +95,19 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
                 className="text-blue-600 underline hover:text-blue-800 transition-colors font-medium select-text"
                 onContextMenu={(e) => handleUrlRightClick(part, e)}
                 onClick={(e) => {
-                  if (sharedNoteId == null) return;
                   e.preventDefault();
                   e.stopPropagation();
-                  setNoteHash(sharedNoteId);
+                  if (sharedNoteId != null) {
+                    setNoteHash(sharedNoteId);
+                    return;
+                  }
+                  window.open(part, '_blank', 'noopener,noreferrer');
                 }}
                 title={`${part}\n(右クリックでブラウザで開く)`}
                 style={{ 
                   color: '#2563eb', 
                   textDecoration: 'underline',
-                  cursor: sharedNoteId != null ? 'pointer' : 'text',
+                  cursor: 'pointer',
                   userSelect: 'text'
                 }}
               >

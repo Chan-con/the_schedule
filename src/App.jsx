@@ -266,26 +266,12 @@ function App() {
   const quickMemoSkipSyncRef = useRef(false);
   const quickMemoLastSavedRef = useRef('');
 
-  const beginSupabaseJob = useCallback((meta = {}) => {
+  const beginSupabaseJob = useCallback(() => {
     supabaseJobsRef.current += 1;
-    if (typeof window !== 'undefined' && window?.electronAPI?.supabaseJobStart) {
-      try {
-        window.electronAPI.supabaseJobStart(meta);
-      } catch (error) {
-        console.warn('[SupabaseJob] Failed to notify main process (start):', error);
-      }
-    }
   }, []);
 
-  const endSupabaseJob = useCallback((meta = {}) => {
+  const endSupabaseJob = useCallback(() => {
     supabaseJobsRef.current = Math.max(0, supabaseJobsRef.current - 1);
-    if (typeof window !== 'undefined' && window?.electronAPI?.supabaseJobEnd) {
-      try {
-        window.electronAPI.supabaseJobEnd(meta);
-      } catch (error) {
-        console.warn('[SupabaseJob] Failed to notify main process (end):', error);
-      }
-    }
   }, []);
 
   const persistQuickMemoToSupabase = useCallback(async (content) => {
@@ -485,7 +471,7 @@ function App() {
     quickMemoLastSavedRef.current = safeValue;
     setQuickMemo(safeValue);
   }, []);
-  const desktopTimelineRef = useRef(null);
+  const timelineRef = useRef(null);
   const mobileTimelineRef = useRef(null);
   const memoResizeContextRef = useRef(null);
   
@@ -914,7 +900,7 @@ function App() {
     if (noteId == null) return;
     if (note?.__isDraft) return;
 
-    // ログイン中はDBへ同期（Web/Electron間で共有）
+    // ログイン中はDBへ同期
     if (userId) {
       handleUpdateNote(noteId, { archived: !!nextArchived });
       return;
@@ -1090,10 +1076,7 @@ function App() {
       });
   }, [
     beginSupabaseJob,
-    createNoteForUser,
-    deleteNoteForUser,
     endSupabaseJob,
-    fetchNotesForUser,
     loadLocalNotes,
     refreshCalendarNoteDates,
     saveLocalNotes,
@@ -1289,27 +1272,12 @@ function App() {
   // 起動時に設定からレイアウト読み込み
   useEffect(() => {
     (async () => {
-      let loaded = false;
-      if (window.electronAPI) {
-        try {
-          const s = await window.electronAPI.getSettings();
-          if (typeof s.splitRatio === 'number') {
-            setSplitRatio(s.splitRatio);
-            loaded = true;
-            console.log('[layout] splitRatio loaded from settings:', s.splitRatio);
-          }
-        } catch (e) {
-          console.warn('[layout] failed to load splitRatio from settings', e);
-        }
-      }
-      if (!loaded) {
-        const savedRatio = localStorage.getItem('splitRatio');
-        if (savedRatio) {
-          const v = parseFloat(savedRatio);
-          if (!isNaN(v)) {
-            setSplitRatio(v);
-            console.log('[layout] splitRatio loaded from localStorage:', v);
-          }
+      const savedRatio = localStorage.getItem('splitRatio');
+      if (savedRatio) {
+        const v = parseFloat(savedRatio);
+        if (!isNaN(v)) {
+          setSplitRatio(v);
+          console.log('[layout] splitRatio loaded from localStorage:', v);
         }
       }
       setLayoutLoaded(true);
@@ -1319,11 +1287,7 @@ function App() {
   // 分割比率変更時に保存（ロード完了後）
   useEffect(() => {
     if (!layoutLoaded) return; // 初期ロード完了までは保存しない
-    if (window.electronAPI) {
-      window.electronAPI.saveLayout({ splitRatio });
-    } else {
-      localStorage.setItem('splitRatio', String(splitRatio));
-    }
+    localStorage.setItem('splitRatio', String(splitRatio));
   }, [splitRatio, layoutLoaded]);
   
   // マウス移動ハンドラー
@@ -2274,7 +2238,7 @@ function App() {
             <div 
               className="flex min-h-0 flex-col gap-1 pl-1 overflow-hidden"
               style={{ width: `${100 - splitRatio}%` }}
-              ref={desktopTimelineRef}
+              ref={timelineRef}
             >
               <div
                 className="flex flex-col min-h-0 gap-2 overflow-hidden"
@@ -2315,8 +2279,8 @@ function App() {
                     }`}
                     role="separator"
                     aria-label="タイムラインとメモの表示比率を変更"
-                    onMouseDown={(event) => handleMemoResizeStart(event, desktopTimelineRef)}
-                    onTouchStart={(event) => handleMemoResizeStart(event, desktopTimelineRef)}
+                    onMouseDown={(event) => handleMemoResizeStart(event, timelineRef)}
+                    onTouchStart={(event) => handleMemoResizeStart(event, timelineRef)}
                     data-memo-handle
                   />
                 </div>
