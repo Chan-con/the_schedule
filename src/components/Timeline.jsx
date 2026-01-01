@@ -64,9 +64,10 @@ const Timeline = ({
 	onAdd,
 	onAddTask,
 	onAddNote,
+	onClosePanel,
 	onUpdateNote,
 	onDeleteNote,
-		onToggleArchiveNote,
+	onToggleArchiveNote,
 	canShareNotes = false,
 	activeNoteId,
 	onActiveNoteIdChange,
@@ -822,17 +823,32 @@ const Timeline = ({
 								: `予定 ${timelineEntries.length}件`}
 					</span>
 				</div>
-				<button
-					type="button"
-					className={`inline-flex h-9 w-9 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-600 transition-all duration-200 ${
-						isAddDisabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-indigo-50 hover:shadow'
-					}`}
-					onClick={handleAddClick}
-					disabled={isAddDisabled}
-					title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : '予定を追加'}
-				>
-					<span className="text-lg font-semibold leading-none">＋</span>
-				</button>
+				<div className="flex items-center gap-2">
+					<button
+						type="button"
+						className={`inline-flex h-9 w-9 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-600 transition-all duration-200 ${
+							isAddDisabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-indigo-50 hover:shadow'
+						}`}
+						onClick={handleAddClick}
+						disabled={isAddDisabled}
+						title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : '予定を追加'}
+					>
+						<span className="text-lg font-semibold leading-none">＋</span>
+					</button>
+					{typeof onClosePanel === 'function' && (
+						<button
+							type="button"
+							className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-600 transition-all duration-200 hover:bg-indigo-50 hover:shadow"
+							onClick={onClosePanel}
+							title="閉じる"
+							aria-label="閉じる"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+							</svg>
+						</button>
+					)}
+				</div>
 			</header>
 
 			<div className="flex-1 min-h-0 overflow-hidden">
