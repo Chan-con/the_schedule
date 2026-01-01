@@ -19,7 +19,7 @@ import {
   deleteNoteForUser,
   fetchNoteDatesForUserInRange,
 } from './utils/supabaseNotes';
-import { clearDateHash, clearNoteHash, parseDateStrFromHash, parseNoteIdFromHash } from './utils/noteShare';
+import { clearDateHash, clearNoteHash, parseDateStrFromHash, parseNoteIdFromHash, setNoteHash } from './utils/noteShare';
 import { useNotifications } from './hooks/useNotifications';
 import { useHistory } from './hooks/useHistory';
 import { AuthContext } from './context/AuthContextBase';
@@ -433,6 +433,9 @@ function App() {
   const [activeNoteId, setActiveNoteId] = useState(null);
   const [sharedNoteId, setSharedNoteId] = useState(null);
   const noteLinkReturnStateRef = useRef(null);
+  const noteLinkBackStackRef = useRef([]);
+  const noteLinkNavIsBackRef = useRef(false);
+  const lastHashNoteIdRef = useRef(null);
   const lastLoginRequestForNoteRef = useRef(null);
   const notesRef = useRef([]);
 
@@ -497,7 +500,39 @@ function App() {
 
     const applyFromHash = () => {
       const noteId = parseNoteIdFromHash(window.location.hash);
-      setSharedNoteId(noteId);
+
+      // ノートhashが消えたら、リンク戻り履歴もクリア
+      if (noteId == null) {
+        setSharedNoteId(null);
+        lastHashNoteIdRef.current = null;
+        noteLinkBackStackRef.current = [];
+        noteLinkReturnStateRef.current = null;
+      } else {
+        const prevHashNoteId = lastHashNoteIdRef.current;
+        const isBackNav = !!noteLinkNavIsBackRef.current;
+
+        if (!isBackNav) {
+          // ノート内リンクで別ノートへ移動した場合、戻り先として現在のノートを積む
+          const currentActive = activeNoteId;
+          const currentActiveKey = currentActive == null ? null : String(currentActive);
+          const nextKey = String(noteId);
+          if (currentActiveKey != null && currentActiveKey !== nextKey) {
+            const toPush = prevHashNoteId != null ? prevHashNoteId : currentActive;
+            const stack = noteLinkBackStackRef.current;
+            const last = stack.length > 0 ? stack[stack.length - 1] : null;
+            if (toPush != null && String(last ?? '') !== String(toPush)) {
+              stack.push(toPush);
+            }
+          }
+        }
+
+        lastHashNoteIdRef.current = noteId;
+        if (isBackNav) {
+          noteLinkNavIsBackRef.current = false;
+        }
+
+        setSharedNoteId(noteId);
+      }
 
       const dateStrFromHash = parseDateStrFromHash(window.location.hash);
       const dateStrFromSearch = parseDateStrFromSearch();
@@ -525,7 +560,7 @@ function App() {
     applyFromHash();
     window.addEventListener('hashchange', applyFromHash);
     return () => window.removeEventListener('hashchange', applyFromHash);
-  }, [isMobile]);
+  }, [activeNoteId, isMobile]);
 
   useEffect(() => {
     if (sharedNoteId == null) return;
@@ -1113,8 +1148,6 @@ function App() {
   }, [handleUpdateNote, loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteImportantFlags, userId]);
 
   const handleRequestCloseNote = useCallback((noteId) => {
-    setActiveNoteId(null);
-
     const restoreFromLink = () => {
       const snapshot = noteLinkReturnStateRef.current;
       if (!snapshot) return;
@@ -1129,11 +1162,34 @@ function App() {
       noteLinkReturnStateRef.current = null;
     };
 
+    // ノート内リンクの履歴があれば、閉じる=1つ戻る（モーダルは維持）
+    if (typeof window !== 'undefined') {
+      const fromHash = parseNoteIdFromHash(window.location.hash);
+      if (fromHash != null && noteId != null && String(fromHash) === String(noteId)) {
+        const stack = noteLinkBackStackRef.current;
+        if (Array.isArray(stack) && stack.length > 0) {
+          const prev = stack.pop();
+          if (prev != null) {
+            noteLinkNavIsBackRef.current = true;
+            setActiveNoteId(prev);
+            setNoteHash(prev);
+            return;
+          }
+        }
+      }
+    }
+
+    // 通常のクローズ
+    setActiveNoteId(null);
+
     if (typeof window !== 'undefined') {
       const fromHash = parseNoteIdFromHash(window.location.hash);
       if (fromHash != null && noteId != null && String(fromHash) === String(noteId)) {
         restoreFromLink();
         clearNoteHash();
+        lastHashNoteIdRef.current = null;
+        noteLinkBackStackRef.current = [];
+        noteLinkNavIsBackRef.current = false;
         // clearNoteHash() は replaceState を使うので hashchange が発火しない。
         // sharedNoteId を明示的にリセットしないと、同じ共有リンクを再クリックしても
         // state が変わらず「2回目以降に開けない」ことがある。
