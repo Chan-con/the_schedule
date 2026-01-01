@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { buildNoteShareUrl } from '../utils/noteShare';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { buildNoteShareUrl, parseNoteIdFromUrl, setNoteHash } from '../utils/noteShare';
 
 const formatUpdatedDateTime = (value) => {
   if (!value) return '';
@@ -13,6 +15,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
   const contentTextareaRef = useRef(null);
   const lastRightClickCaretRef = useRef(null);
   const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const canShareThisNote = !!canShare && !!note && note?.id != null && !note?.__isDraft;
 
@@ -62,6 +65,12 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
       titleRef.current?.focus();
     }, 0);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    // デフォルトは表示モード
+    setIsEditing(false);
+  }, [isOpen, note?.id]);
 
   const title = typeof note?.title === 'string' ? note.title : '';
   const content = typeof note?.content === 'string' ? note.content : '';
@@ -131,6 +140,56 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
     }
   }, [canShareThisNote, shareUrl]);
 
+  const renderMarkdownLink = useCallback(
+    ({ href, children, ...props }) => {
+      const safeHref = typeof href === 'string' ? href : '';
+      const sharedNoteId = parseNoteIdFromUrl(safeHref);
+
+      return (
+        <a
+          {...props}
+          href={safeHref}
+          className="text-blue-600 underline hover:text-blue-800"
+          onClick={(event) => {
+            if (!safeHref) return;
+
+            if (sharedNoteId != null) {
+              const isPlainLeftClick = event.button === 0
+                && !event.metaKey
+                && !event.ctrlKey
+                && !event.shiftKey
+                && !event.altKey;
+              if (!isPlainLeftClick) {
+                return;
+              }
+
+              event.preventDefault();
+              event.stopPropagation();
+              setNoteHash(sharedNoteId);
+              return;
+            }
+
+            // 通常URLは新しいタブで開く
+            event.preventDefault();
+            event.stopPropagation();
+            window.open(safeHref, '_blank', 'noopener,noreferrer');
+          }}
+          onContextMenu={(event) => {
+            if (!safeHref) return;
+            // 右クリックで即別タブ（表示モードでの要望対応）
+            event.preventDefault();
+            event.stopPropagation();
+            window.open(safeHref, '_blank', 'noopener,noreferrer');
+          }}
+          title={safeHref}
+        >
+          {children}
+        </a>
+      );
+    },
+    []
+  );
+
   const handleContentMouseDown = useCallback(() => {
     const el = contentTextareaRef.current;
     if (!el) return;
@@ -141,6 +200,22 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
   const handleContentContextMenu = useCallback((event) => {
     const el = contentTextareaRef.current;
     if (!el) return;
+
+    // textarea は「右クリックした位置の文字」を直接取得できないため、
+    // まずは選択中の文字列がURLならそれを優先して開く。
+    const start = typeof el.selectionStart === 'number' ? el.selectionStart : null;
+    const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : null;
+    if (start != null && end != null && end > start) {
+      const selected = content.slice(start, end).trim();
+      const selectedUrl = extractUrlAt(selected, 0) || extractUrlAt(selected, Math.min(1, selected.length - 1));
+      if (selectedUrl) {
+        event.preventDefault();
+        event.stopPropagation();
+        window.open(selectedUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+    }
+
     const caret = typeof el.selectionStart === 'number'
       ? el.selectionStart
       : (typeof lastRightClickCaretRef.current === 'number' ? lastRightClickCaretRef.current : null);
@@ -179,6 +254,15 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
             )}
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsEditing((prev) => !prev)}
+              className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition-colors duration-200 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
+              title={isEditing ? '表示モードへ' : '編集モードへ'}
+            >
+              {isEditing ? '表示' : '編集'}
+            </button>
+
             <button
               type="button"
               disabled={!canToggleArchive}
@@ -232,49 +316,72 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-          <div className="p-4 space-y-3">
-            <div>
-              <label className="block text-gray-700 font-medium mb-2">タイトル</label>
-              <input
-                ref={titleRef}
-                type="text"
-                value={title}
-                placeholder="タイトル"
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                onChange={(e) => {
-                  if (onUpdate && note?.id != null) {
-                    onUpdate(note.id, { title: e.target.value });
-                  }
-                }}
-              />
-            </div>
+          <div className="space-y-6 p-4">
+            {isEditing ? (
+              <>
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">タイトル</label>
+                  <input
+                    ref={titleRef}
+                    type="text"
+                    value={title}
+                    placeholder="タイトル"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                    onChange={(e) => {
+                      if (onUpdate && note?.id != null) {
+                        onUpdate(note.id, { title: e.target.value });
+                      }
+                    }}
+                  />
+                </div>
 
-            <div>
-              <label className="block text-gray-700 font-medium mb-2">本文</label>
-              <textarea
-                ref={contentTextareaRef}
-                value={content}
-                placeholder="本文"
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
-                style={{ minHeight: '55vh' }}
-                onMouseDown={(event) => {
-                  if (event.button === 2) {
-                    handleContentMouseDown();
-                  }
-                }}
-                onMouseUp={(event) => {
-                  if (event.button === 2) {
-                    handleContentMouseDown();
-                  }
-                }}
-                onContextMenu={handleContentContextMenu}
-                onChange={(e) => {
-                  if (onUpdate && note?.id != null) {
-                    onUpdate(note.id, { content: e.target.value });
-                  }
-                }}
-              />
-            </div>
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">本文（Markdown対応）</label>
+                  <textarea
+                    ref={contentTextareaRef}
+                    value={content}
+                    placeholder="本文"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
+                    style={{ minHeight: '55vh' }}
+                    onMouseDown={(event) => {
+                      if (event.button === 2) {
+                        handleContentMouseDown();
+                      }
+                    }}
+                    onMouseUp={(event) => {
+                      if (event.button === 2) {
+                        handleContentMouseDown();
+                      }
+                    }}
+                    onContextMenu={handleContentContextMenu}
+                    onChange={(e) => {
+                      if (onUpdate && note?.id != null) {
+                        onUpdate(note.id, { content: e.target.value });
+                      }
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="block text-gray-700 font-medium mb-2">本文</label>
+                <div
+                  className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800"
+                  style={{ minHeight: '55vh' }}
+                >
+                  {content.trim() ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{ a: renderMarkdownLink }}
+                    >
+                      {content}
+                    </ReactMarkdown>
+                  ) : (
+                    <div className="text-gray-400">（本文なし）</div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
