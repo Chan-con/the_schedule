@@ -9,6 +9,7 @@ import ScheduleForm from './components/ScheduleForm';
 import TitleBar from './components/TitleBar';
 import SettingsModal from './components/SettingsModal';
 import QuickMemoPad from './components/QuickMemoPad';
+import CornerFloatingMenu from './components/CornerFloatingMenu';
 import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQuickMemo';
 import { supabase } from './lib/supabaseClient';
 import {
@@ -250,6 +251,10 @@ function App() {
     state: historyState,
     setState: setHistoryState,
     replaceState,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
     historyLength,
     currentIndex,
     lastActionType,
@@ -2610,6 +2615,60 @@ function App() {
           </>
         )}
       </main>
+
+      <CornerFloatingMenu
+        enabled={isMobile && !showSettings && !showForm}
+        items={[
+          {
+            key: 'undo',
+            label: '戻す',
+            disabled: !canUndo,
+            onClick: () => {
+              if (canUndo) undo();
+            },
+            icon: (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M9 14l-4-4 4-4" />
+                <path d="M20 20a8 8 0 0 0-8-8H5" />
+              </svg>
+            ),
+          },
+          {
+            key: 'redo',
+            label: '進む',
+            disabled: !canRedo,
+            onClick: () => {
+              if (canRedo) redo();
+            },
+            icon: (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M15 14l4-4-4-4" />
+                <path d="M4 20a8 8 0 0 1 8-8h7" />
+              </svg>
+            ),
+          },
+        ]}
+      />
       
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
