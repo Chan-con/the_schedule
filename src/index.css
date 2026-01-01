@@ -182,6 +182,17 @@ button:focus-visible {
   min-inline-size: 0;
 }
 
+/* iOS WebKit (Safari/Chrome) の date/time はネイティブ見た目で幅が崩れやすいので、
+   このモーダル内だけテキスト入力寄りにして崩れを防ぐ */
+@supports (-webkit-touch-callout: none) {
+  .schedule-form-modal input[type="date"],
+  .schedule-form-modal input[type="time"] {
+    -webkit-appearance: none;
+    appearance: none;
+    text-align: left;
+  }
+}
+
 /* スクロールは維持しつつスクロールバーを非表示 */
 .no-scrollbar {
   scrollbar-width: none;
