@@ -263,7 +263,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
 
   return (
     <div
-      className="schedule-form-modal flex min-h-0 w-full flex-col"
+      className="schedule-form-modal flex min-h-0 w-full min-w-0 flex-col"
       onWheel={(e) => {
         e.stopPropagation();
       }}
@@ -281,8 +281,8 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
         </button>
       </div>
 
-      <div className="custom-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-        <form id="schedule-form" onSubmit={handleSubmit} className="max-w-full space-y-5 p-4 pt-3 sm:p-6 sm:pt-4">
+      <div className="custom-scrollbar flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
+        <form id="schedule-form" onSubmit={handleSubmit} className="max-w-full min-w-0 space-y-5 p-4 pt-3 sm:p-6 sm:pt-4">
           <div className="space-y-3">
             <div className="bg-gray-50 border border-gray-200 rounded-2xl p-1 shadow-inner">
               <div className="grid grid-cols-2 gap-1">
@@ -372,7 +372,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
               name="date"
               value={formData.date}
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+              className="w-full min-w-0 max-w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
               required
             />
           </div>
@@ -390,7 +390,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
               value={formData.time}
               onChange={handleChange}
               onDoubleClick={handleTimeDoubleClick}
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition cursor-pointer"
+              className="w-full min-w-0 max-w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition cursor-pointer"
               placeholder="空欄の場合は終日になります"
               title="ダブルクリック: 空欄→現在時刻入力 / 入力済み→クリア"
             />
