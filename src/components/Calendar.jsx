@@ -37,6 +37,7 @@ const shouldDimForTask = (schedule) => {
 const Calendar = ({
   schedules,
   onDateClick,
+  onScheduleClick,
   selectedDate,
   onScheduleCopy,
   onScheduleDelete,
@@ -965,6 +966,10 @@ const Calendar = ({
                         }}
                         onClick={(event) => {
                           event.stopPropagation();
+                          if (typeof onScheduleClick === 'function') {
+                            onScheduleClick(schedule, new Date(dateStr));
+                            return;
+                          }
                           onDateClick(new Date(dateStr));
                         }}
                         onContextMenu={(event) => {

@@ -1516,6 +1516,19 @@ function App() {
       setIsTimelineOpen(true);
     }
   };  // 予定編集ハンドラー
+
+  const handleCalendarScheduleClick = useCallback((schedule, date) => {
+    if (date) {
+      setSelectedDate(date);
+    }
+
+    // 予定ならタイムライン、タスクならタスクタブ
+    setTimelineActiveTab(schedule?.isTask ? 'tasks' : 'timeline');
+
+    if (isMobile) {
+      setIsTimelineOpen(true);
+    }
+  }, [isMobile]);
   const handleEdit = (schedule) => {
     console.log('🔧 handleEdit called with:', schedule);
     console.log('🔧 Current showForm state:', showForm);
@@ -2095,6 +2108,7 @@ function App() {
               <Calendar 
                 schedules={schedules} 
                 onDateClick={handleDateClick} 
+                onScheduleClick={handleCalendarScheduleClick}
                 selectedDate={selectedDate}
                 onScheduleCopy={handleScheduleCopy}
                 onScheduleDelete={handleScheduleDelete}
@@ -2205,6 +2219,7 @@ function App() {
               <Calendar 
                 schedules={schedules} 
                 onDateClick={handleDateClick} 
+                onScheduleClick={handleCalendarScheduleClick}
                 selectedDate={selectedDate}
                 onScheduleCopy={handleScheduleCopy}
                 onScheduleDelete={handleScheduleDelete}
