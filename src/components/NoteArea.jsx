@@ -25,6 +25,7 @@ const NoteArea = ({
   onUpdateNote,
   onDeleteNote,
   onToggleArchiveNote,
+  canShare = false,
   isAltPressed = false,
   selectedDateStr = '',
   activeNoteId: controlledActiveNoteId,
@@ -77,12 +78,14 @@ const NoteArea = ({
   }, [noteList, selectedDateStr]);
 
   useEffect(() => {
+    // controlled の場合は親がライフサイクル管理するため、ここで強制クローズしない
+    if (controlledActiveNoteId !== undefined) return;
     if (resolvedActiveNoteId == null) return;
     const exists = noteList.some((n) => (n?.id ?? null) === resolvedActiveNoteId);
     if (!exists) {
       setActiveNoteId(null);
     }
-  }, [noteList, resolvedActiveNoteId, setActiveNoteId]);
+  }, [controlledActiveNoteId, noteList, resolvedActiveNoteId, setActiveNoteId]);
 
   const filteredNotes = useMemo(() => {
     const q = normalizeText(query).trim().toLowerCase();
@@ -222,6 +225,7 @@ const NoteArea = ({
         onClose={handleClose}
         onUpdate={onUpdateNote}
         onToggleArchive={onToggleArchiveNote}
+        canShare={canShare}
       />
     </div>
   );

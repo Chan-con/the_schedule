@@ -19,6 +19,7 @@ import {
   deleteNoteForUser,
   fetchNoteDatesForUserInRange,
 } from './utils/supabaseNotes';
+import { clearNoteHash, parseNoteIdFromHash } from './utils/noteShare';
 import { useNotifications } from './hooks/useNotifications';
 import { useHistory } from './hooks/useHistory';
 import { AuthContext } from './context/AuthContextBase';
@@ -388,11 +389,86 @@ function App() {
 
   const [notes, setNotes] = useState([]);
   const [activeNoteId, setActiveNoteId] = useState(null);
+  const [sharedNoteId, setSharedNoteId] = useState(null);
+  const lastLoginRequestForNoteRef = useRef(null);
   const notesRef = useRef([]);
 
   useEffect(() => {
     notesRef.current = Array.isArray(notes) ? notes : [];
   }, [notes]);
+
+  const openSharedNote = useCallback(
+    (noteId) => {
+      if (noteId == null) return;
+      setTimelineActiveTab('notes');
+
+      const shouldOpenTimeline = isMobile
+        || (typeof window !== 'undefined' && window.innerWidth < 768);
+      if (shouldOpenTimeline) {
+        setIsTimelineOpen(true);
+      }
+
+      setActiveNoteId(noteId);
+    },
+    [isMobile]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const applyFromHash = () => {
+      const noteId = parseNoteIdFromHash(window.location.hash);
+      setSharedNoteId(noteId);
+    };
+    applyFromHash();
+    window.addEventListener('hashchange', applyFromHash);
+    return () => window.removeEventListener('hashchange', applyFromHash);
+  }, []);
+
+  useEffect(() => {
+    if (sharedNoteId == null) return;
+    if (isAuthLoading) return;
+
+    if (!userId) {
+      if (typeof authLogin === 'function' && !isAuthProcessing) {
+        const key = String(sharedNoteId);
+        if (lastLoginRequestForNoteRef.current !== key) {
+          lastLoginRequestForNoteRef.current = key;
+          authLogin().catch((error) => {
+            console.error('[Share] Failed to start login for shared note:', error);
+          });
+        }
+      }
+      return;
+    }
+
+    let cancelled = false;
+    fetchNoteForUserById({ userId, id: sharedNoteId })
+      .then((fresh) => {
+        if (cancelled) return;
+        const resolvedId = fresh?.id ?? sharedNoteId;
+        setNotes((prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          const archived = typeof fresh?.archived === 'boolean'
+            ? fresh.archived
+            : !!noteArchiveFlagsRef.current?.[String(resolvedId)];
+          const nextNote = { ...fresh, archived };
+          const exists = list.some((n) => (n?.id ?? null) === resolvedId);
+          if (exists) {
+            return list.map((n) => ((n?.id ?? null) === resolvedId ? nextNote : n));
+          }
+          return [nextNote, ...list];
+        });
+        openSharedNote(resolvedId);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('[Share] Failed to fetch shared note:', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLogin, isAuthLoading, isAuthProcessing, openSharedNote, sharedNoteId, userId]);
   const [calendarNoteDates, setCalendarNoteDates] = useState([]);
   const calendarVisibleRangeRef = useRef(null);
   const notePendingPatchRef = useRef(new Map());
@@ -868,6 +944,13 @@ function App() {
 
   const handleRequestCloseNote = useCallback((noteId) => {
     setActiveNoteId(null);
+
+    if (typeof window !== 'undefined') {
+      const fromHash = parseNoteIdFromHash(window.location.hash);
+      if (fromHash != null && noteId != null && String(fromHash) === String(noteId)) {
+        clearNoteHash();
+      }
+    }
     if (noteId == null) return;
 
     const currentNote = notesRef.current.find((note) => (note?.id ?? null) === noteId) || null;
@@ -2099,6 +2182,7 @@ function App() {
                           onUpdateNote={handleUpdateNote}
                           onDeleteNote={handleDeleteNote}
                           onToggleArchiveNote={handleToggleArchiveNote}
+                          canShareNotes={isAuthenticated}
                           activeNoteId={activeNoteId}
                           onActiveNoteIdChange={setActiveNoteId}
                           onRequestCloseNote={handleRequestCloseNote}
@@ -2209,6 +2293,7 @@ function App() {
                     onUpdateNote={handleUpdateNote}
                     onDeleteNote={handleDeleteNote}
                     onToggleArchiveNote={handleToggleArchiveNote}
+                    canShareNotes={isAuthenticated}
                     activeNoteId={activeNoteId}
                     onActiveNoteIdChange={setActiveNoteId}
                     onRequestCloseNote={handleRequestCloseNote}

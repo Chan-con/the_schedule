@@ -1,4 +1,5 @@
 import React from 'react';
+import { parseNoteIdFromUrl, setNoteHash } from '../utils/noteShare';
 
 const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
   if (!memo) return null;
@@ -102,17 +103,24 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
           console.log(`🧩 Part ${partIndex}: "${part}" isUrl: ${isUrl}`);
           
           if (isUrl) {
+            const sharedNoteId = parseNoteIdFromUrl(part);
             const display = formatUrlForDisplay(part);
             return (
               <span
                 key={`url-${lineIndex}-${partIndex}`}
                 className="text-blue-600 underline hover:text-blue-800 transition-colors font-medium select-text"
                 onContextMenu={(e) => handleUrlRightClick(part, e)}
+                onClick={(e) => {
+                  if (sharedNoteId == null) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setNoteHash(sharedNoteId);
+                }}
                 title={`${part}\n(右クリックでブラウザで開く)`}
                 style={{ 
                   color: '#2563eb', 
                   textDecoration: 'underline',
-                  cursor: 'text',
+                  cursor: sharedNoteId != null ? 'pointer' : 'text',
                   userSelect: 'text'
                 }}
               >

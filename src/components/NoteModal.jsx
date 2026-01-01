@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { buildNoteShareUrl } from '../utils/noteShare';
 
 const formatUpdatedDateTime = (value) => {
   if (!value) return '';
@@ -7,8 +8,16 @@ const formatUpdatedDateTime = (value) => {
   return dt.toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
-const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive }) => {
+const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare = false }) => {
   const titleRef = useRef(null);
+  const [copied, setCopied] = useState(false);
+
+  const canShareThisNote = !!canShare && !!note && note?.id != null && !note?.__isDraft;
+
+  const shareUrl = useMemo(() => {
+    if (!canShareThisNote) return '';
+    return buildNoteShareUrl(note.id);
+  }, [canShareThisNote, note?.id]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -52,13 +61,38 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive }) => {
     }, 0);
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   const title = typeof note?.title === 'string' ? note.title : '';
   const content = typeof note?.content === 'string' ? note.content : '';
   const updatedLabel = formatUpdatedDateTime(note?.updated_at);
   const isArchived = !!note?.archived;
   const canToggleArchive = !!note && note?.id != null && !note?.__isDraft;
+
+  if (!isOpen) return null;
+
+  const handleCopyShareUrl = async () => {
+    if (!canShareThisNote) return;
+    if (!shareUrl) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = shareUrl;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '-1000px';
+        textarea.style.left = '-1000px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch (error) {
+      console.error('[Share] Failed to copy note URL:', error);
+    }
+  };
 
   return (
     <div
@@ -106,6 +140,20 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive }) => {
               title={isArchived ? 'アーカイブから戻す' : 'アーカイブ'}
             >
               {isArchived ? 'アーカイブ解除' : 'アーカイブ'}
+            </button>
+
+            <button
+              type="button"
+              disabled={!canShareThisNote}
+              onClick={handleCopyShareUrl}
+              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                !canShareThisNote
+                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
+              }`}
+              title={canShareThisNote ? (copied ? 'コピーしました' : '共有URLをコピー') : 'ログイン後に共有できます'}
+            >
+              {copied ? 'コピー済み' : '共有URL'}
             </button>
 
             <button
