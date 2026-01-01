@@ -631,15 +631,25 @@ function App() {
     const currentNote = notesRef.current.find((note) => (note?.id ?? null) === noteId) || null;
     if (!currentNote) return;
 
+    const titleTrimmed = typeof currentNote.title === 'string' ? currentNote.title.trim() : '';
+    const contentTrimmed = typeof currentNote.content === 'string' ? currentNote.content.trim() : '';
+    const shouldDeleteBecauseEmpty = !titleTrimmed && !contentTrimmed;
+
     if (!userId) {
+      if (!shouldDeleteBecauseEmpty) {
+        return;
+      }
+
+      const allNotes = loadLocalNotes();
+      const nextAllNotes = allNotes.filter((n) => (n?.id ?? null) !== noteId);
+      saveLocalNotes(nextAllNotes);
+      setNotes((prev) => (Array.isArray(prev) ? prev.filter((n) => (n?.id ?? null) !== noteId) : []));
+      refreshCalendarNoteDates().catch(() => {});
       return;
     }
 
     if (currentNote.__isDraft) {
-      const title = typeof currentNote.title === 'string' ? currentNote.title.trim() : '';
-      const content = typeof currentNote.content === 'string' ? currentNote.content.trim() : '';
-
-      if (!title && !content) {
+      if (shouldDeleteBecauseEmpty) {
         setNotes((prev) => (Array.isArray(prev) ? prev.filter((n) => (n?.id ?? null) !== noteId) : []));
         return;
       }
@@ -670,6 +680,40 @@ function App() {
         .catch((error) => {
           console.error('[Supabase] Failed to create note:', error);
           setSupabaseError(error.message || 'ノートの作成に失敗しました。');
+        })
+        .finally(() => {
+          endSupabaseJob(jobMeta);
+        });
+      return;
+    }
+
+    // 既存ノート: タイトル/本文が空なら削除
+    if (shouldDeleteBecauseEmpty) {
+      const timers = noteSaveTimersRef.current;
+      const pendingMap = notePendingPatchRef.current;
+      if (timers.has(noteId)) {
+        clearTimeout(timers.get(noteId));
+        timers.delete(noteId);
+      }
+      pendingMap.delete(noteId);
+
+      const jobMeta = { kind: 'noteDelete' };
+      beginSupabaseJob(jobMeta);
+      deleteNoteForUser({ userId, id: noteId })
+        .then(async () => {
+          setNotes((prev) => (Array.isArray(prev) ? prev.filter((n) => (n?.id ?? null) !== noteId) : []));
+          setSupabaseError(null);
+          refreshCalendarNoteDates().catch(() => {});
+          try {
+            const freshAll = await fetchNotesForUser(userId);
+            setNotes(Array.isArray(freshAll) ? freshAll : []);
+          } catch {
+            // ignore
+          }
+        })
+        .catch((error) => {
+          console.error('[Supabase] Failed to delete note:', error);
+          setSupabaseError(error.message || 'ノートの削除に失敗しました。');
         })
         .finally(() => {
           endSupabaseJob(jobMeta);
