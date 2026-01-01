@@ -397,7 +397,20 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
             <div className="text-xs text-gray-500 mt-1">
               時間を入力しない場合は、自動的に終日扱いになります
               <br />
-              <span className="text-blue-600">💡 ダブルクリックで現在時刻入力/クリア</span>
+              <span
+                className="text-blue-600"
+                role="button"
+                tabIndex={0}
+                onClick={handleTimeDoubleClick}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  handleTimeDoubleClick();
+                }}
+                title="タップ(モバイル) / ダブルクリック(PC)で現在時刻入力/クリア"
+              >
+                💡 タップで現在時刻入力/クリア
+              </span>
             </div>
           </div>
 
