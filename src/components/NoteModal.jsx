@@ -6,6 +6,46 @@ import { buildNoteShareUrl, parseNoteIdFromUrl, setNoteHash } from '../utils/not
 const formatUpdatedDateTime = (value) => {
   if (!value) return '';
   const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleString('ja-JP', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare = false }) => {
+  const titleRef = useRef(null);
+  const contentTextareaRef = useRef(null);
+  const lastRightClickCaretRef = useRef(null);
+  const [copied, setCopied] = useState(false);
+  const [bodyCopied, setBodyCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  const canShareThisNote = !!canShare && !!note && note?.id != null && !note?.__isDraft;
+
+  const shareUrl = useMemo(() => {
+    if (!canShareThisNote) return '';
+    return buildNoteShareUrl(note.id);
+  }, [canShareThisNote, note?.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (onClose) onClose();
+      }
+    };
+
+    const preventAllScroll = (e) => {
+      const isInModal = e.target.closest('.note-modal-content');
+      if (!isInModal) {
+        e.preventDefault();
+        e.stopPropagation();
         return false;
       }
     };
@@ -19,58 +59,25 @@ const formatUpdatedDateTime = (value) => {
     return () => {
       document.body.classList.remove('modal-open');
       document.body.style.overflow = '';
+      document.removeEventListener('keydown', handleEsc);
+      document.removeEventListener('wheel', preventAllScroll, { capture: true });
+      document.removeEventListener('touchmove', preventAllScroll, { capture: true });
+    };
+  }, [isOpen, onClose]);
 
-            <button
-              type="button"
-              disabled={!canCopyMarkdownBody}
-              onClick={handleCopyMarkdownBody}
-              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
-                !canCopyMarkdownBody
-                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
-                  : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
-              }`}
-              title={canCopyMarkdownBody ? (bodyCopied ? 'コピーしました' : '本文をMarkdownでコピー') : '本文が空です'}
-            >
-              {bodyCopied ? 'コピー済み' : '本文コピー'}
-            </button>
+  useEffect(() => {
+    if (!isOpen) return;
+    // 開いた瞬間にタイトルへフォーカス（入力しやすく）
+    setTimeout(() => {
+      titleRef.current?.focus();
+    }, 0);
+  }, [isOpen]);
 
-            <button
-              type="button"
-              onClick={() => setIsEditing((prev) => !prev)}
-              className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition-colors duration-200 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
-              title={isEditing ? '表示モードへ' : '編集モードへ'}
-            >
-              {isEditing ? '表示' : '編集'}
-            </button>
-
-            <button
-              type="button"
-              disabled={!canToggleArchive}
-              onClick={() => {
-                if (!canToggleArchive) return;
-                if (onToggleArchive) {
-                  onToggleArchive(note, !isArchived);
-                  return;
-                }
-                if (onUpdate && note?.id != null) {
-                  onUpdate(note.id, { archived: !isArchived });
-                }
-              }}
-              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
-                !canToggleArchive
-                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
-                  : isArchived
-                    ? 'bg-indigo-500 border-indigo-600 text-white hover:bg-indigo-600'
-                    : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
-              }`}
-              title={isArchived ? 'アーカイブから戻す' : 'アーカイブ'}
-            >
-              {isArchived ? 'アーカイブ解除' : 'アーカイブ'}
-            </button>
   useEffect(() => {
     if (!isOpen) return;
     // デフォルトは表示モード
     setIsEditing(false);
+    setCopied(false);
     setBodyCopied(false);
   }, [isOpen, note?.id]);
 
@@ -102,7 +109,6 @@ const formatUpdatedDateTime = (value) => {
     if (typeof caretIndex !== 'number' || !Number.isFinite(caretIndex)) return null;
     const idx = Math.min(Math.max(0, Math.floor(caretIndex)), Math.max(0, text.length - 1));
 
-    // 左右の空白までを「単語」として取り出す
     const isDelimiter = (ch) => {
       if (!ch) return true;
       return /\s/.test(ch);
@@ -116,7 +122,6 @@ const formatUpdatedDateTime = (value) => {
     let token = text.slice(start, end).trim();
     if (!token) return null;
 
-    // URLの末尾/先頭に付くことが多い記号を取り除く（正規表現より安全に）
     const stripLeading = new Set(['(', '[', '{', '<']);
     const stripTrailing = new Set([')', ']', '}', '>', ',', '.', '。', '．', '、', '…']);
     while (token.length > 0 && stripLeading.has(token[0])) token = token.slice(1);
@@ -126,7 +131,6 @@ const formatUpdatedDateTime = (value) => {
     if (!/^https?:\/\//i.test(token)) return null;
 
     try {
-      // URLとして妥当か軽くチェック
       new URL(token);
       return token;
     } catch {
@@ -212,14 +216,12 @@ const formatUpdatedDateTime = (value) => {
               return;
             }
 
-            // 通常URLは新しいタブで開く
             event.preventDefault();
             event.stopPropagation();
             window.open(safeHref, '_blank', 'noopener,noreferrer');
           }}
           onContextMenu={(event) => {
             if (!safeHref) return;
-            // 右クリックで即別タブ（表示モードでの要望対応）
             event.preventDefault();
             event.stopPropagation();
             window.open(safeHref, '_blank', 'noopener,noreferrer');
@@ -244,8 +246,6 @@ const formatUpdatedDateTime = (value) => {
     const el = contentTextareaRef.current;
     if (!el) return;
 
-    // textarea は「右クリックした位置の文字」を直接取得できないため、
-    // まずは選択中の文字列がURLならそれを優先して開く。
     const start = typeof el.selectionStart === 'number' ? el.selectionStart : null;
     const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : null;
     if (start != null && end != null && end > start) {
@@ -263,10 +263,8 @@ const formatUpdatedDateTime = (value) => {
       ? el.selectionStart
       : (typeof lastRightClickCaretRef.current === 'number' ? lastRightClickCaretRef.current : null);
     const url = extractUrlAt(content, caret);
-    if (!url) {
-      return;
-    }
-    // URL上での右クリックだけは、即「新しいタブで開く」にする
+    if (!url) return;
+
     event.preventDefault();
     event.stopPropagation();
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -280,7 +278,6 @@ const formatUpdatedDateTime = (value) => {
       role="dialog"
       aria-modal="true"
       onMouseDown={(e) => {
-        // 背景クリックで閉じる
         if (e.target === e.currentTarget && onClose) {
           onClose();
         }
@@ -297,6 +294,34 @@ const formatUpdatedDateTime = (value) => {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!canShareThisNote}
+              onClick={handleCopyShareUrl}
+              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                !canShareThisNote
+                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
+              }`}
+              title={canShareThisNote ? (copied ? 'コピーしました' : '共有URLをコピー') : 'ログイン後に共有できます'}
+            >
+              {copied ? 'コピー済み' : '共有URL'}
+            </button>
+
+            <button
+              type="button"
+              disabled={!canCopyMarkdownBody}
+              onClick={handleCopyMarkdownBody}
+              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                !canCopyMarkdownBody
+                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
+              }`}
+              title={canCopyMarkdownBody ? (bodyCopied ? 'コピーしました' : '本文をMarkdownでコピー') : '本文が空です'}
+            >
+              {bodyCopied ? 'コピー済み' : '本文コピー'}
+            </button>
+
             <button
               type="button"
               onClick={() => setIsEditing((prev) => !prev)}
@@ -329,34 +354,6 @@ const formatUpdatedDateTime = (value) => {
               title={isArchived ? 'アーカイブから戻す' : 'アーカイブ'}
             >
               {isArchived ? 'アーカイブ解除' : 'アーカイブ'}
-            </button>
-
-            <button
-              type="button"
-              disabled={!canCopyMarkdownBody}
-              onClick={handleCopyMarkdownBody}
-              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
-                !canCopyMarkdownBody
-                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
-                  : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
-              }`}
-              title={canCopyMarkdownBody ? (bodyCopied ? 'コピーしました' : '本文をMarkdownでコピー') : '本文が空です'}
-            >
-              {bodyCopied ? 'コピー済み' : '本文コピー'}
-            </button>
-
-            <button
-              type="button"
-              disabled={!canShareThisNote}
-              onClick={handleCopyShareUrl}
-              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
-                !canShareThisNote
-                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
-                  : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
-              }`}
-              title={canShareThisNote ? (copied ? 'コピーしました' : '共有URLをコピー') : 'ログイン後に共有できます'}
-            >
-              {copied ? 'コピー済み' : '共有URL'}
             </button>
 
             <button
@@ -427,10 +424,7 @@ const formatUpdatedDateTime = (value) => {
                   style={{ minHeight: '55vh' }}
                 >
                   {content.trim() ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{ a: renderMarkdownLink }}
-                    >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: renderMarkdownLink }}>
                       {content}
                     </ReactMarkdown>
                   ) : (
