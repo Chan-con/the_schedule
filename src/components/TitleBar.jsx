@@ -48,7 +48,7 @@ const TitleBar = ({ onSettingsClick, auth }) => {
                 <button
                   onClick={handleLogout}
                   disabled={isAuthProcessing}
-                  className={`h-auto px-2 py-0.5 rounded text-[11px] border border-white/40 transition-all duration-200 ${isAuthProcessing ? 'opacity-60 cursor-not-allowed' : 'hover:bg-white/20'}`}
+                  className={`appearance-none bg-transparent text-white h-auto px-2 py-0.5 rounded text-[11px] border border-white/40 transition-all duration-200 ${isAuthProcessing ? 'opacity-60 cursor-not-allowed' : 'hover:bg-white/20'}`}
                 >
                   ログアウト
                 </button>
