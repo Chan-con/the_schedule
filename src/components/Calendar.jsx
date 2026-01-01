@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { toDateStrLocal } from '../utils/date';
 import { isJapaneseHoliday, getJapaneseHolidayName } from '../utils/holidays';
 
@@ -34,7 +34,20 @@ const shouldDimForTask = (schedule) => {
   return true;
 };
 
-const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onScheduleDelete, onScheduleMove, onAdd, onEdit, onToggleTask, onScheduleUpdate }) => {
+const Calendar = ({
+  schedules,
+  onDateClick,
+  selectedDate,
+  onScheduleCopy,
+  onScheduleDelete,
+  onScheduleMove,
+  onAdd,
+  onEdit,
+  onToggleTask,
+  onScheduleUpdate,
+  noteDates = [],
+  onVisibleRangeChange,
+}) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [isAltPressed, setIsAltPressed] = useState(false);
@@ -84,6 +97,19 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+
+  const noteDateSet = useMemo(() => {
+    const list = Array.isArray(noteDates) ? noteDates : [];
+    return new Set(list.filter(Boolean));
+  }, [noteDates]);
+
+  const toDateStr = useCallback((date) => {
+    if (!date) return '';
+    const y = date.getFullYear();
+    const mStr = String(date.getMonth() + 1).padStart(2, '0');
+    const dStr = String(date.getDate()).padStart(2, '0');
+    return `${y}-${mStr}-${dStr}`;
+  }, []);
 
   // カレンダーのサイズ変更を監視して表示件数を調整
   useEffect(() => {
@@ -656,6 +682,22 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
   
   const calendarDays = getCalendarDays();
 
+  useEffect(() => {
+    if (!onVisibleRangeChange) return;
+
+    const firstDay = new Date(year, month, 1);
+    const startDate = new Date(firstDay);
+    const dayOfWeek = (firstDay.getDay() + 6) % 7;
+    startDate.setDate(firstDay.getDate() - dayOfWeek);
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 41);
+
+    onVisibleRangeChange({
+      startDate: toDateStr(startDate),
+      endDate: toDateStr(endDate),
+    });
+  }, [month, onVisibleRangeChange, toDateStr, year]);
+
   // 初期表示時に今月を表示
   useEffect(() => {
     setCurrentDate(new Date());
@@ -810,7 +852,7 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
               }}
             >
               {/* 日付部分 - 固定の高さ */}
-              <div className="flex-shrink-0 mb-0.5 flex justify-center">
+              <div className="flex-shrink-0 mb-0.5 flex items-center justify-center gap-1">
                 {(() => {
                   const dow = date.getDay();
                   const holiday = isJapaneseHoliday(date);
@@ -833,6 +875,14 @@ const Calendar = ({ schedules, onDateClick, selectedDate, onScheduleCopy, onSche
                     </span>
                   );
                 })()}
+
+                {noteDateSet.has(dateStr) && (
+                  <span
+                    className="inline-block h-1 w-1 rounded-full bg-indigo-400"
+                    aria-label="ノートあり"
+                    title="ノートあり"
+                  />
+                )}
               </div>
               
               {/* 予定部分 - 残りのスペースを使用（表示中の全日付で予定を表示） */}

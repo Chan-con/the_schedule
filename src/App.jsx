@@ -10,6 +10,13 @@ import TitleBar from './components/TitleBar';
 import SettingsModal from './components/SettingsModal';
 import QuickMemoPad from './components/QuickMemoPad';
 import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQuickMemo';
+import {
+  fetchNotesForUser,
+  createNoteForUser,
+  updateNoteForUser,
+  deleteNoteForUser,
+  fetchNoteDatesForUserInRange,
+} from './utils/supabaseNotes';
 import { useNotifications } from './hooks/useNotifications';
 import { useHistory } from './hooks/useHistory';
 import { AuthContext } from './context/AuthContextBase';
@@ -43,6 +50,7 @@ const normalizeSchedules = (schedules) => {
 const createTempId = () => Date.now();
 
 const QUICK_MEMO_STORAGE_KEY = 'quickMemoPadContent';
+const NOTES_STORAGE_KEY = 'notes';
 const MEMO_SPLIT_STORAGE_KEY = 'memoSplitRatio';
 const DEFAULT_MEMO_SPLIT_RATIO = 70;
 const MEMO_TIMELINE_MIN = 35;
@@ -124,6 +132,33 @@ function App() {
     }
 
     return '';
+  }, []);
+
+  const loadLocalNotes = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+
+    try {
+      const stored = window.localStorage.getItem(NOTES_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to load notes from localStorage:', error);
+    }
+
+    return [];
+  }, []);
+
+  const saveLocalNotes = useCallback((nextNotes) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(Array.isArray(nextNotes) ? nextNotes : []));
+    } catch (error) {
+      console.warn('⚠️ Failed to persist notes to localStorage:', error);
+    }
   }, []);
 
   const initialLoadedSchedules = useMemo(() => loadLocalSchedules(), [loadLocalSchedules]);
@@ -259,6 +294,7 @@ function App() {
   );
   
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const selectedDateStr = useMemo(() => (selectedDate ? toDateStrLocal(selectedDate) : ''), [selectedDate]);
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -282,6 +318,12 @@ function App() {
   const [isMemoResizing, setIsMemoResizing] = useState(false);
   const [quickMemo, setQuickMemo] = useState('');
   const [isQuickMemoLoaded, setIsQuickMemoLoaded] = useState(false);
+
+  const [notes, setNotes] = useState([]);
+  const [calendarNoteDates, setCalendarNoteDates] = useState([]);
+  const calendarVisibleRangeRef = useRef(null);
+  const notePendingPatchRef = useRef(new Map());
+  const noteSaveTimersRef = useRef(new Map());
   const applyQuickMemoValue = useCallback((value = '') => {
     const safeValue = typeof value === 'string' ? value : '';
     quickMemoSkipSyncRef.current = true;
@@ -401,6 +443,13 @@ function App() {
       replaceAppState(loadLocalSchedules(), 'local_restore');
       const localMemo = loadLocalQuickMemo();
       applyQuickMemoValue(localMemo);
+
+      // ローカルノート
+      const allNotes = loadLocalNotes();
+      const nextNotes = allNotes
+        .slice()
+        .sort((a, b) => String(b?.updated_at ?? '').localeCompare(String(a?.updated_at ?? '')));
+      setNotes(nextNotes);
       return;
     }
 
@@ -413,7 +462,197 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [applyQuickMemoValue, auth?.isLoading, loadLocalQuickMemo, loadLocalSchedules, refreshFromSupabase, replaceAppState, userId]);
+  }, [applyQuickMemoValue, auth?.isLoading, loadLocalNotes, loadLocalQuickMemo, loadLocalSchedules, refreshFromSupabase, replaceAppState, selectedDateStr, userId]);
+
+  // ノートを取得（選択日に依存して絞り込まない）
+  useEffect(() => {
+    if (!userId) {
+      const allNotes = loadLocalNotes();
+      const nextNotes = allNotes
+        .slice()
+        .sort((a, b) => String(b?.updated_at ?? '').localeCompare(String(a?.updated_at ?? '')));
+      setNotes(nextNotes);
+      return;
+    }
+
+    let cancelled = false;
+    fetchNotesForUser(userId)
+      .then((data) => {
+        if (cancelled) return;
+        setNotes(Array.isArray(data) ? data : []);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('[Supabase] Failed to fetch notes:', error);
+        setSupabaseError(error.message || 'ノートの取得に失敗しました。');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadLocalNotes, userId]);
+
+  const refreshCalendarNoteDates = useCallback(async () => {
+    const range = calendarVisibleRangeRef.current;
+    if (!range?.startDate || !range?.endDate) return;
+
+    if (!userId) {
+      const allNotes = loadLocalNotes();
+      const dateSet = new Set();
+      allNotes.forEach((note) => {
+        const createdAt = note?.created_at;
+        if (!createdAt) return;
+        const createdDate = toDateStrLocal(new Date(createdAt));
+        if (!createdDate) return;
+        if (createdDate >= range.startDate && createdDate <= range.endDate) {
+          dateSet.add(createdDate);
+        }
+      });
+      setCalendarNoteDates(Array.from(dateSet));
+      return;
+    }
+
+    try {
+      const dates = await fetchNoteDatesForUserInRange({
+        userId,
+        startDate: range.startDate,
+        endDate: range.endDate,
+      });
+      setCalendarNoteDates(Array.isArray(dates) ? dates : []);
+    } catch (error) {
+      console.error('[Supabase] Failed to fetch note dates:', error);
+    }
+  }, [loadLocalNotes, userId]);
+
+  const handleCalendarVisibleRangeChange = useCallback((range) => {
+    if (!range?.startDate || !range?.endDate) return;
+    calendarVisibleRangeRef.current = { startDate: range.startDate, endDate: range.endDate };
+    refreshCalendarNoteDates().catch(() => {});
+  }, [refreshCalendarNoteDates]);
+
+  const handleAddNote = useCallback(async () => {
+    if (!selectedDateStr) return;
+    const nowIso = new Date().toISOString();
+
+    if (!userId) {
+      const newNote = {
+        id: createTempId(),
+        date: selectedDateStr,
+        title: '',
+        content: '',
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+      const allNotes = [...loadLocalNotes(), newNote];
+      saveLocalNotes(allNotes);
+      setNotes((prev) => [newNote, ...(Array.isArray(prev) ? prev : [])]);
+      refreshCalendarNoteDates().catch(() => {});
+      return;
+    }
+
+    const jobMeta = { kind: 'noteCreate' };
+    beginSupabaseJob(jobMeta);
+    try {
+      const created = await createNoteForUser({
+        userId,
+        date: selectedDateStr,
+        title: '',
+        content: '',
+      });
+      setNotes((prev) => [created, ...(Array.isArray(prev) ? prev : [])]);
+      setSupabaseError(null);
+      refreshCalendarNoteDates().catch(() => {});
+    } catch (error) {
+      console.error('[Supabase] Failed to create note:', error);
+      setSupabaseError(error.message || 'ノートの作成に失敗しました。');
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, endSupabaseJob, loadLocalNotes, refreshCalendarNoteDates, saveLocalNotes, selectedDateStr, userId]);
+
+  const handleUpdateNote = useCallback((noteId, patch) => {
+    if (noteId == null) return;
+    const safePatch = patch && typeof patch === 'object' ? patch : {};
+    const nowIso = new Date().toISOString();
+
+    setNotes((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      return list.map((note) => {
+        if ((note?.id ?? null) !== noteId) return note;
+        return { ...note, ...safePatch, updated_at: nowIso };
+      });
+    });
+
+    if (!userId) {
+      const allNotes = loadLocalNotes();
+      const nextAllNotes = allNotes.map((note) => {
+        if ((note?.id ?? null) !== noteId) return note;
+        return { ...note, ...safePatch, updated_at: nowIso };
+      });
+      saveLocalNotes(nextAllNotes);
+      return;
+    }
+
+    const pendingMap = notePendingPatchRef.current;
+    const existing = pendingMap.get(noteId) || {};
+    pendingMap.set(noteId, { ...existing, ...safePatch });
+
+    const timers = noteSaveTimersRef.current;
+    if (timers.has(noteId)) {
+      clearTimeout(timers.get(noteId));
+    }
+
+    const timeoutId = setTimeout(async () => {
+      const mergedPatch = pendingMap.get(noteId);
+      pendingMap.delete(noteId);
+      const jobMeta = { kind: 'noteUpdate' };
+      beginSupabaseJob(jobMeta);
+      try {
+        const updated = await updateNoteForUser({ userId, id: noteId, patch: mergedPatch });
+        setNotes((prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          return list.map((note) => ((note?.id ?? null) === noteId ? updated : note));
+        });
+        setSupabaseError(null);
+      } catch (error) {
+        console.error('[Supabase] Failed to update note:', error);
+        setSupabaseError(error.message || 'ノートの更新に失敗しました。');
+      } finally {
+        endSupabaseJob(jobMeta);
+      }
+    }, 600);
+
+    timers.set(noteId, timeoutId);
+  }, [beginSupabaseJob, endSupabaseJob, loadLocalNotes, saveLocalNotes, userId]);
+
+  const handleDeleteNote = useCallback(async (note) => {
+    if (!note) return;
+    const noteId = note?.id ?? null;
+    if (noteId == null) return;
+
+    if (!userId) {
+      const allNotes = loadLocalNotes();
+      const nextAllNotes = allNotes.filter((n) => (n?.id ?? null) !== noteId);
+      saveLocalNotes(nextAllNotes);
+      setNotes((prev) => (Array.isArray(prev) ? prev.filter((n) => (n?.id ?? null) !== noteId) : []));
+      refreshCalendarNoteDates().catch(() => {});
+      return;
+    }
+
+    const jobMeta = { kind: 'noteDelete' };
+    beginSupabaseJob(jobMeta);
+    try {
+      await deleteNoteForUser({ userId, id: noteId });
+      setNotes((prev) => (Array.isArray(prev) ? prev.filter((n) => (n?.id ?? null) !== noteId) : []));
+      setSupabaseError(null);
+      refreshCalendarNoteDates().catch(() => {});
+    } catch (error) {
+      console.error('[Supabase] Failed to delete note:', error);
+      setSupabaseError(error.message || 'ノートの削除に失敗しました。');
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, endSupabaseJob, loadLocalNotes, refreshCalendarNoteDates, saveLocalNotes, userId]);
   
   // メニュー外クリックでメニューを閉じる
   
@@ -1320,7 +1559,6 @@ function App() {
   const handleClose = () => setShowForm(false);
 
   // 選択された日付の予定のみ表示
-  const selectedDateStr = selectedDate ? toDateStrLocal(selectedDate) : '';
   const filteredSchedules = useMemo(() => {
     if (!selectedDateStr) return [];
     const allSchedules = Array.isArray(schedules) ? schedules : [];
@@ -1385,6 +1623,8 @@ function App() {
                 onEdit={handleEdit}
                 isMobile={isMobile}
                 onToggleTask={handleToggleTask}
+                noteDates={calendarNoteDates}
+                onVisibleRangeChange={handleCalendarVisibleRangeChange}
               />
             </div>
             
@@ -1421,15 +1661,20 @@ function App() {
                         <Timeline 
                           schedules={filteredSchedules} 
                           selectedDate={selectedDate} 
+                          selectedDateStr={selectedDateStr}
                           onEdit={handleEdit}
                           onAdd={handleAdd}
                           onAddTask={handleAddTask}
+                          onAddNote={handleAddNote}
+                          onUpdateNote={handleUpdateNote}
+                          onDeleteNote={handleDeleteNote}
                           onScheduleUpdate={handleScheduleUpdate}
                           onToggleTask={handleToggleTask}
                           onScheduleDelete={handleScheduleDelete}
                           activeTab={timelineActiveTab}
                           onTabChange={setTimelineActiveTab}
                           tasks={taskSchedules}
+                          notes={notes}
                         />
                       </div>
                     </div>
@@ -1483,6 +1728,8 @@ function App() {
                 onEdit={handleEdit}
                 isMobile={isMobile}
                 onToggleTask={handleToggleTask}
+                noteDates={calendarNoteDates}
+                onVisibleRangeChange={handleCalendarVisibleRangeChange}
               />
             </div>
             
@@ -1520,15 +1767,20 @@ function App() {
                   <Timeline 
                     schedules={filteredSchedules} 
                     selectedDate={selectedDate} 
+                    selectedDateStr={selectedDateStr}
                     onEdit={handleEdit}
                     onAdd={handleAdd}
                     onAddTask={handleAddTask}
+                    onAddNote={handleAddNote}
+                    onUpdateNote={handleUpdateNote}
+                    onDeleteNote={handleDeleteNote}
                     onScheduleUpdate={handleScheduleUpdate}
                     onToggleTask={handleToggleTask}
                     onScheduleDelete={handleScheduleDelete}
                     activeTab={timelineActiveTab}
                     onTabChange={setTimelineActiveTab}
                     tasks={taskSchedules}
+                    notes={notes}
                   />
                 </div>
               </div>

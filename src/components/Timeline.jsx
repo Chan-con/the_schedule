@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import MemoWithLinks from './MemoWithLinks';
 import TaskArea from './TaskArea';
+import NoteArea from './NoteArea';
 
 const ALL_DAY_MIN_HEIGHT = 120;
 const TIMELINE_MIN_HEIGHT = 120;
@@ -60,15 +61,20 @@ const getScheduleKey = (schedule, index, prefix) => {
 const Timeline = ({
 	schedules = [],
 	selectedDate,
+	selectedDateStr,
 	onEdit,
 	onAdd,
 	onAddTask,
+	onAddNote,
+	onUpdateNote,
+	onDeleteNote,
 	onScheduleUpdate,
 	onToggleTask,
 	onScheduleDelete,
 	activeTab = 'timeline',
 	onTabChange,
 	tasks = [],
+	notes = [],
 }) => {
 	const [draggedAllDayId, setDraggedAllDayId] = useState(null);
 	const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -126,10 +132,12 @@ const Timeline = ({
 		[cardMaxHeight]
 	);
 
-	const currentTab = activeTab === 'tasks' ? 'tasks' : 'timeline';
+	const currentTab = ['timeline', 'tasks', 'notes'].includes(activeTab) ? activeTab : 'timeline';
 	const showTimeline = currentTab === 'timeline';
 	const showTasks = currentTab === 'tasks';
+	const showNotes = currentTab === 'notes';
 	const availableTasks = Array.isArray(tasks) ? tasks : [];
+	const availableNotes = Array.isArray(notes) ? notes : [];
 	const incompleteTaskCount = availableTasks.reduce((count, task) => {
 		if (!task || task.completed) {
 			return count;
@@ -487,13 +495,21 @@ const Timeline = ({
 	const tabs = [
 		{ key: 'timeline', label: 'タイムライン' },
 		{ key: 'tasks', label: 'タスク' },
+		{ key: 'notes', label: 'ノート' },
 	];
-	const isAddDisabled = showTasks ? !onAddTask : !onAdd;
+	const isAddDisabled = showTasks ? !onAddTask : showNotes ? !onAddNote : !onAdd;
 
 	const handleAddClick = () => {
 		if (showTasks) {
 			if (onAddTask) {
 				onAddTask();
+			}
+			return;
+		}
+
+		if (showNotes) {
+			if (onAddNote) {
+				onAddNote();
 			}
 			return;
 		}
@@ -861,7 +877,9 @@ const Timeline = ({
 					<span className="text-xs font-medium text-slate-400">
 						{showTasks
 							? `タスク ${incompleteTaskCount}件`
-							: `予定 ${timelineEntries.length}件`}
+							: showNotes
+								? `ノート ${availableNotes.length}件`
+								: `予定 ${timelineEntries.length}件`}
 					</span>
 				</div>
 				<button
@@ -871,7 +889,7 @@ const Timeline = ({
 					}`}
 					onClick={handleAddClick}
 					disabled={isAddDisabled}
-					title={showTasks ? 'タスクを追加' : '予定を追加'}
+					title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : '予定を追加'}
 				>
 					<span className="text-lg font-semibold leading-none">＋</span>
 				</button>
@@ -885,6 +903,14 @@ const Timeline = ({
 						onToggleTask={onToggleTask}
 						onTaskDelete={onScheduleDelete}
 						isAltPressed={isAltPressed}
+					/>
+				) : showNotes ? (
+					<NoteArea
+						notes={availableNotes}
+						onUpdateNote={onUpdateNote}
+						onDeleteNote={onDeleteNote}
+						isAltPressed={isAltPressed}
+						selectedDateStr={selectedDateStr}
 					/>
 				) : (
 					<div
