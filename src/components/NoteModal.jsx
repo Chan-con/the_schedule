@@ -22,12 +22,18 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
   const titleRef = useRef(null);
   const contentTextareaRef = useRef(null);
   const lastRightClickCaretRef = useRef(null);
+  const isTitleFocusedRef = useRef(false);
+  const isContentFocusedRef = useRef(false);
   const { user } = useAuth();
   const userId = user?.id || null;
   const [linkedNoteTitles, setLinkedNoteTitles] = useState(() => ({}));
   const [copied, setCopied] = useState(false);
   const [bodyCopied, setBodyCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftContent, setDraftContent] = useState('');
+  const [titleDirty, setTitleDirty] = useState(false);
+  const [contentDirty, setContentDirty] = useState(false);
 
   const canShareThisNote = !!canShare && !!note && note?.id != null && !note?.__isDraft;
 
@@ -86,8 +92,32 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
     setBodyCopied(false);
   }, [isOpen, note?.id]);
 
-  const title = typeof note?.title === 'string' ? note.title : '';
-  const content = typeof note?.content === 'string' ? note.content : '';
+  const noteId = note?.id ?? null;
+  const noteTitle = typeof note?.title === 'string' ? note.title : '';
+  const noteContent = typeof note?.content === 'string' ? note.content : '';
+
+  useEffect(() => {
+    if (!isOpen) return;
+    // ノート切替/初回オープン時だけドラフトを初期化
+    setDraftTitle(noteTitle);
+    setDraftContent(noteContent);
+    setTitleDirty(false);
+    setContentDirty(false);
+  }, [isOpen, noteContent, noteId, noteTitle]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    // 編集中（フォーカス中）は同期で上書きしない。非編集中だけ追従。
+    if (!titleDirty && !isTitleFocusedRef.current && draftTitle !== noteTitle) {
+      setDraftTitle(noteTitle);
+    }
+    if (!contentDirty && !isContentFocusedRef.current && draftContent !== noteContent) {
+      setDraftContent(noteContent);
+    }
+  }, [contentDirty, draftContent, draftTitle, isOpen, noteContent, noteTitle, titleDirty]);
+
+  const title = draftTitle;
+  const content = draftContent;
   const titleTrimmed = title.replace(/\r?\n/g, ' ').trim();
   const contentNormalized = content.replace(/\r\n/g, '\n');
   const contentTrimmed = contentNormalized.trim();
@@ -518,9 +548,19 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                     value={title}
                     placeholder="タイトル"
                     className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                    onFocus={() => {
+                      isTitleFocusedRef.current = true;
+                    }}
+                    onBlur={() => {
+                      isTitleFocusedRef.current = false;
+                      setTitleDirty(false);
+                    }}
                     onChange={(e) => {
+                      const next = e.target.value;
+                      setDraftTitle(next);
+                      setTitleDirty(true);
                       if (onUpdate && note?.id != null) {
-                        onUpdate(note.id, { title: e.target.value });
+                        onUpdate(note.id, { title: next });
                       }
                     }}
                   />
@@ -534,6 +574,13 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                     placeholder="本文"
                     className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
                     style={{ minHeight: '55vh' }}
+                    onFocus={() => {
+                      isContentFocusedRef.current = true;
+                    }}
+                    onBlur={() => {
+                      isContentFocusedRef.current = false;
+                      setContentDirty(false);
+                    }}
                     onMouseDown={(event) => {
                       if (event.button === 2) {
                         handleContentMouseDown();
@@ -546,8 +593,11 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                     }}
                     onContextMenu={handleContentContextMenu}
                     onChange={(e) => {
+                      const next = e.target.value;
+                      setDraftContent(next);
+                      setContentDirty(true);
                       if (onUpdate && note?.id != null) {
-                        onUpdate(note.id, { content: e.target.value });
+                        onUpdate(note.id, { content: next });
                       }
                     }}
                   />
