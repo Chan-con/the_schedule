@@ -263,12 +263,12 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
 
   return (
     <div
-      className="schedule-form-modal flex flex-col h-full w-full"
+      className="schedule-form-modal flex min-h-0 w-full flex-col"
       onWheel={(e) => {
         e.stopPropagation();
       }}
     >
-      <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-200 flex-shrink-0">
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 p-4 pb-3 sm:p-6 sm:pb-4">
         <h2 className="text-2xl font-bold text-gray-800">{modalTitle}</h2>
         <button
           onClick={onClose}
@@ -281,8 +281,8 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ minHeight: 0, maxHeight: 'calc(90vh - 160px)' }}>
-        <form id="schedule-form" onSubmit={handleSubmit} className="p-6 pt-4 space-y-5">
+      <div className="custom-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        <form id="schedule-form" onSubmit={handleSubmit} className="max-w-full space-y-5 p-4 pt-3 sm:p-6 sm:pt-4">
           <div className="space-y-3">
             <div className="bg-gray-50 border border-gray-200 rounded-2xl p-1 shadow-inner">
               <div className="grid grid-cols-2 gap-1">
@@ -433,7 +433,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                   return (
                     <div
                       key={index}
-                      className={`flex items-center gap-2 p-2 border border-gray-200 rounded-lg transition-colors ${
+                      className={`flex flex-wrap items-center gap-2 p-2 border border-gray-200 rounded-lg transition-colors ${
                         isPast ? 'bg-gray-100 opacity-60' : 'bg-white'
                       }`}
                     >
@@ -469,7 +469,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                         <option value="days" className="bg-white">日前</option>
                       </select>
                       <div
-                        className={`flex-grow text-sm ${
+                        className={`min-w-[7.5rem] flex-1 text-sm ${
                           isPast ? 'text-gray-400' : 'text-gray-600'
                         } bg-transparent`}
                       >
@@ -596,7 +596,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
         </form>
       </div>
 
-      <div className="border-t border-gray-200 p-4 flex-shrink-0 bg-white">
+      <div className="flex-shrink-0 border-t border-gray-200 bg-white p-3 sm:p-4">
         {formError && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2 mb-3">
             {formError}
