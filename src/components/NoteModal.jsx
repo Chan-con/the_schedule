@@ -7,7 +7,7 @@ const formatUpdatedDateTime = (value) => {
   return dt.toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
-const NoteModal = ({ isOpen, note, onClose, onUpdate }) => {
+const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive }) => {
   const titleRef = useRef(null);
 
   useEffect(() => {
@@ -57,6 +57,8 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate }) => {
   const title = typeof note?.title === 'string' ? note.title : '';
   const content = typeof note?.content === 'string' ? note.content : '';
   const updatedLabel = formatUpdatedDateTime(note?.updated_at);
+  const isArchived = !!note?.archived;
+  const canToggleArchive = !!note && note?.id != null && !note?.__isDraft;
 
   return (
     <div
@@ -80,16 +82,43 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate }) => {
               <div className="text-xs text-gray-500">{`更新: ${updatedLabel}`}</div>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => onClose && onClose()}
-            className="text-gray-500 hover:text-gray-800 p-2 rounded-full hover:bg-gray-100 bg-white border border-gray-200 transition-colors duration-200"
-            aria-label="閉じる"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!canToggleArchive}
+              onClick={() => {
+                if (!canToggleArchive) return;
+                if (onToggleArchive) {
+                  onToggleArchive(note, !isArchived);
+                  return;
+                }
+                if (onUpdate && note?.id != null) {
+                  onUpdate(note.id, { archived: !isArchived });
+                }
+              }}
+              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                !canToggleArchive
+                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
+                  : isArchived
+                    ? 'bg-indigo-500 border-indigo-600 text-white hover:bg-indigo-600'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
+              }`}
+              title={isArchived ? 'アーカイブから戻す' : 'アーカイブ'}
+            >
+              {isArchived ? 'アーカイブ解除' : 'アーカイブ'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onClose && onClose()}
+              className="text-gray-500 hover:text-gray-800 p-2 rounded-full hover:bg-gray-100 bg-white border border-gray-200 transition-colors duration-200"
+              aria-label="閉じる"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">

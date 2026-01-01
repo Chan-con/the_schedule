@@ -66,6 +66,7 @@ const Timeline = ({
 	onAddNote,
 	onUpdateNote,
 	onDeleteNote,
+		onToggleArchiveNote,
 	activeNoteId,
 	onActiveNoteIdChange,
 	onRequestCloseNote,
@@ -142,6 +143,12 @@ const Timeline = ({
 	const availableNotes = Array.isArray(notes) ? notes : [];
 	const incompleteTaskCount = availableTasks.reduce((count, task) => {
 		if (!task || task.completed) {
+			return count;
+		}
+		return count + 1;
+	}, 0);
+	const activeNoteCount = availableNotes.reduce((count, note) => {
+		if (!note || note.archived) {
 			return count;
 		}
 		return count + 1;
@@ -827,7 +834,7 @@ const Timeline = ({
 						{showTasks
 							? `タスク ${incompleteTaskCount}件`
 							: showNotes
-								? `ノート ${availableNotes.length}件`
+								? `ノート ${activeNoteCount}件`
 								: `予定 ${timelineEntries.length}件`}
 					</span>
 				</div>
@@ -858,6 +865,7 @@ const Timeline = ({
 						notes={availableNotes}
 						onUpdateNote={onUpdateNote}
 						onDeleteNote={onDeleteNote}
+						onToggleArchiveNote={onToggleArchiveNote}
 						isAltPressed={isAltPressed}
 						selectedDateStr={selectedDateStr}
 						activeNoteId={activeNoteId}

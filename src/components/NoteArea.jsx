@@ -24,6 +24,7 @@ const NoteArea = ({
   notes = [],
   onUpdateNote,
   onDeleteNote,
+  onToggleArchiveNote,
   isAltPressed = false,
   selectedDateStr = '',
   activeNoteId: controlledActiveNoteId,
@@ -94,6 +95,19 @@ const NoteArea = ({
     });
   }, [sortedNotes, query]);
 
+  const { activeNotes, archivedNotes } = useMemo(() => {
+    const active = [];
+    const archived = [];
+    (Array.isArray(filteredNotes) ? filteredNotes : []).forEach((note) => {
+      if (note?.archived) {
+        archived.push(note);
+      } else {
+        active.push(note);
+      }
+    });
+    return { activeNotes: active, archivedNotes: archived };
+  }, [filteredNotes]);
+
   const handleOpen = useCallback((noteId) => {
     if (noteId == null) return;
     setActiveNoteId(noteId);
@@ -104,11 +118,14 @@ const NoteArea = ({
     const noteId = note?.id ?? null;
     const title = normalizeText(note?.title);
     const updatedLabel = formatUpdatedDate(note?.updated_at);
+    const isArchived = !!note?.archived;
 
     return (
       <div
         key={noteId ?? `note-${Math.random()}`}
-        className="border border-gray-200 rounded-lg bg-white shadow-sm transition hover:shadow-md"
+        className={`border border-gray-200 rounded-lg bg-white shadow-sm transition hover:shadow-md ${
+          isArchived ? 'opacity-70' : ''
+        }`}
         onContextMenu={(event) => {
           if (!isAltPressed) return;
           event.preventDefault();
@@ -184,7 +201,17 @@ const NoteArea = ({
           </div>
         ) : (
           <div className="card-stack pt-1">
-            {filteredNotes.map((note) => renderNoteCard(note))}
+            {activeNotes.map((note) => renderNoteCard(note))}
+
+            {archivedNotes.length > 0 && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
+                <span className="flex-1 h-px bg-gray-200" />
+                <span className="tracking-wide">アーカイブ</span>
+                <span className="flex-1 h-px bg-gray-200" />
+              </div>
+            )}
+
+            {archivedNotes.map((note) => renderNoteCard(note))}
           </div>
         )}
       </div>
@@ -194,6 +221,7 @@ const NoteArea = ({
         note={activeNote}
         onClose={handleClose}
         onUpdate={onUpdateNote}
+        onToggleArchive={onToggleArchiveNote}
       />
     </div>
   );

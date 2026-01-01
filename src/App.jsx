@@ -52,10 +52,36 @@ const createTempId = () => Date.now();
 
 const QUICK_MEMO_STORAGE_KEY = 'quickMemoPadContent';
 const NOTES_STORAGE_KEY = 'notes';
+const NOTE_ARCHIVE_FLAGS_STORAGE_KEY = 'noteArchiveFlagsV1';
 const MEMO_SPLIT_STORAGE_KEY = 'memoSplitRatio';
 const DEFAULT_MEMO_SPLIT_RATIO = 70;
 const MEMO_TIMELINE_MIN = 35;
 const MEMO_TIMELINE_MAX = 90;
+
+const buildNoteArchiveUserKey = (userId) => (userId ? `u:${userId}` : 'local');
+
+const normalizeArchiveFlags = (value) => {
+  if (!value || typeof value !== 'object') return {};
+  const next = {};
+  Object.entries(value).forEach(([key, flag]) => {
+    if (flag) {
+      next[String(key)] = true;
+    }
+  });
+  return next;
+};
+
+const applyArchiveFlagsToNotes = (notes, flags) => {
+  const list = Array.isArray(notes) ? notes : [];
+  const safeFlags = normalizeArchiveFlags(flags);
+  return list.map((note) => {
+    const id = note?.id ?? null;
+    if (id == null) return note;
+    const explicit = note?.archived;
+    const archived = typeof explicit === 'boolean' ? explicit : !!safeFlags[String(id)];
+    return { ...note, archived };
+  });
+};
 
 const clampMemoSplitRatio = (value) => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -162,6 +188,40 @@ function App() {
     }
   }, []);
 
+  const loadNoteArchiveFlags = useCallback((userKey) => {
+    if (typeof window === 'undefined') {
+      return {};
+    }
+
+    const key = typeof userKey === 'string' && userKey ? userKey : 'local';
+    try {
+      const stored = window.localStorage.getItem(NOTE_ARCHIVE_FLAGS_STORAGE_KEY);
+      if (!stored) return {};
+      const parsed = JSON.parse(stored);
+      if (!parsed || typeof parsed !== 'object') return {};
+      return normalizeArchiveFlags(parsed[key]);
+    } catch (error) {
+      console.warn('⚠️ Failed to load note archive flags from localStorage:', error);
+      return {};
+    }
+  }, []);
+
+  const saveNoteArchiveFlags = useCallback((userKey, nextFlags) => {
+    if (typeof window === 'undefined') return;
+
+    const key = typeof userKey === 'string' && userKey ? userKey : 'local';
+    const safeNext = normalizeArchiveFlags(nextFlags);
+    try {
+      const stored = window.localStorage.getItem(NOTE_ARCHIVE_FLAGS_STORAGE_KEY);
+      const parsed = stored ? JSON.parse(stored) : {};
+      const root = parsed && typeof parsed === 'object' ? parsed : {};
+      root[key] = safeNext;
+      window.localStorage.setItem(NOTE_ARCHIVE_FLAGS_STORAGE_KEY, JSON.stringify(root));
+    } catch (error) {
+      console.warn('⚠️ Failed to persist note archive flags to localStorage:', error);
+    }
+  }, []);
+
   const initialLoadedSchedules = useMemo(() => loadLocalSchedules(), [loadLocalSchedules]);
   const historyApi = useHistory({ schedules: initialLoadedSchedules }, 100);
 
@@ -191,6 +251,11 @@ function App() {
 
   const auth = useContext(AuthContext);
   const userId = auth?.user?.id || null;
+  const noteArchiveUserKey = useMemo(() => buildNoteArchiveUserKey(userId), [userId]);
+  const noteArchiveFlagsRef = useRef({});
+  useEffect(() => {
+    noteArchiveFlagsRef.current = loadNoteArchiveFlags(noteArchiveUserKey);
+  }, [loadNoteArchiveFlags, noteArchiveUserKey]);
   const [isSupabaseSyncing, setIsSupabaseSyncing] = useState(false);
   const [supabaseError, setSupabaseError] = useState(null);
   const schedulesRef = useRef(schedules);
@@ -456,7 +521,7 @@ function App() {
       const nextNotes = allNotes
         .slice()
         .sort((a, b) => String(b?.updated_at ?? '').localeCompare(String(a?.updated_at ?? '')));
-      setNotes(nextNotes);
+      setNotes(applyArchiveFlagsToNotes(nextNotes, noteArchiveFlagsRef.current));
       return;
     }
 
@@ -478,7 +543,7 @@ function App() {
       const nextNotes = allNotes
         .slice()
         .sort((a, b) => String(b?.updated_at ?? '').localeCompare(String(a?.updated_at ?? '')));
-      setNotes(nextNotes);
+      setNotes(applyArchiveFlagsToNotes(nextNotes, noteArchiveFlagsRef.current));
       return;
     }
 
@@ -486,7 +551,7 @@ function App() {
     fetchNotesForUser(userId)
       .then((data) => {
         if (cancelled) return;
-        setNotes(Array.isArray(data) ? data : []);
+        setNotes(applyArchiveFlagsToNotes(Array.isArray(data) ? data : [], noteArchiveFlagsRef.current));
       })
       .catch((error) => {
         if (cancelled) return;
@@ -548,6 +613,7 @@ function App() {
       content: '',
       created_at: nowIso,
       updated_at: nowIso,
+      archived: false,
       __isDraft: !!userId,
     };
 
@@ -562,6 +628,36 @@ function App() {
       return;
     }
   }, [loadLocalNotes, refreshCalendarNoteDates, saveLocalNotes, selectedDateStr, userId]);
+
+  const handleToggleArchiveNote = useCallback((note, nextArchived) => {
+    if (!note) return;
+    const noteId = note?.id ?? null;
+    if (noteId == null) return;
+    if (note?.__isDraft) return;
+
+    const idKey = String(noteId);
+    const archived = !!nextArchived;
+    const nextFlags = { ...(noteArchiveFlagsRef.current || {}) };
+    if (archived) {
+      nextFlags[idKey] = true;
+    } else {
+      delete nextFlags[idKey];
+    }
+
+    noteArchiveFlagsRef.current = nextFlags;
+    saveNoteArchiveFlags(noteArchiveUserKey, nextFlags);
+
+    setNotes((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      return list.map((n) => ((n?.id ?? null) === noteId ? { ...n, archived } : n));
+    });
+
+    if (!userId) {
+      const allNotes = loadLocalNotes();
+      const nextAllNotes = allNotes.map((n) => ((n?.id ?? null) === noteId ? { ...n, archived } : n));
+      saveLocalNotes(nextAllNotes);
+    }
+  }, [loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteArchiveFlags, userId]);
 
   const handleUpdateNote = useCallback((noteId, patch) => {
     if (noteId == null) return;
@@ -610,7 +706,11 @@ function App() {
         const updated = await updateNoteForUser({ userId, id: noteId, patch: mergedPatch });
         setNotes((prev) => {
           const list = Array.isArray(prev) ? prev : [];
-          return list.map((note) => ((note?.id ?? null) === noteId ? updated : note));
+          return list.map((note) => {
+            if ((note?.id ?? null) !== noteId) return note;
+            const archived = typeof note?.archived === 'boolean' ? note.archived : !!noteArchiveFlagsRef.current?.[String(noteId)];
+            return { ...updated, archived };
+          });
         });
         setSupabaseError(null);
       } catch (error) {
@@ -672,7 +772,7 @@ function App() {
           refreshCalendarNoteDates().catch(() => {});
           try {
             const freshAll = await fetchNotesForUser(userId);
-            setNotes(Array.isArray(freshAll) ? freshAll : []);
+            setNotes(applyArchiveFlagsToNotes(Array.isArray(freshAll) ? freshAll : [], noteArchiveFlagsRef.current));
           } catch {
             // 失敗しても作成済みのローカル状態は維持
           }
@@ -706,7 +806,7 @@ function App() {
           refreshCalendarNoteDates().catch(() => {});
           try {
             const freshAll = await fetchNotesForUser(userId);
-            setNotes(Array.isArray(freshAll) ? freshAll : []);
+            setNotes(applyArchiveFlagsToNotes(Array.isArray(freshAll) ? freshAll : [], noteArchiveFlagsRef.current));
           } catch {
             // ignore
           }
@@ -742,12 +842,16 @@ function App() {
       .then(async (updated) => {
         setNotes((prev) => {
           const list = Array.isArray(prev) ? prev : [];
-          return list.map((note) => ((note?.id ?? null) === noteId ? updated : note));
+          return list.map((note) => {
+            if ((note?.id ?? null) !== noteId) return note;
+            const archived = typeof note?.archived === 'boolean' ? note.archived : !!noteArchiveFlagsRef.current?.[String(noteId)];
+            return { ...updated, archived };
+          });
         });
         setSupabaseError(null);
         try {
           const freshAll = await fetchNotesForUser(userId);
-          setNotes(Array.isArray(freshAll) ? freshAll : []);
+          setNotes(applyArchiveFlagsToNotes(Array.isArray(freshAll) ? freshAll : [], noteArchiveFlagsRef.current));
         } catch {
           // ignore
         }
@@ -785,7 +889,11 @@ function App() {
         if (cancelled) return;
         setNotes((prev) => {
           const list = Array.isArray(prev) ? prev : [];
-          return list.map((note) => ((note?.id ?? null) === activeNoteId ? fresh : note));
+          return list.map((note) => {
+            if ((note?.id ?? null) !== activeNoteId) return note;
+            const archived = typeof note?.archived === 'boolean' ? note.archived : !!noteArchiveFlagsRef.current?.[String(activeNoteId)];
+            return { ...fresh, archived };
+          });
         });
       })
       .catch((error) => {
@@ -1841,6 +1949,7 @@ function App() {
                           onAddNote={handleAddNote}
                           onUpdateNote={handleUpdateNote}
                           onDeleteNote={handleDeleteNote}
+                          onToggleArchiveNote={handleToggleArchiveNote}
                           activeNoteId={activeNoteId}
                           onActiveNoteIdChange={setActiveNoteId}
                           onRequestCloseNote={handleRequestCloseNote}
@@ -1950,6 +2059,7 @@ function App() {
                     onAddNote={handleAddNote}
                     onUpdateNote={handleUpdateNote}
                     onDeleteNote={handleDeleteNote}
+                    onToggleArchiveNote={handleToggleArchiveNote}
                     activeNoteId={activeNoteId}
                     onActiveNoteIdChange={setActiveNoteId}
                     onRequestCloseNote={handleRequestCloseNote}
