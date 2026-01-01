@@ -1070,6 +1070,12 @@ function App() {
     if (noteId == null) return;
     if (note?.__isDraft) return;
 
+    // ログイン中はDBへ同期
+    if (userId) {
+      handleUpdateNote(noteId, { important: !!nextImportant });
+      return;
+    }
+
     const idKey = String(noteId);
     const important = !!nextImportant;
     const nextFlags = { ...(noteImportantFlagsRef.current || {}) };
@@ -1090,7 +1096,7 @@ function App() {
     const allNotes = loadLocalNotes();
     const nextAllNotes = allNotes.map((n) => ((n?.id ?? null) === noteId ? { ...n, important } : n));
     saveLocalNotes(nextAllNotes);
-  }, [loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteImportantFlags]);
+  }, [handleUpdateNote, loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteImportantFlags, userId]);
 
   const handleRequestCloseNote = useCallback((noteId) => {
     setActiveNoteId(null);
