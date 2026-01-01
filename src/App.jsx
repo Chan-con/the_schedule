@@ -629,40 +629,6 @@ function App() {
     }
   }, [loadLocalNotes, refreshCalendarNoteDates, saveLocalNotes, selectedDateStr, userId]);
 
-  const handleToggleArchiveNote = useCallback((note, nextArchived) => {
-    if (!note) return;
-    const noteId = note?.id ?? null;
-    if (noteId == null) return;
-    if (note?.__isDraft) return;
-
-    // ログイン中はDBへ同期（Web/Electron間で共有）
-    if (userId) {
-      handleUpdateNote(noteId, { archived: !!nextArchived });
-      return;
-    }
-
-    const idKey = String(noteId);
-    const archived = !!nextArchived;
-    const nextFlags = { ...(noteArchiveFlagsRef.current || {}) };
-    if (archived) {
-      nextFlags[idKey] = true;
-    } else {
-      delete nextFlags[idKey];
-    }
-
-    noteArchiveFlagsRef.current = nextFlags;
-    saveNoteArchiveFlags(noteArchiveUserKey, nextFlags);
-
-    setNotes((prev) => {
-      const list = Array.isArray(prev) ? prev : [];
-      return list.map((n) => ((n?.id ?? null) === noteId ? { ...n, archived } : n));
-    });
-
-    const allNotes = loadLocalNotes();
-    const nextAllNotes = allNotes.map((n) => ((n?.id ?? null) === noteId ? { ...n, archived } : n));
-    saveLocalNotes(nextAllNotes);
-  }, [handleUpdateNote, loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteArchiveFlags, userId]);
-
   const handleUpdateNote = useCallback((noteId, patch) => {
     if (noteId == null) return;
     const safePatch = patch && typeof patch === 'object' ? patch : {};
@@ -727,6 +693,40 @@ function App() {
 
     timers.set(noteId, timeoutId);
   }, [beginSupabaseJob, endSupabaseJob, loadLocalNotes, saveLocalNotes, userId]);
+
+  const handleToggleArchiveNote = useCallback((note, nextArchived) => {
+    if (!note) return;
+    const noteId = note?.id ?? null;
+    if (noteId == null) return;
+    if (note?.__isDraft) return;
+
+    // ログイン中はDBへ同期（Web/Electron間で共有）
+    if (userId) {
+      handleUpdateNote(noteId, { archived: !!nextArchived });
+      return;
+    }
+
+    const idKey = String(noteId);
+    const archived = !!nextArchived;
+    const nextFlags = { ...(noteArchiveFlagsRef.current || {}) };
+    if (archived) {
+      nextFlags[idKey] = true;
+    } else {
+      delete nextFlags[idKey];
+    }
+
+    noteArchiveFlagsRef.current = nextFlags;
+    saveNoteArchiveFlags(noteArchiveUserKey, nextFlags);
+
+    setNotes((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      return list.map((n) => ((n?.id ?? null) === noteId ? { ...n, archived } : n));
+    });
+
+    const allNotes = loadLocalNotes();
+    const nextAllNotes = allNotes.map((n) => ((n?.id ?? null) === noteId ? { ...n, archived } : n));
+    saveLocalNotes(nextAllNotes);
+  }, [handleUpdateNote, loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteArchiveFlags, userId]);
 
   const handleRequestCloseNote = useCallback((noteId) => {
     setActiveNoteId(null);

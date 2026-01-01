@@ -2,6 +2,33 @@ const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, sh
 const path = require('path');
 const fs = require('fs');
 
+const ensureDirSync = (dirPath) => {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+  } catch (error) {
+    // ignore
+  }
+};
+
+// Windows環境でChromiumのDisk/GPUキャッシュ作成に失敗して
+// レンダラープロセスが落ちるケースがあるため、キャッシュ保存先を明示する。
+// (アクセス拒否で "Unable to create cache" が出る場合の回避)
+try {
+  const cacheRoot = path.join(app.getPath('userData'), 'chromium-cache');
+  const sessionRoot = path.join(cacheRoot, `session-${process.pid}`);
+  const diskCacheDir = path.join(sessionRoot, 'disk');
+  const gpuCacheDir = path.join(sessionRoot, 'gpu');
+
+  ensureDirSync(diskCacheDir);
+  ensureDirSync(gpuCacheDir);
+
+  app.commandLine.appendSwitch('disk-cache-dir', diskCacheDir);
+  app.commandLine.appendSwitch('gpu-disk-cache-dir', gpuCacheDir);
+  app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+} catch (error) {
+  console.error('[Cache] Failed to configure Chromium cache dirs:', error);
+}
+
 let mainWindow;
 let tray = null;
 let isQuitting = false;
@@ -121,18 +148,20 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
-    app.on('second-instance', (_event, argv) => {
-      const url = extractDeepLinkFromArgs(argv);
-      if (url) {
-        handleDeepLink(url);
-      }
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore();
-        }
-        showWindow();
-      }
-    });
+  app.on('second-instance', (_event, argv) => {
+    const url = extractDeepLinkFromArgs(argv);
+    if (url) {
+      handleDeepLink(url);
+    }
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createWindow();
+      return;
+    }
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    showWindow();
+  });
 }
 
 app.on('open-url', (event, url) => {
@@ -182,6 +211,11 @@ function createWindow() {
   // デバッグ用：読み込み失敗時のエラー表示
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Failed to load:', errorCode, errorDescription);
+  });
+
+  // デバッグ用：レンダラープロセスが落ちた理由を表示
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[Renderer] render-process-gone:', details);
   });
 
   mainWindow.webContents.on('did-finish-load', () => {
@@ -662,20 +696,7 @@ ipcMain.handle('cancel-all-notifications', () => {
   }
 });
 
-// 多重起動防止
-const gotTheLock = app.requestSingleInstanceLock();
-
-if (!gotTheLock) {
-  app.quit();
-} else {
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
-    // 2回目の起動時は既存のウィンドウを表示
-    if (mainWindow) {
-      showWindow();
-    }
-  });
-}
-
+if (gotSingleInstanceLock) {
 app.whenReady().then(() => {
   try {
     console.log('Electronアプリケーション起動中...');
@@ -732,6 +753,7 @@ app.whenReady().then(() => {
   console.error('アプリケーション起動に失敗:', error);
   process.exit(1);
 });
+}
 
 app.on('window-all-closed', () => {
   console.log('全てのウィンドウが閉じられました');
@@ -743,6 +765,11 @@ app.on('window-all-closed', () => {
     console.log('macOS: アプリケーション終了');
     app.quit();
   }
+});
+
+// デバッグ用：子プロセス（GPUなど）が落ちた理由を表示
+app.on('child-process-gone', (_event, details) => {
+  console.error('[Process] child-process-gone:', details);
 });
 
 app.on('before-quit', () => {
