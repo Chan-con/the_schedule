@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { buildNoteShareUrl, parseNoteIdFromUrl, setNoteHash } from '../utils/noteShare';
+import { getCachedNoteTitle, getNoteTitleCached } from '../utils/noteTitleCache';
+import { useAuth } from '../context/useAuth';
 
 const formatUpdatedDateTime = (value) => {
   if (!value) return '';
@@ -20,6 +22,9 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
   const titleRef = useRef(null);
   const contentTextareaRef = useRef(null);
   const lastRightClickCaretRef = useRef(null);
+  const { user } = useAuth();
+  const userId = user?.id || null;
+  const [linkedNoteTitles, setLinkedNoteTitles] = useState(() => ({}));
   const [copied, setCopied] = useState(false);
   const [bodyCopied, setBodyCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -192,6 +197,21 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
       const safeHref = typeof href === 'string' ? href : '';
       const sharedNoteId = parseNoteIdFromUrl(safeHref);
 
+      const childText = Array.isArray(children)
+        ? children.map((c) => (typeof c === 'string' ? c : '')).join('')
+        : (typeof children === 'string' ? children : '');
+
+      const resolvedTitle = (sharedNoteId != null && userId)
+        ? (linkedNoteTitles[String(sharedNoteId)] || getCachedNoteTitle({ userId, id: sharedNoteId }))
+        : null;
+
+      const shouldReplaceLabel = sharedNoteId != null
+        && !!resolvedTitle
+        && childText
+        && childText.trim() === safeHref;
+
+      const linkLabel = shouldReplaceLabel ? resolvedTitle : children;
+
       return (
         <a
           {...props}
@@ -228,12 +248,59 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
           }}
           title={safeHref}
         >
-          {children}
+          {linkLabel}
         </a>
       );
     },
-    []
+    [linkedNoteTitles, userId]
   );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!userId) return;
+
+    const urlPattern = /(https?:\/\/[^\s]+)/gi;
+    const matches = content.match(urlPattern) || [];
+    const ids = Array.from(
+      new Set(
+        matches
+          .map((rawUrl) => parseNoteIdFromUrl(rawUrl))
+          .filter((v) => v != null)
+          .map((v) => String(v))
+      )
+    );
+    if (ids.length === 0) return;
+
+    let cancelled = false;
+
+    const ensureTitles = async () => {
+      const updates = {};
+      const tasks = ids.map(async (id) => {
+        const cached = getCachedNoteTitle({ userId, id });
+        if (cached) {
+          updates[id] = cached;
+          return;
+        }
+        try {
+          const title = await getNoteTitleCached({ userId, id });
+          updates[id] = title;
+        } catch {
+          // ignore
+        }
+      });
+
+      await Promise.allSettled(tasks);
+      if (cancelled) return;
+      const keys = Object.keys(updates);
+      if (keys.length === 0) return;
+      setLinkedNoteTitles((prev) => ({ ...prev, ...updates }));
+    };
+
+    ensureTitles();
+    return () => {
+      cancelled = true;
+    };
+  }, [content, isOpen, userId]);
 
   const handleContentMouseDown = useCallback(() => {
     const el = contentTextareaRef.current;

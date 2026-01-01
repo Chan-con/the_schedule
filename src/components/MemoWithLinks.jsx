@@ -1,8 +1,14 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { parseNoteIdFromUrl, setNoteHash } from '../utils/noteShare';
+import { useAuth } from '../context/useAuth';
+import { getCachedNoteTitle, getNoteTitleCached } from '../utils/noteTitleCache';
 
 const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
-  if (!memo) return null;
+  const { user } = useAuth();
+  const userId = user?.id || null;
+  const [noteTitles, setNoteTitles] = useState(() => ({}));
+
+  const safeMemo = typeof memo === 'string' ? memo : '';
 
   const handleMouseEnter = () => {
     if (onHoverChange) {
@@ -17,7 +23,54 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
   };
 
   // 改行で分割して各行を処理
-  const lines = memo.split('\n');
+  const lines = safeMemo.split('\n');
+
+  const sharedNoteIds = useMemo(() => {
+    const ids = new Set();
+    const urlPattern = /(https?:\/\/[^\s]+)/gi;
+    const matches = safeMemo.match(urlPattern) || [];
+    matches.forEach((rawUrl) => {
+      const id = parseNoteIdFromUrl(rawUrl);
+      if (id != null) ids.add(String(id));
+    });
+    return Array.from(ids);
+  }, [safeMemo]);
+
+  useEffect(() => {
+    if (!userId) return;
+    if (sharedNoteIds.length === 0) return;
+
+    let cancelled = false;
+
+    const ensureTitles = async () => {
+      const updates = {};
+      const tasks = sharedNoteIds.map(async (id) => {
+        const cached = getCachedNoteTitle({ userId, id });
+        if (cached) {
+          updates[id] = cached;
+          return;
+        }
+        try {
+          const title = await getNoteTitleCached({ userId, id });
+          updates[id] = title;
+        } catch {
+          // ignore; fallback to URL display
+        }
+      });
+
+      await Promise.allSettled(tasks);
+      if (cancelled) return;
+
+      const keys = Object.keys(updates);
+      if (keys.length === 0) return;
+      setNoteTitles((prev) => ({ ...prev, ...updates }));
+    };
+
+    ensureTitles();
+    return () => {
+      cancelled = true;
+    };
+  }, [sharedNoteIds, userId]);
 
   const formatUrlForDisplay = (urlStr, maxLen = 30) => {
     try {
@@ -76,7 +129,9 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
           
           if (isUrl) {
             const sharedNoteId = parseNoteIdFromUrl(part);
-            const display = formatUrlForDisplay(part);
+            const display = sharedNoteId != null
+              ? (noteTitles[String(sharedNoteId)] || '共有ノート')
+              : formatUrlForDisplay(part);
             return (
               <a
                 key={`url-${lineIndex}-${partIndex}`}
@@ -125,6 +180,7 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
   };
 
   return (
+    safeMemo ? (
     <div 
       className={`${className} select-text`} 
       style={{ 
@@ -142,6 +198,7 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
         </React.Fragment>
       ))}
     </div>
+    ) : null
   );
 };
 
