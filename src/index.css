@@ -170,6 +170,18 @@ button:focus-visible {
   border-radius: 6px !important;
 }
 
+/* iOS Safariでdate/time inputが幅を主張してはみ出すのを防ぐ */
+.schedule-form-modal input[type="date"],
+.schedule-form-modal input[type="time"] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
 /* スクロールは維持しつつスクロールバーを非表示 */
 .no-scrollbar {
   scrollbar-width: none;
