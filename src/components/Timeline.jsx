@@ -68,6 +68,7 @@ const Timeline = ({
 	onUpdateNote,
 	onDeleteNote,
 	onToggleArchiveNote,
+	onToggleImportantNote,
 	canShareNotes = false,
 	activeNoteId,
 	onActiveNoteIdChange,
@@ -845,6 +846,7 @@ const Timeline = ({
 						onUpdateNote={onUpdateNote}
 						onDeleteNote={onDeleteNote}
 						onToggleArchiveNote={onToggleArchiveNote}
+						onToggleImportantNote={onToggleImportantNote}
 						canShare={canShareNotes}
 						isAltPressed={isAltPressed}
 						selectedDateStr={selectedDateStr}

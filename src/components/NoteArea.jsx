@@ -25,6 +25,7 @@ const NoteArea = ({
   onUpdateNote,
   onDeleteNote,
   onToggleArchiveNote,
+  onToggleImportantNote,
   canShare = false,
   isAltPressed = false,
   selectedDateStr = '',
@@ -110,6 +111,19 @@ const NoteArea = ({
     });
     return { activeNotes: active, archivedNotes: archived };
   }, [filteredNotes]);
+
+  const { importantNotes, normalActiveNotes } = useMemo(() => {
+    const important = [];
+    const normal = [];
+    (Array.isArray(activeNotes) ? activeNotes : []).forEach((note) => {
+      if (note?.important) {
+        important.push(note);
+      } else {
+        normal.push(note);
+      }
+    });
+    return { importantNotes: important, normalActiveNotes: normal };
+  }, [activeNotes]);
 
   const handleOpen = useCallback((noteId) => {
     if (noteId == null) return;
@@ -204,7 +218,25 @@ const NoteArea = ({
           </div>
         ) : (
           <div className="card-stack pt-1">
-            {activeNotes.map((note) => renderNoteCard(note))}
+            {importantNotes.length > 0 && (
+              <div className="mb-1 flex items-center gap-2 text-xs text-amber-600">
+                <span className="flex-1 h-px bg-amber-100" />
+                <span className="tracking-wide">重要</span>
+                <span className="flex-1 h-px bg-amber-100" />
+              </div>
+            )}
+
+            {importantNotes.map((note) => renderNoteCard(note))}
+
+            {importantNotes.length > 0 && normalActiveNotes.length > 0 && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-gray-300">
+                <span className="flex-1 h-px bg-gray-100" />
+                <span className="tracking-wide">すべて</span>
+                <span className="flex-1 h-px bg-gray-100" />
+              </div>
+            )}
+
+            {normalActiveNotes.map((note) => renderNoteCard(note))}
 
             {archivedNotes.length > 0 && (
               <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
@@ -225,6 +257,7 @@ const NoteArea = ({
         onClose={handleClose}
         onUpdate={onUpdateNote}
         onToggleArchive={onToggleArchiveNote}
+        onToggleImportant={onToggleImportantNote}
         canShare={canShare}
       />
     </div>

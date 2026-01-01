@@ -18,7 +18,7 @@ const formatUpdatedDateTime = (value) => {
   });
 };
 
-const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare = false }) => {
+const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleImportant, canShare = false }) => {
   const titleRef = useRef(null);
   const contentTextareaRef = useRef(null);
   const lastRightClickCaretRef = useRef(null);
@@ -93,7 +93,9 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
   const contentTrimmed = contentNormalized.trim();
   const updatedLabel = formatUpdatedDateTime(note?.updated_at);
   const isArchived = !!note?.archived;
+  const isImportant = !!note?.important;
   const canToggleArchive = !!note && note?.id != null && !note?.__isDraft;
+  const canToggleImportant = !!note && note?.id != null && !note?.__isDraft;
 
   const markdownBodyForCopy = useMemo(() => {
     const parts = [];
@@ -427,6 +429,30 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
                   <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
                 </svg>
               )}
+            </button>
+
+            <button
+              type="button"
+              disabled={!canToggleImportant}
+              onClick={() => {
+                if (!canToggleImportant) return;
+                if (onToggleImportant) {
+                  onToggleImportant(note, !isImportant);
+                }
+              }}
+              className={`inline-flex h-9 w-9 p-1 items-center justify-center rounded-full border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                !canToggleImportant
+                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
+                  : isImportant
+                    ? 'bg-amber-400 border-amber-500 text-white hover:bg-amber-500'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-amber-50'
+              }`}
+              title={isImportant ? '重要を外す' : '重要'}
+              aria-label={isImportant ? '重要を外す' : '重要'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0" viewBox="0 0 24 24" fill={isImportant ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
             </button>
 
             <button
