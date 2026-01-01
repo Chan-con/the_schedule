@@ -15,6 +15,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
   const contentTextareaRef = useRef(null);
   const lastRightClickCaretRef = useRef(null);
   const [copied, setCopied] = useState(false);
+  const [bodyCopied, setBodyCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
   const canShareThisNote = !!canShare && !!note && note?.id != null && !note?.__isDraft;
@@ -70,13 +71,31 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
     if (!isOpen) return;
     // デフォルトは表示モード
     setIsEditing(false);
+    setBodyCopied(false);
   }, [isOpen, note?.id]);
 
   const title = typeof note?.title === 'string' ? note.title : '';
   const content = typeof note?.content === 'string' ? note.content : '';
+  const titleTrimmed = title.replace(/\r?\n/g, ' ').trim();
+  const contentNormalized = content.replace(/\r\n/g, '\n');
+  const contentTrimmed = contentNormalized.trim();
   const updatedLabel = formatUpdatedDateTime(note?.updated_at);
   const isArchived = !!note?.archived;
   const canToggleArchive = !!note && note?.id != null && !note?.__isDraft;
+
+  const markdownBodyForCopy = useMemo(() => {
+    const parts = [];
+    if (titleTrimmed) {
+      parts.push(`# ${titleTrimmed}`);
+    }
+    if (contentTrimmed) {
+      parts.push(contentNormalized);
+    }
+    if (parts.length === 0) return '';
+    return `${parts.join('\n\n').trimEnd()}\n`;
+  }, [contentNormalized, contentTrimmed, titleTrimmed]);
+
+  const canCopyMarkdownBody = !!markdownBodyForCopy;
 
   const extractUrlAt = useCallback((text, caretIndex) => {
     if (typeof text !== 'string' || !text) return null;
@@ -139,6 +158,30 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
       console.error('[Share] Failed to copy note URL:', error);
     }
   }, [canShareThisNote, shareUrl]);
+
+  const handleCopyMarkdownBody = useCallback(async () => {
+    if (!canCopyMarkdownBody) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(markdownBodyForCopy);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = markdownBodyForCopy;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '-1000px';
+        textarea.style.left = '-1000px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setBodyCopied(true);
+      window.setTimeout(() => setBodyCopied(false), 1500);
+    } catch (error) {
+      console.error('[Note] Failed to copy markdown body:', error);
+    }
+  }, [canCopyMarkdownBody, markdownBodyForCopy]);
 
   const renderMarkdownLink = useCallback(
     ({ href, children, ...props }) => {
@@ -286,6 +329,20 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, canShare 
               title={isArchived ? 'アーカイブから戻す' : 'アーカイブ'}
             >
               {isArchived ? 'アーカイブ解除' : 'アーカイブ'}
+            </button>
+
+            <button
+              type="button"
+              disabled={!canCopyMarkdownBody}
+              onClick={handleCopyMarkdownBody}
+              className={`inline-flex items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                !canCopyMarkdownBody
+                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
+              }`}
+              title={canCopyMarkdownBody ? (bodyCopied ? 'コピーしました' : '本文をMarkdownでコピー') : '本文が空です'}
+            >
+              {bodyCopied ? 'コピー済み' : '本文コピー'}
             </button>
 
             <button
