@@ -265,7 +265,7 @@ const runCron = async (env) => {
         if (!fireAt) continue;
 
         const diff = fireAt.getTime() - now.getTime();
-        if (diff < 0 || diff > windowMs) continue;
+        if (diff < -windowMs || diff > windowMs) continue;
 
         const fireAtIso = fireAt.toISOString();
         const shouldSend = await tryInsertSendLog({
