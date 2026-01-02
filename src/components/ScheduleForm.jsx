@@ -29,15 +29,22 @@ const createInitialFormData = (schedule) => {
 const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotification }) => {
   const [formData, setFormData] = useState(() => createInitialFormData(schedule));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [copyMode, setCopyMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [formError, setFormError] = useState(null);
   const nameInputRef = useRef(null);
+  const dateInputRef = useRef(null);
+  const copySnapshotRef = useRef(null);
+  const copyTriggeredRef = useRef(false);
   const isTaskMode = !!formData.isTask;
 
   useEffect(() => {
     setFormData(createInitialFormData(schedule));
     setShowDeleteConfirm(false);
+    setCopyMode(false);
+    copySnapshotRef.current = null;
+    copyTriggeredRef.current = false;
     setIsSaving(false);
     setIsDeleting(false);
     setFormError(null);
@@ -95,6 +102,58 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
     }
 
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleCopyClick = () => {
+    if (!onSave || isSaving || isDeleting) return;
+    if (!formData.id) return;
+
+    setFormError(null);
+    setShowDeleteConfirm(false);
+    setCopyMode(true);
+    copySnapshotRef.current = { ...formData };
+    copyTriggeredRef.current = false;
+
+    // 次に日付だけ選んでもらう
+    setTimeout(() => {
+      dateInputRef.current?.focus();
+      try {
+        dateInputRef.current?.select?.();
+      } catch {
+        // ignore
+      }
+    }, 0);
+  };
+
+  const handleDateChange = async (e) => {
+    const nextDate = e.target.value;
+    setFormData((prev) => ({ ...prev, date: nextDate }));
+
+    // コピー中でないなら通常の編集
+    if (!copyMode) return;
+    if (!onSave || isSaving || isDeleting) return;
+    if (copyTriggeredRef.current) return;
+
+    const snapshot = copySnapshotRef.current;
+    if (!snapshot) return;
+
+    copyTriggeredRef.current = true;
+    setFormError(null);
+    setIsSaving(true);
+
+    try {
+      const copyPayload = {
+        ...snapshot,
+        id: null,
+        date: nextDate,
+      };
+      await onSave(copyPayload);
+    } catch (error) {
+      console.error('❌ Failed to copy schedule:', error);
+      setFormError(error?.message || 'コピーに失敗しました。');
+      copyTriggeredRef.current = false;
+      setIsSaving(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -368,10 +427,11 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
           <div>
             <label className="block text-gray-700 font-medium mb-2">日付</label>
             <input
+              ref={dateInputRef}
               type="date"
               name="date"
               value={formData.date}
-              onChange={handleChange}
+              onChange={handleDateChange}
               className="w-full min-w-0 max-w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
               required
             />
@@ -641,18 +701,31 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
           </div>
         ) : (
           <div className="flex justify-between items-center">
-            {onDelete && formData.id ? (
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(true)}
-                disabled={isSaving || isDeleting}
-                className={`text-red-600 font-medium bg-white border border-red-200 px-2.5 py-1.5 rounded text-sm transition-colors duration-200 ${isSaving || isDeleting ? 'opacity-60 cursor-not-allowed' : 'hover:text-red-800 hover:bg-red-50'}`}
-              >
-                削除
-              </button>
-            ) : (
-              <div></div>
-            )}
+            <div className="flex items-center gap-2">
+              {onDelete && formData.id ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={isSaving || isDeleting || copyMode}
+                    className={`text-red-600 font-medium bg-white border border-red-200 px-2.5 py-1.5 rounded text-sm transition-colors duration-200 ${isSaving || isDeleting || copyMode ? 'opacity-60 cursor-not-allowed' : 'hover:text-red-800 hover:bg-red-50'}`}
+                  >
+                    削除
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyClick}
+                    disabled={isSaving || isDeleting}
+                    className={`text-gray-700 font-medium bg-white border border-gray-300 px-2.5 py-1.5 rounded text-sm transition-colors duration-200 ${isSaving || isDeleting ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                    title="日付を選んで同じ内容をコピー"
+                  >
+                    コピー
+                  </button>
+                </>
+              ) : (
+                <div />
+              )}
+            </div>
 
             <div className="flex gap-2">
               <button
