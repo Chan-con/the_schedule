@@ -432,8 +432,8 @@ function App() {
   const [isMobile, setIsMobile] = useState(false);
   const [timelineActiveTab, setTimelineActiveTab] = useState('timeline');
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
-  const [touchStart, setTouchStart] = useState(null);
-  const [touchEnd, setTouchEnd] = useState(null);
+  const touchStartRef = useRef(null);
+  const touchEndRef = useRef(null);
   const [mouseStart, setMouseStart] = useState(null);
   const [mouseEnd, setMouseEnd] = useState(null);
   const [isMouseDown, setIsMouseDown] = useState(false);
@@ -1696,22 +1696,41 @@ function App() {
 
   // スワイプジェスチャーのハンドラー
   const handleTouchStart = (e) => {
-    setTouchEnd(null);
-    setTouchStart(e.targetTouches[0].clientX);
+    if (!e?.targetTouches || e.targetTouches.length === 0) return;
+    touchEndRef.current = null;
+    touchStartRef.current = {
+      x: e.targetTouches[0].clientX,
+      y: e.targetTouches[0].clientY,
+    };
   };
 
   const handleTouchMove = (e) => {
-    setTouchEnd(e.targetTouches[0].clientX);
+    if (!e?.targetTouches || e.targetTouches.length === 0) return;
+    touchEndRef.current = {
+      x: e.targetTouches[0].clientX,
+      y: e.targetTouches[0].clientY,
+    };
   };
 
   const handleTouchEnd = () => {
-    if (!touchStart || !touchEnd) return;
-    
-    const distance = touchStart - touchEnd;
-    const isRightSwipe = distance < -50;
-    
+    const start = touchStartRef.current;
+    const end = touchEndRef.current;
+    touchStartRef.current = null;
+    touchEndRef.current = null;
+
+    if (!start || !end) return;
+
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    // 縦スクロール中の誤判定を避ける: 横移動が十分大きく、かつ縦移動より優勢な場合のみ
+    const isMostlyHorizontal = absDx > 70 && absDx > absDy * 1.4;
+    const isRightSwipe = dx > 70;
+
     // 左から右へのスワイプでタイムラインを閉じる
-    if (isRightSwipe) {
+    if (isMostlyHorizontal && isRightSwipe) {
       closeTimeline();
     }
   };
