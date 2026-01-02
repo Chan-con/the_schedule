@@ -1835,8 +1835,8 @@ function App() {
       setSelectedDate(date);
     }
 
-    // 予定ならタイムライン、タスクならタスクタブ
-    setTimelineActiveTab(schedule?.isTask ? 'tasks' : 'timeline');
+    // カレンダー上のタップは、タスクでもタイムラインを開く
+    setTimelineActiveTab('timeline');
 
     if (isMobile) {
       setIsTimelineOpen(true);
