@@ -26,7 +26,7 @@ const createInitialFormData = (schedule) => {
   return base;
 };
 
-const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotification }) => {
+const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotification, onAfterCopy }) => {
   const [formData, setFormData] = useState(() => createInitialFormData(schedule));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [copyMode, setCopyMode] = useState(false);
@@ -148,6 +148,10 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
         date: nextDate,
       };
       await onSave(copyPayload);
+
+      if (typeof onAfterCopy === 'function') {
+        onAfterCopy();
+      }
     } catch (error) {
       console.error('❌ Failed to copy schedule:', error);
       setFormError(error?.message || 'コピーに失敗しました。');

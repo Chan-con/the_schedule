@@ -2708,6 +2708,7 @@ function App() {
               onClose={handleClose} 
               onDelete={editingSchedule?.id ? handleDelete : undefined}
               sendTestNotification={sendTestNotification}
+              onAfterCopy={isMobile ? closeTimeline : undefined}
             />
           </div>
         </div>
