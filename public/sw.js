@@ -48,16 +48,23 @@ self.addEventListener('notificationclick', (event) => {
     const targetUrl = new URL(String(url), self.location.origin).toString();
 
     const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const client of clientList) {
+    const windowClients = clientList.filter((c) => c && 'focus' in c);
+
+    // 既に開いているタブがあれば「表示中/フォーカス中」を優先して使う
+    const preferredClient =
+      windowClients.find((c) => c.focused) ||
+      windowClients.find((c) => c.visibilityState === 'visible') ||
+      windowClients[0];
+
+    if (preferredClient) {
       try {
-        if ('focus' in client) {
-          // 既に開いているタブがあればそこを使う
-          client.navigate(targetUrl).catch(() => {});
-          await client.focus();
-          return;
+        if (preferredClient.url !== targetUrl && 'navigate' in preferredClient) {
+          preferredClient.navigate(targetUrl).catch(() => {});
         }
+        await preferredClient.focus();
+        return;
       } catch {
-        // ignore
+        // fallthrough to openWindow
       }
     }
 
