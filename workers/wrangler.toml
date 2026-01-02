@@ -1,0 +1,16 @@
+name = "the-schedule-push"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# 1分おき（必要に応じて調整）
+triggers = { crons = ["* * * * *"] }
+
+[vars]
+# PUBLIC_APP_URL = "https://the-schedule.pages.dev"
+# ADMIN_CONTACT = "mailto:you@example.com"
+
+# Secrets (wrangler secret put ...)
+# SUPABASE_URL
+# SUPABASE_SERVICE_ROLE_KEY
+# VAPID_PUBLIC_KEY
+# VAPID_PRIVATE_KEY_PKCS8

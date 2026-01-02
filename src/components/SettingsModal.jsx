@@ -1,6 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../context/useAuth';
+import {
+  getExistingPushSubscription,
+  isPushSupported,
+  subscribePush,
+  unsubscribePush,
+} from '../utils/push';
+import {
+  deactivatePushSubscriptionForUser,
+  upsertPushSubscriptionForUser,
+} from '../utils/supabasePushSubscriptions';
 
 const SettingsModal = ({ isOpen, onClose }) => {
+  const auth = useAuth();
+  const userId = auth?.user?.id || null;
   const [shortcuts, setShortcuts] = useState({
     undo: 'Control+Z',
     redo: 'Control+Shift+Z',
@@ -11,6 +24,59 @@ const SettingsModal = ({ isOpen, onClose }) => {
   const shortcutRefs = useRef({});
   // 重複などのエラー保持
   const [shortcutErrors, setShortcutErrors] = useState({});
+
+  const [pushStatus, setPushStatus] = useState({
+    supported: false,
+    permission: typeof Notification !== 'undefined' ? Notification.permission : 'default',
+    subscribed: false,
+    isBusy: false,
+    error: null,
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+
+    const refreshPushState = async () => {
+      const supported = isPushSupported();
+      const permission = typeof Notification !== 'undefined' ? Notification.permission : 'default';
+      if (!supported) {
+        if (!cancelled) {
+          setPushStatus((prev) => ({
+            ...prev,
+            supported,
+            permission,
+            subscribed: false,
+          }));
+        }
+        return;
+      }
+
+      try {
+        const sub = await getExistingPushSubscription();
+        if (cancelled) return;
+        setPushStatus((prev) => ({
+          ...prev,
+          supported,
+          permission,
+          subscribed: !!sub,
+        }));
+      } catch {
+        if (cancelled) return;
+        setPushStatus((prev) => ({
+          ...prev,
+          supported,
+          permission,
+          subscribed: false,
+        }));
+      }
+    };
+
+    refreshPushState();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     // ショートカット設定の読み込み
@@ -67,6 +133,67 @@ const SettingsModal = ({ isOpen, onClose }) => {
   const handleSave = async () => {
     localStorage.setItem('scheduleAppShortcuts', JSON.stringify(shortcuts));
     onClose();
+  };
+
+  const handleEnablePush = async () => {
+    if (pushStatus.isBusy) return;
+    setPushStatus((prev) => ({ ...prev, isBusy: true, error: null }));
+    try {
+      if (!userId) {
+        throw new Error('Push通知を有効化するにはログインが必要です。');
+      }
+
+      const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+      const sub = await subscribePush({ vapidPublicKey });
+
+      const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
+      await upsertPushSubscriptionForUser({
+        userId,
+        subscription: sub?.toJSON ? sub.toJSON() : sub,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+        timezoneOffsetMinutes,
+      });
+
+      setPushStatus((prev) => ({
+        ...prev,
+        permission: typeof Notification !== 'undefined' ? Notification.permission : prev.permission,
+        subscribed: true,
+      }));
+    } catch (error) {
+      setPushStatus((prev) => ({
+        ...prev,
+        error: error?.message || 'Push通知の有効化に失敗しました。',
+      }));
+    } finally {
+      setPushStatus((prev) => ({ ...prev, isBusy: false }));
+    }
+  };
+
+  const handleDisablePush = async () => {
+    if (pushStatus.isBusy) return;
+    setPushStatus((prev) => ({ ...prev, isBusy: true, error: null }));
+    try {
+      const existing = await getExistingPushSubscription();
+      const endpoint = existing?.endpoint || null;
+
+      if (userId && endpoint) {
+        await deactivatePushSubscriptionForUser({ userId, endpoint });
+      }
+
+      await unsubscribePush();
+      setPushStatus((prev) => ({
+        ...prev,
+        permission: typeof Notification !== 'undefined' ? Notification.permission : prev.permission,
+        subscribed: false,
+      }));
+    } catch (error) {
+      setPushStatus((prev) => ({
+        ...prev,
+        error: error?.message || 'Push通知の無効化に失敗しました。',
+      }));
+    } finally {
+      setPushStatus((prev) => ({ ...prev, isBusy: false }));
+    }
   };
 
   // ショートカットキー入力の処理
@@ -219,6 +346,58 @@ const SettingsModal = ({ isOpen, onClose }) => {
             e.stopPropagation();
           }}
         >
+          {/* Push通知 */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Push通知（ブラウザを閉じても届く）</h3>
+
+            {!pushStatus.supported ? (
+              <p className="text-xs text-gray-600">
+                この端末/ブラウザはPush通知に対応していません。
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-600">
+                  状態: {pushStatus.subscribed ? '有効' : '無効'} / 権限: {String(pushStatus.permission)}
+                </p>
+
+                {pushStatus.error && (
+                  <p className="text-xs text-red-600 font-medium">{pushStatus.error}</p>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleEnablePush}
+                    disabled={pushStatus.isBusy || pushStatus.subscribed}
+                    className={`px-4 py-2 text-sm font-medium rounded-md border transition-all duration-200 ${
+                      pushStatus.isBusy || pushStatus.subscribed
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
+                    }`}
+                  >
+                    有効化
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisablePush}
+                    disabled={pushStatus.isBusy || !pushStatus.subscribed}
+                    className={`px-4 py-2 text-sm font-medium rounded-md border transition-all duration-200 ${
+                      pushStatus.isBusy || !pushStatus.subscribed
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    無効化
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-600">
+                  iOS Safari は「ホーム画面に追加」したアプリから有効化してください。
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* ホットキー設定 */}
           <div>
             <h3 className="text-sm font-medium text-gray-700 mb-3">アプリ内ショートカット</h3>

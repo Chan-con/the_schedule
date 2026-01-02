@@ -1,0 +1,16 @@
+{
+  "name": "the_schedule-workers",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "webpush-webcrypto": "^1.0.5"
+  },
+  "devDependencies": {
+    "wrangler": "^4.54.0"
+  }
+}

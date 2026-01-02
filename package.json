@@ -12,6 +12,10 @@
     "prebuild": "node scripts/copy-web-assets.cjs",
     "dev": "vite",
     "start": "npm run dev",
+    "workers:install": "npm --prefix workers install",
+    "workers:dev": "npm --prefix workers run dev -- --test-scheduled",
+    "workers:deploy": "npm --prefix workers run deploy",
+    "workers:tail": "npm --prefix workers run tail",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
