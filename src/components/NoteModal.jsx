@@ -35,6 +35,48 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
   const [titleDirty, setTitleDirty] = useState(false);
   const [contentDirty, setContentDirty] = useState(false);
 
+  const noteId = note?.id ?? null;
+  const noteTitle = typeof note?.title === 'string' ? note.title : '';
+  const noteContent = typeof note?.content === 'string' ? note.content : '';
+
+  const persistDraftIfNeeded = useCallback(() => {
+    if (!onUpdate) return;
+    if (!note || note?.id == null) return;
+
+    const patch = {};
+    if (draftTitle !== noteTitle) patch.title = draftTitle;
+    if (draftContent !== noteContent) patch.content = draftContent;
+
+    if (Object.keys(patch).length === 0) return;
+
+    try {
+      onUpdate(note.id, patch);
+      setTitleDirty(false);
+      setContentDirty(false);
+    } catch (error) {
+      console.error('[Note] Failed to persist draft:', error);
+    }
+  }, [draftContent, draftTitle, note, noteContent, noteTitle, onUpdate]);
+
+  const requestClose = useCallback(() => {
+    if (isEditing) {
+      const ok = window.confirm('編集モードのまま閉じると、変更は保存されません。閉じますか？');
+      if (!ok) return;
+    }
+    if (onClose) onClose();
+  }, [isEditing, onClose]);
+
+  const handleToggleEditing = useCallback(() => {
+    setIsEditing((prev) => {
+      // 編集→表示: このタイミングで保存
+      if (prev) {
+        persistDraftIfNeeded();
+        return false;
+      }
+      return true;
+    });
+  }, [persistDraftIfNeeded]);
+
   const canShareThisNote = !!canShare && !!note && note?.id != null && !note?.__isDraft;
 
   const shareUrl = useMemo(() => {
@@ -48,7 +90,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
     const handleEsc = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (onClose) onClose();
+        requestClose();
       }
     };
 
@@ -74,7 +116,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
       document.removeEventListener('wheel', preventAllScroll, { capture: true });
       document.removeEventListener('touchmove', preventAllScroll, { capture: true });
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, requestClose]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -91,10 +133,6 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
     setCopied(false);
     setBodyCopied(false);
   }, [isOpen, note?.id]);
-
-  const noteId = note?.id ?? null;
-  const noteTitle = typeof note?.title === 'string' ? note.title : '';
-  const noteContent = typeof note?.content === 'string' ? note.content : '';
 
   useEffect(() => {
     if (!isOpen) return;
@@ -377,8 +415,8 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
       role="dialog"
       aria-modal="true"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && onClose) {
-          onClose();
+        if (e.target === e.currentTarget) {
+          requestClose();
         }
       }}
     >
@@ -443,7 +481,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
 
             <button
               type="button"
-              onClick={() => setIsEditing((prev) => !prev)}
+              onClick={handleToggleEditing}
               className="inline-flex h-9 w-9 p-1 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-colors duration-200 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
               title={isEditing ? '表示モードへ' : '編集モードへ'}
               aria-label={isEditing ? '表示モードへ' : '編集モードへ'}
@@ -525,7 +563,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
 
             <button
               type="button"
-              onClick={() => onClose && onClose()}
+              onClick={requestClose}
               className="text-gray-500 hover:text-gray-800 p-2 rounded-full hover:bg-gray-100 bg-white border border-gray-200 transition-colors duration-200"
               aria-label="閉じる"
             >
@@ -553,15 +591,11 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                     }}
                     onBlur={() => {
                       isTitleFocusedRef.current = false;
-                      setTitleDirty(false);
                     }}
                     onChange={(e) => {
                       const next = e.target.value;
                       setDraftTitle(next);
-                      setTitleDirty(true);
-                      if (onUpdate && note?.id != null) {
-                        onUpdate(note.id, { title: next });
-                      }
+                      setTitleDirty(next !== noteTitle);
                     }}
                   />
                 </div>
@@ -579,7 +613,6 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                     }}
                     onBlur={() => {
                       isContentFocusedRef.current = false;
-                      setContentDirty(false);
                     }}
                     onMouseDown={(event) => {
                       if (event.button === 2) {
@@ -595,10 +628,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                     onChange={(e) => {
                       const next = e.target.value;
                       setDraftContent(next);
-                      setContentDirty(true);
-                      if (onUpdate && note?.id != null) {
-                        onUpdate(note.id, { content: next });
-                      }
+                      setContentDirty(next !== noteContent);
                     }}
                   />
                 </div>
