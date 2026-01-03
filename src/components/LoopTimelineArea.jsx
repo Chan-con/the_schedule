@@ -119,6 +119,8 @@ const LoopTimelineArea = ({
   onUpdateMarker,
   onDeleteMarker,
 }) => {
+  const cardRef = useRef(null);
+  const scrollAreaRef = useRef(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 250);
@@ -244,6 +246,43 @@ const LoopTimelineArea = ({
   const lineBottomPadPx = 22;
   const usableLineHeight = Math.max(1, lineHeight - lineTopPadPx - lineBottomPadPx);
   const dotY = Math.round(lineTopPadPx + progressRatio * usableLineHeight);
+
+  const [countdownOverlayPos, setCountdownOverlayPos] = useState(null);
+  const updateCountdownOverlayPos = useCallback(() => {
+    const cardEl = cardRef.current;
+    const lineEl = lineContainerRef.current;
+    if (!cardEl || !lineEl) return;
+    const cardRect = cardEl.getBoundingClientRect();
+    const lineRect = lineEl.getBoundingClientRect();
+    const top = Math.round((lineRect.top - cardRect.top) + dotY);
+    const left = Math.round((lineRect.left - cardRect.left) + (lineRect.width / 2));
+    setCountdownOverlayPos({ top, left });
+  }, [dotY]);
+
+  useEffect(() => {
+    if (!scheduled) {
+      setCountdownOverlayPos(null);
+      return;
+    }
+
+    updateCountdownOverlayPos();
+    const scrollEl = scrollAreaRef.current;
+
+    const onScroll = () => updateCountdownOverlayPos();
+    const onResize = () => updateCountdownOverlayPos();
+
+    if (scrollEl) {
+      scrollEl.addEventListener('scroll', onScroll, { passive: true });
+    }
+    window.addEventListener('resize', onResize);
+
+    return () => {
+      if (scrollEl) {
+        scrollEl.removeEventListener('scroll', onScroll);
+      }
+      window.removeEventListener('resize', onResize);
+    };
+  }, [scheduled, updateCountdownOverlayPos]);
 
   const canWrite = canShare && typeof onSaveState === 'function';
 
@@ -497,8 +536,8 @@ const LoopTimelineArea = ({
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
       <div className="flex-1 min-h-0 overflow-hidden p-3">
-        <div className="flex h-full min-h-0 flex-col rounded-xl border border-slate-200 bg-white p-3">
-          <div className="flex items-center justify-end">
+        <div ref={cardRef} className="relative flex h-full min-h-0 flex-col rounded-xl border border-slate-200 bg-white p-3">
+          <div className="relative z-10 flex items-center justify-end">
             <div className="flex items-center gap-2">
               <div className="relative">
                 <div
@@ -579,7 +618,25 @@ const LoopTimelineArea = ({
               </button>
             </div>
           </div>
-          <div className="custom-scrollbar-auto mt-3 flex-1 min-h-0 overflow-auto">
+
+          {scheduled && countdownOverlayPos && (
+            <div
+              className="pointer-events-none absolute z-20 -translate-x-1/2"
+              style={{ top: `${countdownOverlayPos.top}px`, left: `${countdownOverlayPos.left}px` }}
+            >
+              <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2">
+                <div className="relative select-none rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">
+                  {formatMmSs(countdownMs)}
+                  <span
+                    className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-4 border-t-4 border-x-transparent border-t-slate-900"
+                    aria-hidden="true"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div ref={scrollAreaRef} className="custom-scrollbar-auto mt-3 flex-1 min-h-0 overflow-auto">
             <div className="flex min-h-full gap-4">
               <div
                 ref={lineContainerRef}
@@ -628,23 +685,6 @@ const LoopTimelineArea = ({
                 style={{ top: `${dotY}px` }}
                 title={running ? `現在: ${Math.floor(loopMinutes)}分` : '停止中'}
               />
-
-              {scheduled && (
-                <div
-                  className="pointer-events-none absolute left-1/2 -translate-x-1/2"
-                  style={{ top: `${dotY}px` }}
-                >
-                  <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2">
-                    <div className="relative select-none rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">
-                      {formatMmSs(countdownMs)}
-                      <span
-                        className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-4 border-t-4 border-x-transparent border-t-slate-900"
-                        aria-hidden="true"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
 
                 {safeMarkers.map((m) => {
                   const offset = clampInt(m?.offset_minutes ?? 0, { min: 0, max: durationMinutes, fallback: 0 });
