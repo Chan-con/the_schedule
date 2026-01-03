@@ -13,6 +13,13 @@ import CornerFloatingMenu from './components/CornerFloatingMenu';
 import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQuickMemo';
 import { supabase } from './lib/supabaseClient';
 import {
+  fetchLoopTimelineMarkersForUser,
+  fetchLoopTimelineStateForUser,
+  saveLoopTimelineStateForUser,
+  createLoopTimelineMarkerForUser,
+  deleteLoopTimelineMarkerForUser,
+} from './utils/supabaseLoopTimeline';
+import {
   fetchNotesForUser,
   fetchNoteForUserById,
   createNoteForUser,
@@ -662,6 +669,8 @@ function App() {
     };
   }, [authLogin, isAuthLoading, isAuthProcessing, openSharedNote, sharedNoteId, userId]);
   const [calendarNoteDates, setCalendarNoteDates] = useState([]);
+  const [loopTimelineState, setLoopTimelineState] = useState(null);
+  const [loopTimelineMarkers, setLoopTimelineMarkers] = useState([]);
   const calendarVisibleRangeRef = useRef(null);
   const notePendingPatchRef = useRef(new Map());
   const noteSaveTimersRef = useRef(new Map());
@@ -740,7 +749,7 @@ function App() {
         const visibleRange = calendarVisibleRangeRef.current;
         const hasVisibleRange = !!(visibleRange?.startDate && visibleRange?.endDate);
 
-        const [remoteSchedules, remoteQuickMemo, remoteNotes, remoteNoteDates] = await Promise.all([
+        const [remoteSchedules, remoteQuickMemo, remoteNotes, remoteNoteDates, remoteLoopState, remoteLoopMarkers] = await Promise.all([
           fetchSchedulesForUser(userId),
           fetchQuickMemoForUser(userId),
           fetchNotesForUser(userId),
@@ -751,6 +760,14 @@ function App() {
                 endDate: visibleRange.endDate,
               })
             : Promise.resolve(null),
+          fetchLoopTimelineStateForUser(userId).catch((error) => {
+            console.warn('[Supabase] loop_timeline_state fetch skipped:', error);
+            return null;
+          }),
+          fetchLoopTimelineMarkersForUser(userId).catch((error) => {
+            console.warn('[Supabase] loop_timeline_markers fetch skipped:', error);
+            return [];
+          }),
         ]);
         if (isCancelledFn()) return;
 
@@ -791,6 +808,9 @@ function App() {
         if (Array.isArray(remoteNoteDates)) {
           setCalendarNoteDates(remoteNoteDates);
         }
+
+        setLoopTimelineState(remoteLoopState);
+        setLoopTimelineMarkers(Array.isArray(remoteLoopMarkers) ? remoteLoopMarkers : []);
 
         setSupabaseError(null);
         hasFetchedRemoteRef.current = true;
@@ -839,6 +859,138 @@ function App() {
     },
     [applyQuickMemoValue, beginSupabaseJob, endSupabaseJob, replaceAppState, userId]
   );
+
+  // Supabase Realtime: 他端末/他ウィンドウのループタイムライン変更を検知して再同期
+  useEffect(() => {
+    if (!userId) return;
+
+    let isDisposed = false;
+    const stateChannel = supabase
+      .channel(`loop_timeline_state:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'loop_timeline_state',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (isDisposed) return;
+          const rowKey = payload?.new?.user_id ?? payload?.old?.user_id ?? null;
+          if (rowKey != null && shouldIgnoreRealtimeEvent('loop_timeline_state', rowKey)) {
+            return;
+          }
+          requestSupabaseSync('realtime:loop_timeline');
+        }
+      )
+      .subscribe();
+
+    const markersChannel = supabase
+      .channel(`loop_timeline_markers:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'loop_timeline_markers',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (isDisposed) return;
+          const rowId = payload?.new?.id ?? payload?.old?.id ?? null;
+          if (rowId != null && shouldIgnoreRealtimeEvent('loop_timeline_markers', rowId)) {
+            return;
+          }
+          requestSupabaseSync('realtime:loop_timeline');
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isDisposed = true;
+      try {
+        supabase.removeChannel(stateChannel);
+      } catch {
+        // ignore
+      }
+      try {
+        supabase.removeChannel(markersChannel);
+      } catch {
+        // ignore
+      }
+    };
+  }, [requestSupabaseSync, shouldIgnoreRealtimeEvent, userId]);
+
+  const handleLoopTimelineSaveState = useCallback(async (patch) => {
+    if (!userId) return;
+    const safePatch = patch && typeof patch === 'object' ? patch : {};
+
+    setLoopTimelineState((prev) => ({
+      ...(prev || { user_id: userId }),
+      ...safePatch,
+      updated_at: new Date().toISOString(),
+    }));
+
+    const jobMeta = { kind: 'loopTimelineSaveState' };
+    beginSupabaseJob(jobMeta);
+    try {
+      markRealtimeSelfWrite('loop_timeline_state', userId);
+      const saved = await saveLoopTimelineStateForUser({ userId, patch: safePatch });
+      setLoopTimelineState(saved);
+      setSupabaseError(null);
+    } catch (error) {
+      console.error('[Supabase] Failed to save loop timeline state:', error);
+      setSupabaseError(error.message || 'ループタイムラインの保存に失敗しました。');
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, userId]);
+
+  const handleLoopTimelineAddMarker = useCallback(async ({ text, offset_minutes }) => {
+    if (!userId) return;
+    const jobMeta = { kind: 'loopTimelineAddMarker' };
+    beginSupabaseJob(jobMeta);
+    try {
+      const created = await createLoopTimelineMarkerForUser({
+        userId,
+        text,
+        offsetMinutes: offset_minutes,
+      });
+      markRealtimeSelfWrite('loop_timeline_markers', created?.id ?? null);
+      setLoopTimelineMarkers((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        return [...list, created].sort((a, b) => {
+          const diff = Number(a?.offset_minutes ?? 0) - Number(b?.offset_minutes ?? 0);
+          if (diff !== 0) return diff;
+          return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+        });
+      });
+      setSupabaseError(null);
+    } catch (error) {
+      console.error('[Supabase] Failed to add loop timeline marker:', error);
+      setSupabaseError(error.message || '追加項目の作成に失敗しました。');
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, userId]);
+
+  const handleLoopTimelineDeleteMarker = useCallback(async (markerId) => {
+    if (!userId) return;
+    const jobMeta = { kind: 'loopTimelineDeleteMarker' };
+    beginSupabaseJob(jobMeta);
+    try {
+      markRealtimeSelfWrite('loop_timeline_markers', markerId);
+      await deleteLoopTimelineMarkerForUser({ userId, id: markerId });
+      setLoopTimelineMarkers((prev) => (Array.isArray(prev) ? prev.filter((m) => (m?.id ?? null) !== markerId) : []));
+      setSupabaseError(null);
+    } catch (error) {
+      console.error('[Supabase] Failed to delete loop timeline marker:', error);
+      setSupabaseError(error.message || '追加項目の削除に失敗しました。');
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, userId]);
 
   useEffect(() => {
     // ログイン/ログアウトやユーザー切替で確実に解除
@@ -2696,6 +2848,12 @@ function App() {
                           onClosePanel={closeTimeline}
                           tasks={taskSchedules}
                           notes={notes}
+                          canShareLoopTimeline={isAuthenticated}
+                          loopTimelineState={loopTimelineState}
+                          loopTimelineMarkers={loopTimelineMarkers}
+                          onLoopTimelineSaveState={handleLoopTimelineSaveState}
+                          onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
+                          onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
                         />
                       </div>
                     </div>
@@ -2809,6 +2967,12 @@ function App() {
                     onTabChange={setTimelineActiveTab}
                     tasks={taskSchedules}
                     notes={notes}
+                    canShareLoopTimeline={isAuthenticated}
+                    loopTimelineState={loopTimelineState}
+                    loopTimelineMarkers={loopTimelineMarkers}
+                    onLoopTimelineSaveState={handleLoopTimelineSaveState}
+                    onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
+                    onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
                   />
                 </div>
               </div>

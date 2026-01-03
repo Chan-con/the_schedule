@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallba
 import MemoWithLinks from './MemoWithLinks';
 import TaskArea from './TaskArea';
 import NoteArea from './NoteArea';
+import LoopTimelineArea from './LoopTimelineArea';
 
 const ALL_DAY_MIN_HEIGHT = 120;
 const TIMELINE_MIN_HEIGHT = 120;
@@ -80,6 +81,12 @@ const Timeline = ({
 	onTabChange,
 	tasks = [],
 	notes = [],
+	loopTimelineState,
+	loopTimelineMarkers,
+	onLoopTimelineSaveState,
+	onLoopTimelineAddMarker,
+	onLoopTimelineDeleteMarker,
+	canShareLoopTimeline = false,
 }) => {
 	const [draggedAllDayId, setDraggedAllDayId] = useState(null);
 	const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -138,10 +145,11 @@ const Timeline = ({
 		return Math.max(minHeight, limit);
 	}, []);
 
-	const currentTab = ['timeline', 'tasks', 'notes'].includes(activeTab) ? activeTab : 'timeline';
+	const currentTab = ['timeline', 'tasks', 'notes', 'loop'].includes(activeTab) ? activeTab : 'timeline';
 	const showTimeline = currentTab === 'timeline';
 	const showTasks = currentTab === 'tasks';
 	const showNotes = currentTab === 'notes';
+	const showLoopTimeline = currentTab === 'loop';
 	const availableTasks = Array.isArray(tasks) ? tasks : [];
 	const availableNotes = Array.isArray(notes) ? notes : [];
 
@@ -493,8 +501,29 @@ const Timeline = ({
 				</svg>
 			),
 		},
+		{
+			key: 'loop',
+			label: 'ループ',
+			icon: (
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					className="h-5 w-5"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="2"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M10 2h4" />
+					<path d="M12 14l3-3" />
+					<circle cx="12" cy="14" r="8" />
+				</svg>
+			),
+		},
 	];
-	const isAddDisabled = showTasks ? !onAddTask : showNotes ? !onAddNote : !onAdd;
+	const isAddDisabled = showLoopTimeline ? true : showTasks ? !onAddTask : showNotes ? !onAddNote : !onAdd;
 
 	const handleAddClick = () => {
 		if (showTasks) {
@@ -874,7 +903,7 @@ const Timeline = ({
 						}`}
 						onClick={handleAddClick}
 						disabled={isAddDisabled}
-						title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : '予定を追加'}
+						title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : showLoopTimeline ? 'ループタイムラインでは「追加」ボタンを使用' : '予定を追加'}
 					>
 						<span className="text-lg font-semibold leading-none">＋</span>
 					</button>
@@ -914,6 +943,15 @@ const Timeline = ({
 						activeNoteId={activeNoteId}
 						onActiveNoteIdChange={onActiveNoteIdChange}
 						onRequestClose={onRequestCloseNote}
+					/>
+				) : showLoopTimeline ? (
+					<LoopTimelineArea
+						canShare={canShareLoopTimeline}
+						state={loopTimelineState}
+						markers={loopTimelineMarkers}
+						onSaveState={onLoopTimelineSaveState}
+						onAddMarker={onLoopTimelineAddMarker}
+						onDeleteMarker={onLoopTimelineDeleteMarker}
 					/>
 				) : (
 					<div
