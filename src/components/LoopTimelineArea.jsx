@@ -584,9 +584,7 @@ const LoopTimelineArea = ({
             >
               <div className="absolute left-1/2 top-0 h-full w-1 -translate-x-1/2 rounded bg-slate-200" />
 
-              <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1 text-[11px] font-semibold text-slate-700">
-                0
-              </div>
+
               <div
                 className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1"
                 title="ダブルクリックで変更"
