@@ -198,13 +198,13 @@ const LoopTimelineArea = ({
     setIsEditingDurationOnLine(false);
   }, [durationInlineValue, durationMinutes]);
 
-  const lineHeightPx = useMemo(() => {
-    // 通知(マーカー)が増えた時に、縦ラインを伸ばして詰まりを軽減。
-    // 画面全体はスクロール領域なので、必要に応じて下に伸びる。
-    const base = 420;
+  const lineMinHeightPx = useMemo(() => {
+    // 縦ラインは基本「表示エリアの高さ」に追従させる。
+    // ただしマーカー（通知表示）が増えたら必要量だけ最小高さを増やし、足りない分はスクロールで見せる。
+    // 小さくしたい時に縮まらないのを避けるため、ベースは小さめに。
+    const base = 80;
     const perMarker = 34;
-    const extra = Math.max(0, markerCount - 4);
-    return Math.min(1400, base + extra * perMarker);
+    return Math.min(1400, base + markerCount * perMarker);
   }, [markerCount]);
 
   const [isEditingStartMinuteOnBubble, setIsEditingStartMinuteOnBubble] = useState(false);
@@ -240,7 +240,10 @@ const LoopTimelineArea = ({
     return () => ro.disconnect();
   }, []);
 
-  const dotY = Math.round(progressRatio * lineHeight);
+  const lineTopPadPx = 18;
+  const lineBottomPadPx = 22;
+  const usableLineHeight = Math.max(1, lineHeight - lineTopPadPx - lineBottomPadPx);
+  const dotY = Math.round(lineTopPadPx + progressRatio * usableLineHeight);
 
   const canWrite = canShare && typeof onSaveState === 'function';
 
@@ -493,8 +496,8 @@ const LoopTimelineArea = ({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
-      <div className="custom-scrollbar flex-1 min-h-0 overflow-auto p-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="flex-1 min-h-0 overflow-hidden p-3">
+        <div className="flex h-full min-h-0 flex-col rounded-xl border border-slate-200 bg-white p-3">
           <div className="flex items-center justify-end">
             <div className="flex items-center gap-2">
               <div className="relative">
@@ -576,17 +579,22 @@ const LoopTimelineArea = ({
               </button>
             </div>
           </div>
-          <div className="mt-3 flex gap-4">
-            <div
-              ref={lineContainerRef}
-              className="relative w-24 flex-shrink-0"
-              style={{ height: lineHeightPx }}
-            >
-              <div className="absolute left-1/2 top-0 h-full w-1 -translate-x-1/2 rounded bg-slate-200" />
+          <div className="custom-scrollbar-auto mt-3 flex-1 min-h-0 overflow-auto">
+            <div className="flex min-h-full gap-4">
+              <div
+                ref={lineContainerRef}
+                className="relative w-24 flex-shrink-0 min-h-full"
+                style={{ minHeight: lineMinHeightPx }}
+              >
+              <div
+                className="absolute left-1/2 w-1 -translate-x-1/2 rounded bg-slate-200"
+                style={{ top: `${lineTopPadPx}px`, bottom: `${lineBottomPadPx}px` }}
+              />
 
 
               <div
-                className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1"
+                className="absolute left-1/2 -translate-x-1/2"
+                style={{ bottom: `${lineBottomPadPx - 6}px` }}
                 title="ダブルクリックで変更"
                 onDoubleClick={openDurationInlineEdit}
               >
@@ -638,30 +646,30 @@ const LoopTimelineArea = ({
                 </div>
               )}
 
-              {safeMarkers.map((m) => {
-                const offset = clampInt(m?.offset_minutes ?? 0, { min: 0, max: durationMinutes, fallback: 0 });
-                const y = Math.round((offset / durationMinutes) * lineHeight);
-                return (
-                  <div
-                    key={m?.id ?? `${m?.text}-${offset}`}
-                    className="absolute left-1/2 -translate-y-1/2 cursor-pointer select-none"
-                    style={{ top: `${y}px` }}
-                    title={`${offset}分: ${String(m?.text ?? '')}`}
-                    onDoubleClick={() => openEditMarkerModal(m)}
-                  >
-                    <div className="flex items-center">
-                      <div className="h-2 w-2 -translate-x-1/2 rounded-full bg-slate-500" aria-hidden="true" />
-                      <div className="ml-2 max-w-28 truncate rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-800">
-                        {String(m?.text ?? '')}
-                        <span className="ml-2 text-[10px] font-semibold text-slate-600">{offset}分</span>
+                {safeMarkers.map((m) => {
+                  const offset = clampInt(m?.offset_minutes ?? 0, { min: 0, max: durationMinutes, fallback: 0 });
+                  const y = Math.round(lineTopPadPx + (offset / durationMinutes) * usableLineHeight);
+                  return (
+                    <div
+                      key={m?.id ?? `${m?.text}-${offset}`}
+                      className="absolute left-1/2 -translate-y-1/2 cursor-pointer select-none"
+                      style={{ top: `${y}px` }}
+                      title={`${offset}分: ${String(m?.text ?? '')}`}
+                      onDoubleClick={() => openEditMarkerModal(m)}
+                    >
+                      <div className="flex items-center">
+                        <div className="h-2 w-2 -translate-x-1/2 rounded-full bg-slate-500" aria-hidden="true" />
+                        <div className="ml-2 max-w-28 truncate rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-800">
+                          {String(m?.text ?? '')}
+                          <span className="ml-2 text-[10px] font-semibold text-slate-600">{offset}分</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
 
-            <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1" />
             </div>
           </div>
         </div>

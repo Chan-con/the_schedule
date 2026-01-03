@@ -136,6 +136,38 @@ button:focus-visible {
   scrollbar-gutter: stable;
 }
 
+/* スクロールが必要な時だけ見える寄り（トラックを透過、gutter固定しない） */
+.custom-scrollbar-auto {
+  scrollbar-width: thin !important;
+  scrollbar-color: #94a3b8 transparent !important;
+}
+
+.custom-scrollbar-auto::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+  background: transparent !important;
+}
+
+.custom-scrollbar-auto::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.custom-scrollbar-auto::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #cbd5e1, #94a3b8) !important;
+  border-radius: 6px !important;
+  border: 1px solid #e2e8f0 !important;
+  min-height: 24px !important;
+}
+
+.custom-scrollbar-auto::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, #94a3b8, #64748b) !important;
+  border-color: #cbd5e1 !important;
+}
+
+.custom-scrollbar-auto::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(to bottom, #64748b, #475569) !important;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 8px !important;
   height: 8px !important;
