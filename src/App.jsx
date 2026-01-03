@@ -328,6 +328,43 @@ function App() {
   const quickMemoSkipSyncRef = useRef(false);
   const quickMemoLastSavedRef = useRef('');
 
+  const realtimeSelfWriteRef = useRef({
+    notes: new Map(),
+    schedules: new Map(),
+    quick_memos: new Map(),
+  });
+  const REALTIME_SELF_WRITE_WINDOW_MS = 2000;
+
+  const markRealtimeSelfWrite = useCallback((table, ids) => {
+    const key = typeof table === 'string' ? table : '';
+    const store = realtimeSelfWriteRef.current?.[key];
+    if (!store || typeof store.set !== 'function') return;
+
+    const now = Date.now();
+    const list = Array.isArray(ids) ? ids : [ids];
+    list
+      .filter((id) => id != null)
+      .forEach((id) => {
+        store.set(String(id), now);
+      });
+
+    // cleanup
+    for (const [id, ts] of store.entries()) {
+      if (!ts || now - ts > REALTIME_SELF_WRITE_WINDOW_MS * 3) {
+        store.delete(id);
+      }
+    }
+  }, []);
+
+  const shouldIgnoreRealtimeEvent = useCallback((table, rowId) => {
+    const key = typeof table === 'string' ? table : '';
+    const store = realtimeSelfWriteRef.current?.[key];
+    if (!store || rowId == null) return false;
+    const ts = store.get(String(rowId));
+    if (!ts) return false;
+    return Date.now() - ts <= REALTIME_SELF_WRITE_WINDOW_MS;
+  }, []);
+
   const beginSupabaseJob = useCallback(() => {
     supabaseJobsRef.current += 1;
   }, []);
@@ -346,6 +383,7 @@ function App() {
     const jobMeta = { kind: 'quickMemoSave' };
     beginSupabaseJob(jobMeta);
     try {
+      markRealtimeSelfWrite('quick_memos', userId);
       await saveQuickMemoForUser(safeContent, userId);
       quickMemoLastSavedRef.current = safeContent;
       setSupabaseError(null);
@@ -356,7 +394,7 @@ function App() {
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, endSupabaseJob, setSupabaseError, userId]);
+  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, setSupabaseError, userId]);
 
   const commitSchedules = useCallback((nextSchedules, actionType = 'unknown') => {
     const normalizedSchedules = normalizeSchedules(nextSchedules);
@@ -926,6 +964,10 @@ function App() {
         },
         (payload) => {
           if (isDisposed) return;
+          const rowId = payload?.new?.id ?? payload?.old?.id ?? null;
+          if (rowId != null && shouldIgnoreRealtimeEvent('notes', rowId)) {
+            return;
+          }
           console.info('[SupabaseRealtime] notes changed', JSON.stringify({
             eventType: payload?.eventType,
             table: payload?.table,
@@ -946,7 +988,93 @@ function App() {
         // ignore
       }
     };
-  }, [requestSupabaseSync, userId]);
+  }, [requestSupabaseSync, shouldIgnoreRealtimeEvent, userId]);
+
+  // Supabase Realtime: 他端末/他ウィンドウの予定/タスク変更を検知して再同期
+  useEffect(() => {
+    if (!userId) return;
+
+    let isDisposed = false;
+    const channel = supabase
+      .channel(`schedules:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'schedules',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (isDisposed) return;
+          const rowId = payload?.new?.id ?? payload?.old?.id ?? null;
+          if (rowId != null && shouldIgnoreRealtimeEvent('schedules', rowId)) {
+            return;
+          }
+          console.info('[SupabaseRealtime] schedules changed', JSON.stringify({
+            eventType: payload?.eventType,
+            table: payload?.table,
+            timestamp: new Date().toISOString(),
+          }));
+          requestSupabaseSync('realtime:schedules');
+        }
+      )
+      .subscribe((status) => {
+        console.info('[SupabaseRealtime] schedules subscription', JSON.stringify({ status }));
+      });
+
+    return () => {
+      isDisposed = true;
+      try {
+        supabase.removeChannel(channel);
+      } catch {
+        // ignore
+      }
+    };
+  }, [requestSupabaseSync, shouldIgnoreRealtimeEvent, userId]);
+
+  // Supabase Realtime: 他端末/他ウィンドウのクイックメモ変更を検知して再同期
+  useEffect(() => {
+    if (!userId) return;
+
+    let isDisposed = false;
+    const channel = supabase
+      .channel(`quick_memos:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'quick_memos',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (isDisposed) return;
+          const rowKey = payload?.new?.user_id ?? payload?.old?.user_id ?? null;
+          if (rowKey != null && shouldIgnoreRealtimeEvent('quick_memos', rowKey)) {
+            return;
+          }
+          console.info('[SupabaseRealtime] quick_memos changed', JSON.stringify({
+            eventType: payload?.eventType,
+            table: payload?.table,
+            timestamp: new Date().toISOString(),
+          }));
+          requestSupabaseSync('realtime:quick_memos');
+        }
+      )
+      .subscribe((status) => {
+        console.info('[SupabaseRealtime] quick_memos subscription', JSON.stringify({ status }));
+      });
+
+    return () => {
+      isDisposed = true;
+      try {
+        supabase.removeChannel(channel);
+      } catch {
+        // ignore
+      }
+    };
+  }, [requestSupabaseSync, shouldIgnoreRealtimeEvent, userId]);
 
   // フォーカスが変わらない（デスクトップアプリ等）環境向けの保険: 定期的に再同期
   useEffect(() => {
@@ -1072,6 +1200,7 @@ function App() {
       const jobMeta = { kind: 'noteUpdate' };
       beginSupabaseJob(jobMeta);
       try {
+        markRealtimeSelfWrite('notes', noteId);
         const updated = await updateNoteForUser({ userId, id: noteId, patch: mergedPatch });
         setNotes((prev) => {
           const list = Array.isArray(prev) ? prev : [];
@@ -1092,7 +1221,7 @@ function App() {
     }, 600);
 
     timers.set(noteId, timeoutId);
-  }, [beginSupabaseJob, endSupabaseJob, loadLocalNotes, saveLocalNotes, userId]);
+  }, [beginSupabaseJob, endSupabaseJob, loadLocalNotes, markRealtimeSelfWrite, saveLocalNotes, userId]);
 
   const handleToggleArchiveNote = useCallback((note, nextArchived) => {
     if (!note) return;
@@ -1250,6 +1379,7 @@ function App() {
         content: currentNote.content ?? '',
       })
         .then(async (created) => {
+          markRealtimeSelfWrite('notes', created?.id ?? null);
           setNotes((prev) => {
             const list = Array.isArray(prev) ? prev : [];
             const filtered = list.filter((n) => (n?.id ?? null) !== noteId);
@@ -1289,6 +1419,7 @@ function App() {
 
       const jobMeta = { kind: 'noteDelete' };
       beginSupabaseJob(jobMeta);
+      markRealtimeSelfWrite('notes', noteId);
       deleteNoteForUser({ userId, id: noteId })
         .then(async () => {
           setNotes((prev) => (Array.isArray(prev) ? prev.filter((n) => (n?.id ?? null) !== noteId) : []));
@@ -1331,6 +1462,7 @@ function App() {
     pendingMap.delete(noteId);
     const jobMeta = { kind: 'noteUpdate' };
     beginSupabaseJob(jobMeta);
+    markRealtimeSelfWrite('notes', noteId);
     updateNoteForUser({ userId, id: noteId, patch: mergedPatch })
       .then(async (updated) => {
         setNotes((prev) => {
@@ -1364,6 +1496,7 @@ function App() {
     beginSupabaseJob,
     endSupabaseJob,
     loadLocalNotes,
+    markRealtimeSelfWrite,
     refreshCalendarNoteDates,
     saveLocalNotes,
     selectedDateStr,
@@ -1429,6 +1562,7 @@ function App() {
     const jobMeta = { kind: 'noteDelete' };
     beginSupabaseJob(jobMeta);
     try {
+      markRealtimeSelfWrite('notes', noteId);
       await deleteNoteForUser({ userId, id: noteId });
       setNotes((prev) => (Array.isArray(prev) ? prev.filter((n) => (n?.id ?? null) !== noteId) : []));
       setSupabaseError(null);
@@ -1439,7 +1573,7 @@ function App() {
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, endSupabaseJob, loadLocalNotes, noteArchiveUserKey, refreshCalendarNoteDates, saveLocalNotes, saveNoteImportantFlags, userId]);
+  }, [beginSupabaseJob, endSupabaseJob, loadLocalNotes, markRealtimeSelfWrite, noteArchiveUserKey, refreshCalendarNoteDates, saveLocalNotes, saveNoteImportantFlags, userId]);
   
   // メニュー外クリックでメニューを閉じる
   
@@ -1886,6 +2020,7 @@ function App() {
     beginSupabaseJob(jobMeta);
     const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
     try {
+      markRealtimeSelfWrite('schedules', scheduleId);
       await deleteScheduleForUser(scheduleId, userId);
       setSupabaseError(null);
       requestSupabaseSync('schedule_delete_success');
@@ -1906,7 +2041,7 @@ function App() {
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, cancelScheduleNotifications, commitSchedules, endSupabaseJob, requestSupabaseSync, setSupabaseError, userId]);
+  }, [beginSupabaseJob, cancelScheduleNotifications, commitSchedules, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, setSupabaseError, userId]);
 
   // 予定移動ハンドラー（ドラッグ&ドロップ用）
   const handleScheduleMove = useCallback((schedule, nextDate) => {
@@ -1949,6 +2084,7 @@ function App() {
         beginSupabaseJob(jobMeta);
         const syncStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
         try {
+          markRealtimeSelfWrite('schedules', updated.id);
           const persisted = await updateScheduleForUser(updated, userId);
           let latest = schedulesRef.current;
           let synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
@@ -1975,7 +2111,7 @@ function App() {
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, requestSupabaseSync, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, setSupabaseError, userId]);
 
   // 予定コピー（ALTドラッグ複製など）
   const handleScheduleCopy = useCallback((schedule) => {
@@ -2019,6 +2155,7 @@ function App() {
           const payload = { ...placeholder };
           delete payload.id;
           const created = await createScheduleForUser(payload, userId);
+          markRealtimeSelfWrite('schedules', created?.id ?? null);
 
           let latestState = schedulesRef.current;
           let replaced = latestState.map((item) => (item.id === tempId ? created : item));
@@ -2049,7 +2186,7 @@ function App() {
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, handleScheduleMove, requestSupabaseSync, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, handleScheduleMove, markRealtimeSelfWrite, requestSupabaseSync, setSupabaseError, userId]);
 
   // 予定更新ハンドラー（並び替え用）
   const handleScheduleUpdate = useCallback((updatedSchedule, actionType = 'schedule_reorder') => {
@@ -2091,6 +2228,7 @@ function App() {
         beginSupabaseJob(jobMeta);
         const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
         try {
+          markRealtimeSelfWrite('schedules', scheduleUpdates.map((item) => item?.id ?? null).filter((id) => id != null));
           const persisted = await upsertSchedulesForUser(scheduleUpdates, userId);
           if (Array.isArray(persisted) && persisted.length > 0) {
             let latest = schedulesRef.current;
@@ -2123,7 +2261,7 @@ function App() {
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, requestSupabaseSync, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, setSupabaseError, userId]);
 
   // タスクのチェック状態トグル
   const handleToggleTask = useCallback((target, completed) => {
@@ -2165,6 +2303,7 @@ function App() {
         beginSupabaseJob(jobMeta);
         const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
         try {
+          markRealtimeSelfWrite('schedules', scheduleId);
           const persisted = await updateScheduleForUser(updatedSchedule, userId);
           const latest = schedulesRef.current;
           const synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
@@ -2188,7 +2327,7 @@ function App() {
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, requestSupabaseSync, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, setSupabaseError, userId]);
 
   const handleAdd = (targetDate = null) => {
     // ターゲット日付が指定されていればその日付を使用、なければ選択中の日付を使用
@@ -2265,6 +2404,7 @@ function App() {
         const jobMeta = { kind: 'updateSchedule', scheduleId: updated.id, action: 'save' };
         beginSupabaseJob(jobMeta);
         try {
+          markRealtimeSelfWrite('schedules', updated.id);
           const persisted = await updateScheduleForUser(updated, userId);
           let latest = schedulesRef.current;
           let synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
@@ -2322,6 +2462,7 @@ function App() {
           delete payload.id;
           const created = await createScheduleForUser(payload, userId);
           jobMeta.scheduleId = created.id;
+          markRealtimeSelfWrite('schedules', created?.id ?? null);
 
           let latest = schedulesRef.current;
           let replaced = latest.map((item) => (item.id === tempId ? created : item));
@@ -2354,7 +2495,7 @@ function App() {
     }
 
     setShowForm(false);
-  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, requestSupabaseSync, setShowForm, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, setShowForm, setSupabaseError, userId]);
 
   // 予定削除ハンドラー（フォーム用）
   const handleDelete = useCallback(async (id) => {
