@@ -1229,14 +1229,28 @@ function App() {
     if (noteId == null) return;
     if (note?.__isDraft) return;
 
+    const idKey = String(noteId);
+    const archived = !!nextArchived;
+    const shouldForceImportantOff = archived;
+
     // ログイン中はDBへ同期
     if (userId) {
-      handleUpdateNote(noteId, { archived: !!nextArchived });
+      handleUpdateNote(noteId, {
+        archived,
+        ...(shouldForceImportantOff ? { important: false } : null),
+      });
       return;
     }
 
-    const idKey = String(noteId);
-    const archived = !!nextArchived;
+    if (shouldForceImportantOff) {
+      const nextImportantFlags = { ...(noteImportantFlagsRef.current || {}) };
+      if (nextImportantFlags[idKey]) {
+        delete nextImportantFlags[idKey];
+        noteImportantFlagsRef.current = nextImportantFlags;
+        saveNoteImportantFlags(noteArchiveUserKey, nextImportantFlags);
+      }
+    }
+
     const nextFlags = { ...(noteArchiveFlagsRef.current || {}) };
     if (archived) {
       nextFlags[idKey] = true;
@@ -1249,13 +1263,27 @@ function App() {
 
     setNotes((prev) => {
       const list = Array.isArray(prev) ? prev : [];
-      return list.map((n) => ((n?.id ?? null) === noteId ? { ...n, archived } : n));
+      return list.map((n) => {
+        if ((n?.id ?? null) !== noteId) return n;
+        return {
+          ...n,
+          archived,
+          ...(shouldForceImportantOff ? { important: false } : null),
+        };
+      });
     });
 
     const allNotes = loadLocalNotes();
-    const nextAllNotes = allNotes.map((n) => ((n?.id ?? null) === noteId ? { ...n, archived } : n));
+    const nextAllNotes = allNotes.map((n) => {
+      if ((n?.id ?? null) !== noteId) return n;
+      return {
+        ...n,
+        archived,
+        ...(shouldForceImportantOff ? { important: false } : null),
+      };
+    });
     saveLocalNotes(nextAllNotes);
-  }, [handleUpdateNote, loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteArchiveFlags, userId]);
+  }, [handleUpdateNote, loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteArchiveFlags, saveNoteImportantFlags, userId]);
 
   const handleToggleImportantNote = useCallback((note, nextImportant) => {
     if (!note) return;
@@ -1263,14 +1291,28 @@ function App() {
     if (noteId == null) return;
     if (note?.__isDraft) return;
 
+    const idKey = String(noteId);
+    const important = !!nextImportant;
+    const shouldForceArchivedOff = important;
+
     // ログイン中はDBへ同期
     if (userId) {
-      handleUpdateNote(noteId, { important: !!nextImportant });
+      handleUpdateNote(noteId, {
+        important,
+        ...(shouldForceArchivedOff ? { archived: false } : null),
+      });
       return;
     }
 
-    const idKey = String(noteId);
-    const important = !!nextImportant;
+    if (shouldForceArchivedOff) {
+      const nextArchiveFlags = { ...(noteArchiveFlagsRef.current || {}) };
+      if (nextArchiveFlags[idKey]) {
+        delete nextArchiveFlags[idKey];
+        noteArchiveFlagsRef.current = nextArchiveFlags;
+        saveNoteArchiveFlags(noteArchiveUserKey, nextArchiveFlags);
+      }
+    }
+
     const nextFlags = { ...(noteImportantFlagsRef.current || {}) };
     if (important) {
       nextFlags[idKey] = true;
@@ -1283,13 +1325,27 @@ function App() {
 
     setNotes((prev) => {
       const list = Array.isArray(prev) ? prev : [];
-      return list.map((n) => ((n?.id ?? null) === noteId ? { ...n, important } : n));
+      return list.map((n) => {
+        if ((n?.id ?? null) !== noteId) return n;
+        return {
+          ...n,
+          important,
+          ...(shouldForceArchivedOff ? { archived: false } : null),
+        };
+      });
     });
 
     const allNotes = loadLocalNotes();
-    const nextAllNotes = allNotes.map((n) => ((n?.id ?? null) === noteId ? { ...n, important } : n));
+    const nextAllNotes = allNotes.map((n) => {
+      if ((n?.id ?? null) !== noteId) return n;
+      return {
+        ...n,
+        important,
+        ...(shouldForceArchivedOff ? { archived: false } : null),
+      };
+    });
     saveLocalNotes(nextAllNotes);
-  }, [handleUpdateNote, loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteImportantFlags, userId]);
+  }, [handleUpdateNote, loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteArchiveFlags, saveNoteImportantFlags, userId]);
 
   const handleRequestCloseNote = useCallback((noteId) => {
     const restoreFromLink = () => {
