@@ -76,6 +76,7 @@ VITE_VAPID_PUBLIC_KEY=...
 
 	 - **ループタイムライン（新機能）**
 	 	- 1ユーザーにつき状態を1行で持つ `loop_timeline_state` と、追加項目を持つ `loop_timeline_markers` を作成します（推奨スキーマ例）。
+	 	- `start_delay_minutes` は実装上は「開始する時刻の分（0〜59、空欄なら即時開始）」として扱います（列名は互換のため維持）。
 
 	 	```sql
 	 	create table public.loop_timeline_state (

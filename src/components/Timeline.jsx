@@ -85,6 +85,7 @@ const Timeline = ({
 	loopTimelineMarkers,
 	onLoopTimelineSaveState,
 	onLoopTimelineAddMarker,
+	onLoopTimelineUpdateMarker,
 	onLoopTimelineDeleteMarker,
 	canShareLoopTimeline = false,
 }) => {
@@ -951,6 +952,7 @@ const Timeline = ({
 						markers={loopTimelineMarkers}
 						onSaveState={onLoopTimelineSaveState}
 						onAddMarker={onLoopTimelineAddMarker}
+						onUpdateMarker={onLoopTimelineUpdateMarker}
 						onDeleteMarker={onLoopTimelineDeleteMarker}
 					/>
 				) : (

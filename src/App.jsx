@@ -18,6 +18,7 @@ import {
   saveLoopTimelineStateForUser,
   createLoopTimelineMarkerForUser,
   deleteLoopTimelineMarkerForUser,
+  updateLoopTimelineMarkerForUser,
 } from './utils/supabaseLoopTimeline';
 import {
   fetchNotesForUser,
@@ -339,6 +340,8 @@ function App() {
     notes: new Map(),
     schedules: new Map(),
     quick_memos: new Map(),
+    loop_timeline_state: new Map(),
+    loop_timeline_markers: new Map(),
   });
   const REALTIME_SELF_WRITE_WINDOW_MS = 2000;
 
@@ -860,68 +863,6 @@ function App() {
     [applyQuickMemoValue, beginSupabaseJob, endSupabaseJob, replaceAppState, userId]
   );
 
-  // Supabase Realtime: 他端末/他ウィンドウのループタイムライン変更を検知して再同期
-  useEffect(() => {
-    if (!userId) return;
-
-    let isDisposed = false;
-    const stateChannel = supabase
-      .channel(`loop_timeline_state:${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'loop_timeline_state',
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload) => {
-          if (isDisposed) return;
-          const rowKey = payload?.new?.user_id ?? payload?.old?.user_id ?? null;
-          if (rowKey != null && shouldIgnoreRealtimeEvent('loop_timeline_state', rowKey)) {
-            return;
-          }
-          requestSupabaseSync('realtime:loop_timeline');
-        }
-      )
-      .subscribe();
-
-    const markersChannel = supabase
-      .channel(`loop_timeline_markers:${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'loop_timeline_markers',
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload) => {
-          if (isDisposed) return;
-          const rowId = payload?.new?.id ?? payload?.old?.id ?? null;
-          if (rowId != null && shouldIgnoreRealtimeEvent('loop_timeline_markers', rowId)) {
-            return;
-          }
-          requestSupabaseSync('realtime:loop_timeline');
-        }
-      )
-      .subscribe();
-
-    return () => {
-      isDisposed = true;
-      try {
-        supabase.removeChannel(stateChannel);
-      } catch {
-        // ignore
-      }
-      try {
-        supabase.removeChannel(markersChannel);
-      } catch {
-        // ignore
-      }
-    };
-  }, [requestSupabaseSync, shouldIgnoreRealtimeEvent, userId]);
-
   const handleLoopTimelineSaveState = useCallback(async (patch) => {
     if (!userId) return;
     const safePatch = patch && typeof patch === 'object' ? patch : {};
@@ -992,6 +933,60 @@ function App() {
     }
   }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, userId]);
 
+  const handleLoopTimelineUpdateMarker = useCallback(async ({ id, text, offset_minutes }) => {
+    if (!userId) return;
+    if (id == null) return;
+    const jobMeta = { kind: 'loopTimelineUpdateMarker' };
+    beginSupabaseJob(jobMeta);
+    try {
+      // optimistic
+      setLoopTimelineMarkers((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const next = list.map((m) => {
+          if ((m?.id ?? null) !== id) return m;
+          return {
+            ...m,
+            text: text ?? m?.text ?? '',
+            offset_minutes: offset_minutes ?? m?.offset_minutes ?? 0,
+            updated_at: new Date().toISOString(),
+          };
+        });
+        return next
+          .slice()
+          .sort((a, b) => {
+            const diff = Number(a?.offset_minutes ?? 0) - Number(b?.offset_minutes ?? 0);
+            if (diff !== 0) return diff;
+            return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+          });
+      });
+
+      markRealtimeSelfWrite('loop_timeline_markers', id);
+      const saved = await updateLoopTimelineMarkerForUser({
+        userId,
+        id,
+        text,
+        offsetMinutes: offset_minutes,
+      });
+      setLoopTimelineMarkers((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const next = list.map((m) => ((m?.id ?? null) === id ? saved : m));
+        return next
+          .slice()
+          .sort((a, b) => {
+            const diff = Number(a?.offset_minutes ?? 0) - Number(b?.offset_minutes ?? 0);
+            if (diff !== 0) return diff;
+            return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+          });
+      });
+      setSupabaseError(null);
+    } catch (error) {
+      console.error('[Supabase] Failed to update loop timeline marker:', error);
+      setSupabaseError(error.message || '追加項目の更新に失敗しました。');
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, userId]);
+
   useEffect(() => {
     // ログイン/ログアウトやユーザー切替で確実に解除
     setIsSupabaseSyncing(false);
@@ -1041,6 +1036,68 @@ function App() {
     },
     [refreshFromSupabase, userId]
   );
+
+  // Supabase Realtime: 他端末/他ウィンドウのループタイムライン変更を検知して再同期
+  useEffect(() => {
+    if (!userId) return;
+
+    let isDisposed = false;
+    const stateChannel = supabase
+      .channel(`loop_timeline_state:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'loop_timeline_state',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (isDisposed) return;
+          const rowKey = payload?.new?.user_id ?? payload?.old?.user_id ?? null;
+          if (rowKey != null && shouldIgnoreRealtimeEvent('loop_timeline_state', rowKey)) {
+            return;
+          }
+          requestSupabaseSync('realtime:loop_timeline');
+        }
+      )
+      .subscribe();
+
+    const markersChannel = supabase
+      .channel(`loop_timeline_markers:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'loop_timeline_markers',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (isDisposed) return;
+          const rowId = payload?.new?.id ?? payload?.old?.id ?? null;
+          if (rowId != null && shouldIgnoreRealtimeEvent('loop_timeline_markers', rowId)) {
+            return;
+          }
+          requestSupabaseSync('realtime:loop_timeline');
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isDisposed = true;
+      try {
+        supabase.removeChannel(stateChannel);
+      } catch {
+        // ignore
+      }
+      try {
+        supabase.removeChannel(markersChannel);
+      } catch {
+        // ignore
+      }
+    };
+  }, [requestSupabaseSync, shouldIgnoreRealtimeEvent, userId]);
 
   useEffect(() => {
     if (auth?.isLoading) return;
@@ -1900,24 +1957,35 @@ function App() {
 
   // 予定が変更されたらローカルストレージに保存
   useEffect(() => {
-    localStorage.setItem('schedules', JSON.stringify(schedules));
-    console.log('💾 Schedules saved to localStorage:', {
-      count: schedules.length,
-      historyIndex: currentIndex,
-      historyLength: historyLength,
-      lastAction: lastActionType
-    });
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem('schedules', JSON.stringify(schedules));
+      console.log('💾 Schedules saved to localStorage:', {
+        count: schedules.length,
+        historyIndex: currentIndex,
+        historyLength: historyLength,
+        lastAction: lastActionType,
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to persist schedules to localStorage:', error);
+    }
   }, [schedules, currentIndex, historyLength, lastActionType]);
 
   // 起動時に設定からレイアウト読み込み
   useEffect(() => {
     (async () => {
-      const savedRatio = localStorage.getItem('splitRatio');
-      if (savedRatio) {
-        const v = parseFloat(savedRatio);
-        if (!isNaN(v)) {
-          setSplitRatio(v);
-          console.log('[layout] splitRatio loaded from localStorage:', v);
+      if (typeof window !== 'undefined') {
+        try {
+          const savedRatio = window.localStorage.getItem('splitRatio');
+          if (savedRatio) {
+            const v = parseFloat(savedRatio);
+            if (!isNaN(v)) {
+              setSplitRatio(v);
+              console.log('[layout] splitRatio loaded from localStorage:', v);
+            }
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to load splitRatio from localStorage:', error);
         }
       }
       setLayoutLoaded(true);
@@ -1927,7 +1995,12 @@ function App() {
   // 分割比率変更時に保存（ロード完了後）
   useEffect(() => {
     if (!layoutLoaded) return; // 初期ロード完了までは保存しない
-    localStorage.setItem('splitRatio', String(splitRatio));
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem('splitRatio', String(splitRatio));
+    } catch (error) {
+      console.warn('⚠️ Failed to persist splitRatio to localStorage:', error);
+    }
   }, [splitRatio, layoutLoaded]);
   
   // マウス移動ハンドラー
@@ -2853,6 +2926,7 @@ function App() {
                           loopTimelineMarkers={loopTimelineMarkers}
                           onLoopTimelineSaveState={handleLoopTimelineSaveState}
                           onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
+                          onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
                           onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
                         />
                       </div>
@@ -2972,6 +3046,7 @@ function App() {
                     loopTimelineMarkers={loopTimelineMarkers}
                     onLoopTimelineSaveState={handleLoopTimelineSaveState}
                     onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
+                    onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
                     onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
                   />
                 </div>

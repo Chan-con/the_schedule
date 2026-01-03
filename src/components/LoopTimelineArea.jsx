@@ -1,90 +1,114 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-const clampInt = (value, { min = 0, max = 10_000, fallback = 0 } = {}) => {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return fallback;
-  const rounded = Math.floor(numeric);
-  return Math.min(Math.max(rounded, min), max);
+const clampInt = (value, { min, max, fallback }) => {
+  const n = Number.parseInt(String(value), 10);
+  if (Number.isNaN(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
 };
 
-const formatClock = (value) => {
-  if (!value) return '';
-  const dt = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(dt.getTime())) return '';
-  return dt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const formatMmSs = (ms) => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
-const computeLoopProgress = ({ now, startAt, durationMinutes }) => {
-  const durationMs = Math.max(1, durationMinutes) * 60_000;
-  if (!startAt) {
-    return {
-      state: 'idle',
-      offsetMs: 0,
-      loopIndex: 0,
-      remainingToStartMs: null,
-    };
+const isRunning = (state) => String(state?.status || '').toLowerCase() === 'running';
+const parsePausedElapsedMsFromStatus = (status) => {
+  const raw = String(status || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === 'paused') return 0;
+  if (!raw.startsWith('paused:')) return null;
+  const tail = raw.slice('paused:'.length);
+  const n = Number.parseInt(tail, 10);
+  if (Number.isNaN(n)) return 0;
+  return Math.max(0, n);
+};
+const parseStartAtMs = (value) => {
+  if (!value) return null;
+  const t = Date.parse(String(value));
+  return Number.isNaN(t) ? null : t;
+};
+
+const requestLoopNotificationPermission = async () => {
+  if (typeof window === 'undefined') return false;
+  if (!('Notification' in window)) return false;
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission === 'denied') return false;
+  try {
+    const permission = await Notification.requestPermission();
+    return permission === 'granted';
+  } catch {
+    return false;
+  }
+};
+
+const showLoopAlert = (title) => {
+  const t = String(title || '').trim();
+  if (!t) return;
+
+  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+    try {
+      const notification = new Notification(t, {
+        icon: './icon.png',
+        badge: './icon.png',
+        requireInteraction: false,
+        tag: `loop-marker-${t}`,
+      });
+
+      notification.onclick = () => {
+        try {
+          window.focus();
+        } catch {
+          // ignore
+        }
+        try {
+          notification.close();
+        } catch {
+          // ignore
+        }
+      };
+      window.setTimeout(() => {
+        try {
+          notification.close();
+        } catch {
+          // ignore
+        }
+      }, 10000);
+      return;
+    } catch {
+      // fallthrough to alert
+    }
   }
 
-  const start = startAt instanceof Date ? startAt : new Date(startAt);
-  const startMs = start.getTime();
-  const nowMs = now.getTime();
-
-  if (Number.isNaN(startMs)) {
-    return {
-      state: 'idle',
-      offsetMs: 0,
-      loopIndex: 0,
-      remainingToStartMs: null,
-    };
+  try {
+    window.alert(t);
+  } catch {
+    // ignore
   }
-
-  if (nowMs < startMs) {
-    return {
-      state: 'scheduled',
-      offsetMs: 0,
-      loopIndex: 0,
-      remainingToStartMs: startMs - nowMs,
-    };
-  }
-
-  const elapsed = nowMs - startMs;
-  const loopIndex = Math.floor(elapsed / durationMs);
-  const offsetMs = elapsed % durationMs;
-  return {
-    state: 'running',
-    offsetMs,
-    loopIndex,
-    remainingToStartMs: 0,
-  };
 };
 
-const minutesLabel = (ms) => {
-  if (ms == null) return '';
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const mm = Math.floor(totalSec / 60);
-  const ss = totalSec % 60;
-  return `${mm}:${String(ss).padStart(2, '0')}`;
-};
+const DEFAULT_DURATION_MINUTES = 60;
+const DEFAULT_START_MINUTE = 0;
 
-const TimerIcon = ({ className = 'h-5 w-5' } = {}) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    className={className}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M10 2h4" />
-    <path d="M12 14l3-3" />
-    <circle cx="12" cy="14" r="8" />
+const IconPlay = (props) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+    <path d="M8 5v14l11-7z" />
   </svg>
 );
 
-const DEFAULT_DURATION_MINUTES = 60;
+const IconStop = (props) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+    <path d="M6 6h12v12H6z" />
+  </svg>
+);
+
+const IconPlus = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <path d="M12 5v14" />
+    <path d="M5 12h14" />
+  </svg>
+);
 
 const LoopTimelineArea = ({
   canShare = false,
@@ -92,390 +116,635 @@ const LoopTimelineArea = ({
   markers,
   onSaveState,
   onAddMarker,
+  onUpdateMarker,
   onDeleteMarker,
 }) => {
-  const [now, setNow] = useState(() => new Date());
-  const [startMode, setStartMode] = useState('sync'); // sync | now
-  const [durationInput, setDurationInput] = useState('');
-  const [delayInput, setDelayInput] = useState('0');
-
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [markerText, setMarkerText] = useState('');
-  const [markerOffset, setMarkerOffset] = useState('0');
-
-  const longPressTimerRef = useRef(null);
-
-  const durationMinutes = useMemo(() => {
-    const fromState = clampInt(state?.duration_minutes, { min: 1, max: 24 * 60, fallback: DEFAULT_DURATION_MINUTES });
-    const fromInput = durationInput.trim() ? clampInt(durationInput, { min: 1, max: 24 * 60, fallback: fromState }) : fromState;
-    return fromInput;
-  }, [durationInput, state?.duration_minutes]);
-
-  const startDelayMinutes = useMemo(() => {
-    const fromState = clampInt(state?.start_delay_minutes, { min: 0, max: 24 * 60, fallback: 0 });
-    const fromInput = delayInput.trim() ? clampInt(delayInput, { min: 0, max: 24 * 60, fallback: fromState }) : fromState;
-    return fromInput;
-  }, [delayInput, state?.start_delay_minutes]);
-
-  const status = typeof state?.status === 'string' ? state.status : 'idle';
-  const startAt = state?.start_at ?? null;
-
-  const progress = useMemo(
-    () => computeLoopProgress({ now, startAt, durationMinutes }),
-    [now, startAt, durationMinutes]
-  );
-
-  const markerList = Array.isArray(markers) ? markers : [];
-
+  const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
-    const timerId = setInterval(() => setNow(new Date()), 250);
-    return () => clearInterval(timerId);
+    const id = window.setInterval(() => setNowMs(Date.now()), 250);
+    return () => window.clearInterval(id);
   }, []);
 
+  const persistedDuration = state?.duration_minutes;
+  const persistedDelay = state?.start_delay_minutes;
+  const persistedStatus = state?.status;
+
+  const [durationMinutesInput, setDurationMinutesInput] = useState(() =>
+    clampInt(persistedDuration ?? DEFAULT_DURATION_MINUTES, { min: 1, max: 24 * 60, fallback: DEFAULT_DURATION_MINUTES })
+  );
+  // NOTE: DBフィールドは start_delay_minutes のままですが、UI/挙動は「時計の分（0-59）」として扱います。
+  const [delayMinutesInput, setDelayMinutesInput] = useState(() => {
+    const v = clampInt(persistedDelay ?? DEFAULT_START_MINUTE, { min: 0, max: 59, fallback: DEFAULT_START_MINUTE });
+    return String(v);
+  });
+  const [isMarkerModalOpen, setIsMarkerModalOpen] = useState(false);
+  const [markerModalMode, setMarkerModalMode] = useState('create');
+  const [editingMarkerId, setEditingMarkerId] = useState(null);
+  const [modalText, setModalText] = useState('');
+  const [modalOffsetInput, setModalOffsetInput] = useState('0');
+
   useEffect(() => {
-    if (!state) {
-      setDurationInput(String(DEFAULT_DURATION_MINUTES));
-      setDelayInput('0');
+    if (persistedDuration == null) return;
+    setDurationMinutesInput((prev) => {
+      // ユーザー入力中の急な上書きは避けつつ、極端にズレていたら同期。
+      const next = clampInt(persistedDuration, { min: 1, max: 24 * 60, fallback: prev });
+      return next;
+    });
+  }, [persistedDuration]);
+
+  useEffect(() => {
+    if (persistedDelay == null) return;
+    const next = clampInt(persistedDelay, { min: 0, max: 59, fallback: DEFAULT_START_MINUTE });
+    setDelayMinutesInput(String(next));
+  }, [persistedDelay]);
+
+  const durationMinutes = clampInt(durationMinutesInput, { min: 1, max: 24 * 60, fallback: DEFAULT_DURATION_MINUTES });
+  const startMinute = useMemo(() => {
+    // 0=すぐ開始
+    return clampInt(delayMinutesInput, { min: 0, max: 59, fallback: 0 });
+  }, [delayMinutesInput]);
+  const startAtMs = useMemo(() => parseStartAtMs(state?.start_at), [state?.start_at]);
+  const running = isRunning(state);
+  const pausedElapsedMs = useMemo(() => parsePausedElapsedMsFromStatus(state?.status), [state?.status]);
+  const paused = pausedElapsedMs != null;
+  const scheduled = running && startAtMs != null && startAtMs > nowMs;
+  const countdownMs = scheduled && startAtMs != null ? startAtMs - nowMs : 0;
+  const elapsedMsRaw = startAtMs == null ? null : nowMs - startAtMs;
+  const runningElapsedMs = elapsedMsRaw == null ? null : Math.max(0, elapsedMsRaw);
+  const effectiveElapsedMinutes = running
+    ? ((runningElapsedMs ?? 0) / 60000)
+    : (paused ? (pausedElapsedMs / 60000) : 0);
+  const loopMinutes = durationMinutes > 0 ? (effectiveElapsedMinutes % durationMinutes) : 0;
+  const progressRatio = durationMinutes > 0 ? loopMinutes / durationMinutes : 0;
+
+  const safeMarkers = useMemo(() => (Array.isArray(markers) ? markers : []), [markers]);
+  const markerCount = safeMarkers.length;
+
+  const [isEditingDurationOnLine, setIsEditingDurationOnLine] = useState(false);
+  const [durationInlineValue, setDurationInlineValue] = useState('');
+
+  const openDurationInlineEdit = useCallback(() => {
+    setDurationInlineValue(String(durationMinutes));
+    setIsEditingDurationOnLine(true);
+  }, [durationMinutes]);
+
+  const closeDurationInlineEdit = useCallback(() => {
+    setIsEditingDurationOnLine(false);
+  }, []);
+
+  const commitDurationInlineEdit = useCallback(() => {
+    const next = clampInt(durationInlineValue, { min: 1, max: 24 * 60, fallback: durationMinutes });
+    setDurationMinutesInput(String(next));
+    setIsEditingDurationOnLine(false);
+  }, [durationInlineValue, durationMinutes]);
+
+  const lineHeightPx = useMemo(() => {
+    // 通知(マーカー)が増えた時に、縦ラインを伸ばして詰まりを軽減。
+    // 画面全体はスクロール領域なので、必要に応じて下に伸びる。
+    const base = 420;
+    const perMarker = 34;
+    const extra = Math.max(0, markerCount - 4);
+    return Math.min(1400, base + extra * perMarker);
+  }, [markerCount]);
+
+  const [isEditingStartMinuteOnBubble, setIsEditingStartMinuteOnBubble] = useState(false);
+  const [startMinuteInlineValue, setStartMinuteInlineValue] = useState('');
+
+  const openStartMinuteInlineEdit = useCallback(() => {
+    setStartMinuteInlineValue(String(startMinute));
+    setIsEditingStartMinuteOnBubble(true);
+  }, [startMinute]);
+
+  const closeStartMinuteInlineEdit = useCallback(() => {
+    setIsEditingStartMinuteOnBubble(false);
+  }, []);
+
+  const commitStartMinuteInlineEdit = useCallback(() => {
+    const next = clampInt(startMinuteInlineValue, { min: 0, max: 59, fallback: startMinute });
+    setDelayMinutesInput(String(next));
+    setIsEditingStartMinuteOnBubble(false);
+  }, [startMinute, startMinuteInlineValue]);
+
+  const lineContainerRef = useRef(null);
+  const [lineHeight, setLineHeight] = useState(520);
+
+  useEffect(() => {
+    const el = lineContainerRef.current;
+    if (!el) return undefined;
+    const ro = new ResizeObserver(() => {
+      const rect = el.getBoundingClientRect();
+      const h = Math.max(280, Math.floor(rect.height || 0));
+      setLineHeight(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const dotY = Math.round(progressRatio * lineHeight);
+
+  const canWrite = canShare && typeof onSaveState === 'function';
+
+  const handleStart = useCallback(async ({ forceImmediate = false } = {}) => {
+    if (!canWrite) return;
+
+    // ループ通知（マーカー到達時）を出したいので、開始時に権限だけ確認しておく。
+    // 権限が無い場合でもタイマー自体は動かせる。
+    requestLoopNotificationPermission().catch(() => {});
+
+    // paused の場合は、保存されている経過msから復帰（開始分は無視して即時）
+    if (paused) {
+      const resumedStartAt = new Date(Date.now() - pausedElapsedMs).toISOString();
+      await onSaveState({
+        duration_minutes: durationMinutes,
+        start_delay_minutes: startMinute,
+        start_at: resumedStartAt,
+        status: 'running',
+      });
       return;
     }
-    if (!durationInput) {
-      const next = clampInt(state?.duration_minutes, { min: 1, max: 24 * 60, fallback: DEFAULT_DURATION_MINUTES });
-      setDurationInput(String(next));
-    }
-    if (!delayInput) {
-      const next = clampInt(state?.start_delay_minutes, { min: 0, max: 24 * 60, fallback: 0 });
-      setDelayInput(String(next));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
 
-  const handlePersistSettings = useCallback(() => {
-    if (!onSaveState) return;
-    onSaveState({
+    const startAtDate = new Date();
+    const shouldStartNow = forceImmediate || startMinute === 0;
+
+    if (shouldStartNow) {
+      // すぐ開始
+      // start_at は「今」を入れて他端末と同期
+    } else {
+      // 次の「startMinute分ちょうど」に開始
+      startAtDate.setSeconds(0, 0);
+      startAtDate.setMinutes(startMinute);
+      if (startAtDate.getTime() <= Date.now()) {
+        startAtDate.setHours(startAtDate.getHours() + 1);
+      }
+    }
+
+    const startAt = (shouldStartNow ? new Date() : startAtDate).toISOString();
+    await onSaveState({
       duration_minutes: durationMinutes,
-      start_delay_minutes: startDelayMinutes,
-    });
-  }, [durationMinutes, onSaveState, startDelayMinutes]);
-
-  const computeAlignedStartAt = useCallback(() => {
-    const base = new Date();
-    base.setSeconds(0, 0);
-    const delayed = new Date(base.getTime() + startDelayMinutes * 60_000);
-    // 0分指定でも、過去にならないように次分へ寄せる
-    if (delayed.getTime() <= Date.now()) {
-      delayed.setMinutes(delayed.getMinutes() + 1);
-      delayed.setSeconds(0, 0);
-    }
-    return delayed.toISOString();
-  }, [startDelayMinutes]);
-
-  const handleStart = useCallback(() => {
-    if (!onSaveState) return;
-
-    const nextStartAt =
-      startMode === 'now'
-        ? new Date().toISOString()
-        : computeAlignedStartAt();
-
-    onSaveState({
-      duration_minutes: durationMinutes,
-      start_delay_minutes: startDelayMinutes,
-      start_at: nextStartAt,
+      // 互換のためフィールド名は維持（値は「開始する分」）
+      start_delay_minutes: shouldStartNow ? 0 : startMinute,
+      start_at: startAt,
       status: 'running',
     });
-  }, [computeAlignedStartAt, durationMinutes, onSaveState, startDelayMinutes, startMode]);
+  }, [canWrite, durationMinutes, onSaveState, paused, pausedElapsedMs, startMinute]);
 
-  const handleStop = useCallback(() => {
-    if (!onSaveState) return;
-    onSaveState({
-      status: 'stopped',
+  const lastNotifiedCycleByMarkerKeyRef = useRef(new Map());
+  const prevLoopProgressRef = useRef({ durationMinutes: null, cycle: null, loopMinutes: null });
+
+  const resetLoopNotificationState = useCallback(() => {
+    lastNotifiedCycleByMarkerKeyRef.current.clear();
+    prevLoopProgressRef.current = { durationMinutes: durationMinutes, cycle: null, loopMinutes: null };
+  }, [durationMinutes]);
+
+  useEffect(() => {
+    // 停止/一時停止/開始前カウントダウン中は通知監視をリセット。
+    if (!running || paused || scheduled) {
+      resetLoopNotificationState();
+    }
+  }, [paused, resetLoopNotificationState, running, scheduled]);
+
+  useEffect(() => {
+    if (!running) return;
+    if (paused) return;
+    if (scheduled) return;
+    if (durationMinutes <= 0) return;
+    if (startAtMs == null) return;
+
+    const durationMs = durationMinutes * 60 * 1000;
+    const elapsedMs = Math.max(0, nowMs - startAtMs);
+    const cycle = durationMs > 0 ? Math.floor(elapsedMs / durationMs) : 0;
+    const loopMinutesNow = durationMs > 0 ? ((elapsedMs % durationMs) / 60000) : 0;
+
+    const prev = prevLoopProgressRef.current;
+    if (prev.durationMinutes !== durationMinutes) {
+      resetLoopNotificationState();
+    }
+
+    const nextPrev = prevLoopProgressRef.current;
+    if (nextPrev.cycle == null || nextPrev.loopMinutes == null) {
+      prevLoopProgressRef.current = { durationMinutes, cycle, loopMinutes: loopMinutesNow };
+      return;
+    }
+
+    const prevCycle = nextPrev.cycle;
+    const prevLoopMinutes = nextPrev.loopMinutes;
+
+    const markerItems = safeMarkers
+      .map((m) => {
+        const text = String(m?.text ?? '').trim();
+        const offset = clampInt(m?.offset_minutes ?? 0, { min: 0, max: durationMinutes, fallback: 0 });
+        const key = m?.id ?? `${text}:${offset}`;
+        return { key, text, offset };
+      })
+      .filter((m) => Boolean(m.text));
+
+    const fireIfNeeded = (marker, targetCycle) => {
+      const lastCycle = lastNotifiedCycleByMarkerKeyRef.current.get(marker.key);
+      if (lastCycle === targetCycle) return;
+      lastNotifiedCycleByMarkerKeyRef.current.set(marker.key, targetCycle);
+      showLoopAlert(marker.text);
+    };
+
+    if (cycle === prevCycle) {
+      if (loopMinutesNow >= prevLoopMinutes) {
+        for (const marker of markerItems) {
+          if (marker.offset > prevLoopMinutes && marker.offset <= loopMinutesNow) {
+            fireIfNeeded(marker, cycle);
+          }
+        }
+      }
+    } else if (cycle === prevCycle + 1) {
+      // 1周跨いだ（wrap）
+      for (const marker of markerItems) {
+        if (marker.offset > prevLoopMinutes && marker.offset <= durationMinutes) {
+          fireIfNeeded(marker, prevCycle);
+        }
+      }
+      for (const marker of markerItems) {
+        if (marker.offset >= 0 && marker.offset <= loopMinutesNow) {
+          fireIfNeeded(marker, cycle);
+        }
+      }
+    } else {
+      // 大きく飛んだ（タブが長時間止まっていた等）: 連打を避けるため通知せずに同期だけ。
+    }
+
+    prevLoopProgressRef.current = { durationMinutes, cycle, loopMinutes: loopMinutesNow };
+  }, [durationMinutes, nowMs, paused, resetLoopNotificationState, running, safeMarkers, scheduled, startAtMs]);
+
+  const playClickTimerRef = useRef(null);
+  const clearPlayClickTimer = useCallback(() => {
+    if (playClickTimerRef.current) {
+      window.clearTimeout(playClickTimerRef.current);
+      playClickTimerRef.current = null;
+    }
+  }, []);
+
+  const handlePlayClick = useCallback(() => {
+    if (!canWrite) return;
+    clearPlayClickTimer();
+    playClickTimerRef.current = window.setTimeout(() => {
+      playClickTimerRef.current = null;
+      handleStart({ forceImmediate: false }).catch(() => {});
+    }, 250);
+  }, [canWrite, clearPlayClickTimer, handleStart]);
+
+  const handlePlayDoubleClick = useCallback(() => {
+    if (!canWrite) return;
+    clearPlayClickTimer();
+    handleStart({ forceImmediate: true }).catch(() => {});
+  }, [canWrite, clearPlayClickTimer, handleStart]);
+
+  const stopClickTimerRef = useRef(null);
+  const clearStopClickTimer = useCallback(() => {
+    if (stopClickTimerRef.current) {
+      window.clearTimeout(stopClickTimerRef.current);
+      stopClickTimerRef.current = null;
+    }
+  }, []);
+
+  const doPause = useCallback(async () => {
+    if (!canWrite) return;
+    if (!running) return;
+
+    const elapsedMs = startAtMs == null ? 0 : Math.max(0, Date.now() - startAtMs);
+    await onSaveState({
+      status: `paused:${Math.round(elapsedMs)}`,
     });
-  }, [onSaveState]);
+  }, [canWrite, onSaveState, running, startAtMs]);
 
-  const handleEnd = useCallback(() => {
-    if (!onSaveState) return;
-    onSaveState({
+  const doClear = useCallback(async () => {
+    if (!canWrite) return;
+    await onSaveState({
       status: 'idle',
       start_at: null,
     });
-  }, [onSaveState]);
+  }, [canWrite, onSaveState]);
 
-  const handleStopPointerDown = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-    longPressTimerRef.current = setTimeout(() => {
-      longPressTimerRef.current = null;
-      handleEnd();
-    }, 900);
-  }, [handleEnd]);
+  const handleStopClick = useCallback(() => {
+    if (!canWrite) return;
+    clearStopClickTimer();
+    stopClickTimerRef.current = window.setTimeout(() => {
+      stopClickTimerRef.current = null;
+      doPause().catch(() => {});
+    }, 250);
+  }, [canWrite, clearStopClickTimer, doPause]);
 
-  const clearLongPress = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
+  const handleStopDoubleClick = useCallback(() => {
+    if (!canWrite) return;
+    clearStopClickTimer();
+    doClear().catch(() => {});
+  }, [canWrite, clearStopClickTimer, doClear]);
+  useEffect(() => () => clearPlayClickTimer(), [clearPlayClickTimer]);
+  useEffect(() => () => clearStopClickTimer(), [clearStopClickTimer]);
+
+  const openCreateMarkerModal = useCallback(() => {
+    setMarkerModalMode('create');
+    setEditingMarkerId(null);
+    setModalText('');
+    setModalOffsetInput('0');
+    setIsMarkerModalOpen(true);
   }, []);
 
-  const handleAddSubmit = useCallback(
-    (event) => {
-      event.preventDefault();
-      if (!onAddMarker) return;
+  const openEditMarkerModal = useCallback((marker) => {
+    if (!marker) return;
+    setMarkerModalMode('edit');
+    setEditingMarkerId(marker?.id ?? null);
+    setModalText(String(marker?.text ?? ''));
+    setModalOffsetInput(String(marker?.offset_minutes ?? 0));
+    setIsMarkerModalOpen(true);
+  }, []);
 
-      const text = String(markerText || '').trim();
-      if (!text) return;
+  const closeMarkerModal = useCallback(() => {
+    setIsMarkerModalOpen(false);
+  }, []);
 
-      const offsetMinutes = clampInt(markerOffset, { min: 0, max: durationMinutes, fallback: 0 });
-      onAddMarker({
-        text: text.slice(0, 16),
-        offset_minutes: offsetMinutes,
-      });
+  const handleSubmitMarkerModal = useCallback(async () => {
+    if (!canShare) return;
+    const text = String(modalText || '').trim();
+    if (!text) return;
+    const offsetMinutes = clampInt(modalOffsetInput, { min: 0, max: durationMinutes, fallback: 0 });
 
-      setMarkerText('');
-      setMarkerOffset('0');
-      setIsAddOpen(false);
-    },
-    [durationMinutes, markerOffset, markerText, onAddMarker]
-  );
+    if (markerModalMode === 'edit') {
+      if (typeof onUpdateMarker !== 'function' || editingMarkerId == null) return;
+      await onUpdateMarker({ id: editingMarkerId, text, offset_minutes: offsetMinutes });
+      closeMarkerModal();
+      return;
+    }
 
-  const lineHeightPx = 360;
+    if (typeof onAddMarker !== 'function') return;
+    await onAddMarker({ text, offset_minutes: offsetMinutes });
+    closeMarkerModal();
+  }, [canShare, closeMarkerModal, durationMinutes, editingMarkerId, markerModalMode, modalOffsetInput, modalText, onAddMarker, onUpdateMarker]);
+
+  const handleDeleteMarkerModal = useCallback(async () => {
+    if (!canShare) return;
+    if (markerModalMode !== 'edit') return;
+    if (typeof onDeleteMarker !== 'function' || editingMarkerId == null) return;
+    await onDeleteMarker(editingMarkerId);
+    closeMarkerModal();
+  }, [canShare, closeMarkerModal, editingMarkerId, markerModalMode, onDeleteMarker]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white">
-      <div className="border-b border-slate-200 bg-white px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div className="inline-flex size-9 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-              <TimerIcon className="h-5 w-5" />
-            </div>
-            <div className="flex flex-col">
-              <div className="text-sm font-semibold text-slate-900">ループタイムライン</div>
-              <div className="text-[11px] text-slate-500">
-                {canShare ? 'リアルタイム共有' : '共有にはログインが必要です'}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 text-xs text-slate-600">
-              <span>長さ(分)</span>
-              <input
-                type="number"
-                min={1}
-                max={24 * 60}
-                value={durationInput}
-                onChange={(e) => setDurationInput(e.target.value)}
-                className="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 outline-none focus:border-indigo-300"
-              />
-            </label>
-            <button
-              type="button"
-              className="rounded-md border border-indigo-200 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={handlePersistSettings}
-              disabled={!canShare}
-              title={canShare ? '設定を保存' : 'ログインすると保存できます'}
-            >
-              保存
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-full bg-slate-100 p-1">
-            <button
-              type="button"
-              className={`h-8 rounded-full px-3 text-xs font-semibold transition ${
-                startMode === 'sync' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600'
-              }`}
-              onClick={() => setStartMode('sync')}
-            >
-              指定分(同期)
-            </button>
-            <button
-              type="button"
-              className={`h-8 rounded-full px-3 text-xs font-semibold transition ${
-                startMode === 'now' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600'
-              }`}
-              onClick={() => setStartMode('now')}
-            >
-              すぐ開始
-            </button>
-          </div>
-
-          {startMode === 'sync' && (
-            <label className="flex items-center gap-2 text-xs text-slate-600">
-              <span>開始まで(分)</span>
-              <input
-                type="number"
-                min={0}
-                max={24 * 60}
-                value={delayInput}
-                onChange={(e) => setDelayInput(e.target.value)}
-                className="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 outline-none focus:border-indigo-300"
-              />
-            </label>
-          )}
-
-          <button
-            type="button"
-            className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
-            onClick={handleStart}
-            disabled={!canShare}
-            title={canShare ? '' : 'ログインすると開始できます'}
-          >
-            開始
-          </button>
-
-          <button
-            type="button"
-            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-            onClick={handleStop}
-            onPointerDown={handleStopPointerDown}
-            onPointerUp={clearLongPress}
-            onPointerCancel={clearLongPress}
-            onPointerLeave={clearLongPress}
-            disabled={!canShare}
-            title="クリックで停止 / 長押しで終了"
-          >
-            停止
-          </button>
-
-          <button
-            type="button"
-            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-            onClick={() => setIsAddOpen((v) => !v)}
-            disabled={!canShare}
-          >
-            追加
-          </button>
-
-          <div className="ml-auto text-[11px] text-slate-500">
-            <span className="mr-2">状態: {status}</span>
-            {startAt && (
-              <span>
-                start: {formatClock(startAt)}
-                {progress.state === 'scheduled' ? ` (開始まで ${minutesLabel(progress.remainingToStartMs)})` : ''}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {isAddOpen && (
-          <form onSubmit={handleAddSubmit} className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-            <label className="flex items-center gap-2 text-xs text-slate-600">
-              <span>テキスト</span>
-              <input
-                type="text"
-                value={markerText}
-                onChange={(e) => setMarkerText(e.target.value)}
-                maxLength={16}
-                placeholder="10文字程度"
-                className="w-44 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 outline-none focus:border-indigo-300"
-              />
-            </label>
-            <label className="flex items-center gap-2 text-xs text-slate-600">
-              <span>何分後</span>
-              <input
-                type="number"
-                min={0}
-                max={durationMinutes}
-                value={markerOffset}
-                onChange={(e) => setMarkerOffset(e.target.value)}
-                className="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 outline-none focus:border-indigo-300"
-              />
-            </label>
-            <button
-              type="submit"
-              className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-500"
-            >
-              追加する
-            </button>
-            <button
-              type="button"
-              className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-              onClick={() => setIsAddOpen(false)}
-            >
-              キャンセル
-            </button>
-          </form>
-        )}
-      </div>
-
-      <div className="flex-1 min-h-0 overflow-hidden p-4">
-        <div className="flex h-full min-h-0 gap-6 overflow-hidden">
-          <div className="flex flex-col items-center">
-            <div className="relative" style={{ height: `${lineHeightPx}px`, width: '44px' }}>
-              <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-slate-300" aria-hidden="true" />
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-[11px] font-semibold text-slate-500">0</div>
-              <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-[11px] font-semibold text-slate-500">
-                {durationMinutes}
-              </div>
-
-              {status === 'running' && progress.state === 'running' && (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
+      <div className="custom-scrollbar flex-1 min-h-0 overflow-auto p-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <div className="flex items-center justify-end">
+            <div className="flex items-center gap-2">
+              <div className="relative">
                 <div
-                  className="absolute left-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500"
-                  style={{ top: `${(progress.offsetMs / (durationMinutes * 60_000)) * lineHeightPx}px` }}
-                  title={`ループ ${progress.loopIndex + 1}`}
-                />
-              )}
+                  className="absolute right-full top-1/2 mr-2 -translate-y-1/2"
+                  onDoubleClick={(e) => {
+                    e.preventDefault();
+                    openStartMinuteInlineEdit();
+                  }}
+                >
+                  {isEditingStartMinuteOnBubble ? (
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={startMinuteInlineValue}
+                      onChange={(e) => setStartMinuteInlineValue(e.target.value)}
+                      onBlur={commitStartMinuteInlineEdit}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitStartMinuteInlineEdit();
+                        if (e.key === 'Escape') closeStartMinuteInlineEdit();
+                      }}
+                      className="no-spinner w-12 rounded-full border border-slate-300 bg-white px-2 py-0.5 text-center text-[11px] font-semibold text-slate-900 outline-none focus:border-indigo-400"
+                      inputMode="numeric"
+                      autoFocus
+                    />
+                  ) : (
+                    <div className="relative cursor-pointer select-none rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">
+                      {startMinute}
+                      <span
+                        className="absolute left-full top-1/2 h-0 w-0 -translate-y-1/2 border-y-4 border-l-4 border-y-transparent border-l-slate-900"
+                        aria-hidden="true"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  className={`inline-flex h-9 w-9 items-center justify-center !rounded-full !p-0 !text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    running
+                      ? '!bg-rose-600 hover:!bg-rose-700'
+                      : '!bg-indigo-600 hover:!bg-indigo-700'
+                  }`}
+                  onClick={handlePlayClick}
+                  onDoubleClick={(e) => {
+                    e.preventDefault();
+                    handlePlayDoubleClick();
+                  }}
+                  disabled={!canWrite || running}
+                  aria-label="再生"
+                >
+                  <IconPlay className="h-5 w-5" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                className="relative inline-flex h-9 w-9 items-center justify-center !rounded-full !p-0 border !border-slate-300 !bg-white !text-slate-700 transition-colors hover:!bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={handleStopClick}
+                onDoubleClick={(e) => {
+                  e.preventDefault();
+                  handleStopDoubleClick();
+                }}
+                disabled={!canWrite || (!running && !paused)}
+                aria-label="停止"
+              >
+                <IconStop className="h-5 w-5" />
+              </button>
+
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center !rounded-full !bg-slate-900 !p-0 !text-white transition-colors hover:!bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={openCreateMarkerModal}
+                disabled={!canShare || typeof onAddMarker !== 'function'}
+                aria-label="追加"
+              >
+                <IconPlus className="h-5 w-5" />
+              </button>
             </div>
           </div>
+          <div className="mt-3 flex gap-4">
+            <div
+              ref={lineContainerRef}
+              className="relative w-24 flex-shrink-0"
+              style={{ height: lineHeightPx }}
+            >
+              <div className="absolute left-1/2 top-0 h-full w-1 -translate-x-1/2 rounded bg-slate-200" />
 
-          <div className="flex-1 min-w-0 overflow-hidden">
-            <div className="text-xs font-semibold text-slate-600">追加項目</div>
-            <div className="mt-2 custom-scrollbar h-[calc(100%-1.25rem)] overflow-y-auto pr-2">
-              {markerList.length === 0 ? (
-                <div className="text-sm text-slate-400">追加項目はありません</div>
-              ) : (
-                <div className="space-y-2">
-                  {markerList.map((m) => {
-                    const id = m?.id ?? null;
-                    const text = typeof m?.text === 'string' ? m.text : '';
-                    const offset = clampInt(m?.offset_minutes, { min: 0, max: durationMinutes, fallback: 0 });
-                    const top = (offset / Math.max(1, durationMinutes)) * lineHeightPx;
+              <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1 text-[11px] font-semibold text-slate-700">
+                0
+              </div>
+              <div
+                className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1"
+                title="ダブルクリックで変更"
+                onDoubleClick={openDurationInlineEdit}
+              >
+                {isEditingDurationOnLine ? (
+                  <input
+                    type="number"
+                    min={1}
+                    max={24 * 60}
+                    value={durationInlineValue}
+                    onChange={(e) => setDurationInlineValue(e.target.value)}
+                    onBlur={commitDurationInlineEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitDurationInlineEdit();
+                      if (e.key === 'Escape') closeDurationInlineEdit();
+                    }}
+                    className="no-spinner w-14 rounded border border-slate-300 bg-white px-1 py-0.5 text-center text-[11px] font-semibold text-slate-900 outline-none focus:border-indigo-400"
+                    inputMode="numeric"
+                    autoFocus
+                  />
+                ) : (
+                  <div className="cursor-pointer select-none text-[11px] font-semibold text-slate-700">
+                    {durationMinutes}
+                  </div>
+                )}
+              </div>
 
-                    return (
-                      <div key={id ?? `${text}-${offset}`} className="relative rounded-lg border border-slate-200 bg-white px-3 py-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold text-slate-900">{text || '（無題）'}</div>
-                            <div className="text-[11px] text-slate-500">{offset}分後</div>
-                          </div>
-                          <button
-                            type="button"
-                            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                            onClick={() => id != null && onDeleteMarker && onDeleteMarker(id)}
-                            disabled={!canShare || id == null}
-                            title={id == null ? '同期前のデータです' : '削除'}
-                          >
-                            削除
-                          </button>
-                        </div>
+              <div
+                className={`absolute left-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white ${
+                  running ? 'border-rose-600' : 'border-indigo-600'
+                }`}
+                style={{ top: `${dotY}px` }}
+                title={running ? `現在: ${Math.floor(loopMinutes)}分` : '停止中'}
+              />
 
-                        <div className="pointer-events-none absolute right-full top-1/2 mr-4 hidden h-0 w-0 md:block" aria-hidden="true" />
-                        <div
-                          className="absolute -left-6 top-0 hidden md:block"
-                          style={{ height: `${lineHeightPx}px` }}
-                          aria-hidden="true"
-                        >
-                          <div
-                            className="absolute left-1/2 w-px -translate-x-1/2 bg-transparent"
-                            style={{ top: 0, bottom: 0 }}
-                          />
-                          <div
-                            className="absolute left-1/2 h-0.5 w-6 -translate-x-1/2 bg-indigo-200"
-                            style={{ top: `${top}px` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
+              {scheduled && (
+                <div
+                  className="pointer-events-none absolute left-1/2 -translate-x-1/2"
+                  style={{ top: `${dotY}px` }}
+                >
+                  <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2">
+                    <div className="relative select-none rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">
+                      {formatMmSs(countdownMs)}
+                      <span
+                        className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-4 border-t-4 border-x-transparent border-t-slate-900"
+                        aria-hidden="true"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
+
+              {safeMarkers.map((m) => {
+                const offset = clampInt(m?.offset_minutes ?? 0, { min: 0, max: durationMinutes, fallback: 0 });
+                const y = Math.round((offset / durationMinutes) * lineHeight);
+                return (
+                  <div
+                    key={m?.id ?? `${m?.text}-${offset}`}
+                    className="absolute left-1/2 -translate-y-1/2 cursor-pointer select-none"
+                    style={{ top: `${y}px` }}
+                    title={`${offset}分: ${String(m?.text ?? '')}`}
+                    onDoubleClick={() => openEditMarkerModal(m)}
+                  >
+                    <div className="flex items-center">
+                      <div className="h-2 w-2 -translate-x-1/2 rounded-full bg-slate-500" aria-hidden="true" />
+                      <div className="ml-2 max-w-28 truncate rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-800">
+                        {String(m?.text ?? '')}
+                        <span className="ml-2 text-[10px] font-semibold text-slate-600">{offset}分</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="min-w-0 flex-1">
             </div>
           </div>
         </div>
+
+        {isMarkerModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+            role="dialog"
+            aria-modal="true"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) {
+                closeMarkerModal();
+              }
+            }}
+          >
+            <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold text-slate-900">
+                  {markerModalMode === 'edit' ? '編集' : '追加'}
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 items-center justify-center !rounded-full !p-0 border border-slate-200 !bg-white !text-slate-700 hover:!bg-slate-50"
+                  onClick={closeMarkerModal}
+                  aria-label="閉じる"
+                  title="閉じる"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                <label className="block">
+                  <div className="text-[11px] font-semibold text-slate-700">テキスト（10文字）</div>
+                  <input
+                    type="text"
+                    maxLength={10}
+                    value={modalText}
+                    onChange={(e) => setModalText(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400"
+                    placeholder="例: 休憩"
+                    autoFocus
+                  />
+                </label>
+
+                <label className="block">
+                  <div className="text-[11px] font-semibold text-slate-700">位置（分）</div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={durationMinutes}
+                    value={modalOffsetInput}
+                    onChange={(e) => setModalOffsetInput(e.target.value)}
+                    className="no-spinner mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400"
+                    inputMode="numeric"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 flex items-center justify-end gap-2">
+                {markerModalMode === 'edit' && (
+                  <button
+                    type="button"
+                    className="inline-flex h-10 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={handleDeleteMarkerModal}
+                    aria-label="削除"
+                    title="削除"
+                    disabled={!canShare || typeof onDeleteMarker !== 'function' || editingMarkerId == null}
+                  >
+                    削除
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="inline-flex h-10 items-center justify-center rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={handleSubmitMarkerModal}
+                  aria-label={markerModalMode === 'edit' ? '保存' : '追加'}
+                  title={markerModalMode === 'edit' ? '保存' : '追加'}
+                  disabled={!canShare || !String(modalText || '').trim() || (markerModalMode === 'edit' ? typeof onUpdateMarker !== 'function' : typeof onAddMarker !== 'function')}
+                >
+                  {markerModalMode === 'edit' ? '保存' : '追加'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -184,3 +184,47 @@ export const deleteLoopTimelineMarkerForUser = async ({ userId, id }) => {
     durationMs: buildDuration(startedAt),
   });
 };
+
+export const updateLoopTimelineMarkerForUser = async ({ userId, id, text, offsetMinutes }) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+  if (id == null) throw new Error('更新対象IDが指定されていません。');
+
+  const payload = {
+    text: text ?? '',
+    offset_minutes: offsetMinutes ?? 0,
+    updated_at: new Date().toISOString(),
+  };
+
+  const startedAt = nowPerf();
+  logLoop('loopTimeline', 'updateMarker', 'request', {
+    userId,
+    id,
+    textLength: String(payload.text).length,
+    offsetMinutes: payload.offset_minutes,
+  });
+
+  const { data, error } = await supabase
+    .from(MARKERS_TABLE)
+    .update(payload)
+    .eq('user_id', userId)
+    .eq('id', id)
+    .select('id, user_id, text, offset_minutes, created_at, updated_at')
+    .single();
+
+  if (error) {
+    logLoop('loopTimeline', 'updateMarker', 'error', {
+      userId,
+      id,
+      durationMs: buildDuration(startedAt),
+      message: error.message,
+    });
+    throw new Error(`ループタイムラインの追加項目を更新できませんでした: ${error.message}`);
+  }
+
+  logLoop('loopTimeline', 'updateMarker', 'success', {
+    userId,
+    id,
+    durationMs: buildDuration(startedAt),
+  });
+  return data;
+};

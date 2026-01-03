@@ -249,6 +249,20 @@ input[type="number"].notification-input {
 
 }
 
+/* 数値入力の上下スピナー（▲▼）を非表示にする */
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  margin: 0 !important;
+  display: none !important;
+}
+
+.no-spinner[type="number"] {
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
 @layer components {
   /* ノート本文（Markdown表示）の見た目を整える（Notion/Qiita寄り） */
   .note-markdown {
