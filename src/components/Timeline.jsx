@@ -549,7 +549,6 @@ const Timeline = ({
 				onDragOver={(event) => handleAllDayDragOver(event, index)}
 				onDragLeave={handleAllDayDragLeave}
 				onDrop={(event) => handleAllDayDrop(event, index)}
-				onClick={() => onEdit && onEdit(schedule)}
 				onDoubleClick={() => onEdit && onEdit(schedule)}
 				onContextMenu={(event) => {
 					if (!isAltPressed) return;
@@ -650,7 +649,6 @@ const Timeline = ({
 					className={`relative flex-1 cursor-pointer overflow-hidden rounded-lg border border-indigo-100 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md ${
 						isPast ? 'opacity-80' : ''
 					} ${shouldDimForTask(schedule) ? 'opacity-60' : ''}`}
-					onClick={() => onEdit && onEdit(schedule)}
 					onDoubleClick={() => onEdit && onEdit(schedule)}
 					onContextMenu={(event) => {
 						if (!isAltPressed) return;

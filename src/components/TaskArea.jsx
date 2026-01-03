@@ -102,11 +102,6 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onTaskDelete, isAltPressed
         className={`border border-gray-200 rounded-lg p-2.5 bg-white shadow-sm transition hover:shadow-md cursor-pointer ${
           isCompleted ? 'opacity-70' : ''
         }`}
-        onClick={() => {
-          if (onEdit) {
-            onEdit(task);
-          }
-        }}
         onDoubleClick={() => {
           if (onEdit) {
             onEdit(task);
