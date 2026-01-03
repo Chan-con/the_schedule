@@ -321,14 +321,6 @@ const LoopTimelineArea = ({
     }
 
     const nextPrev = prevLoopProgressRef.current;
-    if (nextPrev.cycle == null || nextPrev.loopMinutes == null) {
-      prevLoopProgressRef.current = { durationMinutes, cycle, loopMinutes: loopMinutesNow };
-      return;
-    }
-
-    const prevCycle = nextPrev.cycle;
-    const prevLoopMinutes = nextPrev.loopMinutes;
-
     const markerItems = safeMarkers
       .map((m) => {
         const text = String(m?.text ?? '').trim();
@@ -344,6 +336,20 @@ const LoopTimelineArea = ({
       lastNotifiedCycleByMarkerKeyRef.current.set(marker.key, targetCycle);
       showLoopAlert(marker.text);
     };
+
+    // 初回tick（開始直後）は prev が無いので、0分マーカーだけは必ず拾っておく。
+    if (nextPrev.cycle == null || nextPrev.loopMinutes == null) {
+      for (const marker of markerItems) {
+        if (marker.offset === 0) {
+          fireIfNeeded(marker, cycle);
+        }
+      }
+      prevLoopProgressRef.current = { durationMinutes, cycle, loopMinutes: loopMinutesNow };
+      return;
+    }
+
+    const prevCycle = nextPrev.cycle;
+    const prevLoopMinutes = nextPrev.loopMinutes;
 
     if (cycle === prevCycle) {
       if (loopMinutesNow >= prevLoopMinutes) {
