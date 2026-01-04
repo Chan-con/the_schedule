@@ -3,6 +3,7 @@ import MemoWithLinks from './MemoWithLinks';
 import TaskArea from './TaskArea';
 import NoteArea from './NoteArea';
 import LoopTimelineArea from './LoopTimelineArea';
+import QuestArea from './QuestArea';
 
 const ALL_DAY_MIN_HEIGHT = 120;
 const TIMELINE_MIN_HEIGHT = 120;
@@ -88,6 +89,9 @@ const Timeline = ({
 	onLoopTimelineUpdateMarker,
 	onLoopTimelineDeleteMarker,
 	canShareLoopTimeline = false,
+	questTasks = [],
+	onCreateQuestTask,
+	onToggleQuestTask,
 }) => {
 	const [draggedAllDayId, setDraggedAllDayId] = useState(null);
 	const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -98,6 +102,7 @@ const Timeline = ({
 	const [resizeStartHeight, setResizeStartHeight] = useState(0);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
 	const [isAltPressed, setIsAltPressed] = useState(false);
+	const questAddInputRef = useRef(null);
 	const cardRef = useRef(null);
 	const timelineRef = useRef(null);
 	const allDaySectionRef = useRef(null);
@@ -146,13 +151,15 @@ const Timeline = ({
 		return Math.max(minHeight, limit);
 	}, []);
 
-	const currentTab = ['timeline', 'tasks', 'notes', 'loop'].includes(activeTab) ? activeTab : 'timeline';
+	const currentTab = ['timeline', 'tasks', 'notes', 'loop', 'quest'].includes(activeTab) ? activeTab : 'timeline';
 	const showTimeline = currentTab === 'timeline';
 	const showTasks = currentTab === 'tasks';
 	const showNotes = currentTab === 'notes';
 	const showLoopTimeline = currentTab === 'loop';
+	const showQuest = currentTab === 'quest';
 	const availableTasks = Array.isArray(tasks) ? tasks : [];
 	const availableNotes = Array.isArray(notes) ? notes : [];
+	const availableQuestTasks = Array.isArray(questTasks) ? questTasks : [];
 
 	// NOTE: カードの最大縦幅をJSで固定すると、親のレイアウト次第で余白が発生しやすいので
 	// ここでは height/maxHeight を強制せず、親コンテナ（flex + overflow）に任せる。
@@ -523,13 +530,45 @@ const Timeline = ({
 				</svg>
 			),
 		},
+		{
+			key: 'quest',
+			label: 'クエスト',
+			icon: (
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					className="h-5 w-5"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="2"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M8 21h8" />
+					<path d="M12 17v4" />
+					<path d="M7 4h10v4a5 5 0 0 1-10 0V4z" />
+					<path d="M5 4H3v2a4 4 0 0 0 4 4" />
+					<path d="M19 4h2v2a4 4 0 0 1-4 4" />
+				</svg>
+			),
+		},
 	];
-	const isAddDisabled = showLoopTimeline ? true : showTasks ? !onAddTask : showNotes ? !onAddNote : !onAdd;
+	const isAddDisabled = showLoopTimeline ? true : showTasks ? !onAddTask : showNotes ? !onAddNote : showQuest ? false : !onAdd;
 
 	const handleAddClick = () => {
 		if (showTasks) {
 			if (onAddTask) {
 				onAddTask();
+			}
+			return;
+		}
+
+		if (showQuest) {
+			try {
+				questAddInputRef.current?.focus?.();
+			} catch {
+				// ignore
 			}
 			return;
 		}
@@ -904,7 +943,7 @@ const Timeline = ({
 						}`}
 						onClick={handleAddClick}
 						disabled={isAddDisabled}
-						title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : showLoopTimeline ? 'ループタイムラインでは「追加」ボタンを使用' : '予定を追加'}
+						title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : showLoopTimeline ? 'ループタイムラインでは「追加」ボタンを使用' : showQuest ? 'クエストを追加' : '予定を追加'}
 					>
 						<span className="text-lg font-semibold leading-none">＋</span>
 					</button>
@@ -944,6 +983,13 @@ const Timeline = ({
 						activeNoteId={activeNoteId}
 						onActiveNoteIdChange={onActiveNoteIdChange}
 						onRequestClose={onRequestCloseNote}
+					/>
+				) : showQuest ? (
+					<QuestArea
+						tasks={availableQuestTasks}
+						onCreateTask={onCreateQuestTask}
+						onToggleTask={onToggleQuestTask}
+						addInputRef={questAddInputRef}
 					/>
 				) : showLoopTimeline ? (
 					<LoopTimelineArea

@@ -129,7 +129,6 @@ const LoopTimelineArea = ({
 
   const persistedDuration = state?.duration_minutes;
   const persistedDelay = state?.start_delay_minutes;
-  const persistedStatus = state?.status;
 
   const [durationMinutesInput, setDurationMinutesInput] = useState(() =>
     clampInt(persistedDuration ?? DEFAULT_DURATION_MINUTES, { min: 1, max: 24 * 60, fallback: DEFAULT_DURATION_MINUTES })

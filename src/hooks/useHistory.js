@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useReducer, useMemo } from 'react';
+import { useEffect, useCallback, useRef, useReducer, useMemo } from 'react';
 
 const isHistoryDebugEnabled =
   typeof import.meta !== 'undefined' && import.meta.env?.VITE_DEBUG_HISTORY === 'true';

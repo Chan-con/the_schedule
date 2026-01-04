@@ -12,6 +12,7 @@ import QuickMemoPad from './components/QuickMemoPad';
 import CornerFloatingMenu from './components/CornerFloatingMenu';
 import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQuickMemo';
 import { supabase } from './lib/supabaseClient';
+import { fetchQuestTasksForUser, createQuestTaskForUser, updateQuestTaskForUser } from './utils/supabaseQuestTasks';
 import {
   fetchLoopTimelineMarkersForUser,
   fetchLoopTimelineStateForUser,
@@ -63,6 +64,7 @@ const createTempId = () => Date.now();
 
 const QUICK_MEMO_STORAGE_KEY = 'quickMemoPadContent';
 const NOTES_STORAGE_KEY = 'notes';
+const QUEST_TASKS_STORAGE_KEY = 'questTasks';
 const NOTE_ARCHIVE_FLAGS_STORAGE_KEY = 'noteArchiveFlagsV1';
 const NOTE_IMPORTANT_FLAGS_STORAGE_KEY = 'noteImportantFlagsV1';
 const MEMO_SPLIT_STORAGE_KEY = 'memoSplitRatio';
@@ -208,6 +210,31 @@ function App() {
     return [];
   }, []);
 
+  const loadLocalQuestTasks = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+
+    try {
+      const stored = window.localStorage.getItem(QUEST_TASKS_STORAGE_KEY);
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.warn('⚠️ Failed to load quest tasks from localStorage:', error);
+      return [];
+    }
+  }, []);
+
+  const saveLocalQuestTasks = useCallback((nextTasks) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(QUEST_TASKS_STORAGE_KEY, JSON.stringify(Array.isArray(nextTasks) ? nextTasks : []));
+    } catch (error) {
+      console.warn('⚠️ Failed to persist quest tasks to localStorage:', error);
+    }
+  }, []);
+
   const saveLocalNotes = useCallback((nextNotes) => {
     if (typeof window === 'undefined') return;
     try {
@@ -342,6 +369,7 @@ function App() {
     quick_memos: new Map(),
     loop_timeline_state: new Map(),
     loop_timeline_markers: new Map(),
+    quest_tasks: new Map(),
   });
   const REALTIME_SELF_WRITE_WINDOW_MS = 2000;
 
@@ -491,6 +519,7 @@ function App() {
   const [isQuickMemoLoaded, setIsQuickMemoLoaded] = useState(false);
 
   const [notes, setNotes] = useState([]);
+  const [questTasks, setQuestTasks] = useState(() => []);
   const [activeNoteId, setActiveNoteId] = useState(null);
   const [sharedNoteId, setSharedNoteId] = useState(null);
   const noteLinkReturnStateRef = useRef(null);
@@ -499,10 +528,15 @@ function App() {
   const lastHashNoteIdRef = useRef(null);
   const lastLoginRequestForNoteRef = useRef(null);
   const notesRef = useRef([]);
+  const questTasksRef = useRef([]);
 
   useEffect(() => {
     notesRef.current = Array.isArray(notes) ? notes : [];
   }, [notes]);
+
+  useEffect(() => {
+    questTasksRef.current = Array.isArray(questTasks) ? questTasks : [];
+  }, [questTasks]);
 
   const openSharedNote = useCallback(
     (noteId) => {
@@ -752,7 +786,7 @@ function App() {
         const visibleRange = calendarVisibleRangeRef.current;
         const hasVisibleRange = !!(visibleRange?.startDate && visibleRange?.endDate);
 
-        const [remoteSchedules, remoteQuickMemo, remoteNotes, remoteNoteDates, remoteLoopState, remoteLoopMarkers] = await Promise.all([
+        const [remoteSchedules, remoteQuickMemo, remoteNotes, remoteNoteDates, remoteLoopState, remoteLoopMarkers, remoteQuestTasks] = await Promise.all([
           fetchSchedulesForUser(userId),
           fetchQuickMemoForUser(userId),
           fetchNotesForUser(userId),
@@ -769,6 +803,10 @@ function App() {
           }),
           fetchLoopTimelineMarkersForUser(userId).catch((error) => {
             console.warn('[Supabase] loop_timeline_markers fetch skipped:', error);
+            return [];
+          }),
+          fetchQuestTasksForUser(userId).catch((error) => {
+            console.warn('[Supabase] quest_tasks fetch skipped:', error);
             return [];
           }),
         ]);
@@ -815,6 +853,10 @@ function App() {
         setLoopTimelineState(remoteLoopState);
         setLoopTimelineMarkers(Array.isArray(remoteLoopMarkers) ? remoteLoopMarkers : []);
 
+        const nextQuestTasks = Array.isArray(remoteQuestTasks) ? remoteQuestTasks : [];
+        setQuestTasks(nextQuestTasks);
+        saveLocalQuestTasks(nextQuestTasks);
+
         setSupabaseError(null);
         hasFetchedRemoteRef.current = true;
         console.info('[SupabaseSync] payload', JSON.stringify({
@@ -860,8 +902,141 @@ function App() {
         }));
       }
     },
-    [applyQuickMemoValue, beginSupabaseJob, endSupabaseJob, replaceAppState, userId]
+    [applyQuickMemoValue, beginSupabaseJob, endSupabaseJob, replaceAppState, saveLocalQuestTasks, userId]
   );
+
+  const requestSupabaseSync = useCallback(
+    (reason = 'unknown', options = {}) => {
+      if (!userId) return;
+      const { showSpinner = false } = options;
+      const state = supabaseSyncStateRef.current;
+      state.pending = true;
+      state.lastReason = reason;
+
+      if (state.timerId) {
+        clearTimeout(state.timerId);
+      }
+
+      state.timerId = setTimeout(async () => {
+        const runState = supabaseSyncStateRef.current;
+        runState.timerId = null;
+
+        if (runState.inFlight) {
+          runState.pending = true;
+          return;
+        }
+
+        runState.inFlight = true;
+        const actionType = `supabase_resync:${String(runState.lastReason || 'unknown')}`;
+        runState.pending = false;
+        try {
+          await refreshFromSupabase(actionType, { showSpinner });
+        } catch {
+          // refreshFromSupabase がエラー状態を保持するためここでは握りつぶす
+        } finally {
+          runState.inFlight = false;
+          if (runState.pending) {
+            // 直近の要求が残っていればもう一度（短いデバウンス）
+            requestSupabaseSync(runState.lastReason || 'pending', { showSpinner: false });
+          }
+        }
+      }, 250);
+    },
+    [refreshFromSupabase, userId]
+  );
+
+  const handleCreateQuestTask = useCallback(async ({ period, title }) => {
+    const safeTitle = String(title ?? '').trim();
+    if (!safeTitle) return;
+
+    const safePeriod = String(period ?? 'daily');
+    const nowIso = new Date().toISOString();
+
+    if (!userId) {
+      const next = [
+        ...questTasksRef.current,
+        {
+          id: createTempId(),
+          user_id: null,
+          period: safePeriod,
+          title: safeTitle,
+          completed_cycle_id: null,
+          created_at: nowIso,
+          updated_at: nowIso,
+        },
+      ];
+      setQuestTasks(next);
+      saveLocalQuestTasks(next);
+      return;
+    }
+
+    const jobMeta = { kind: 'questTaskCreate' };
+    beginSupabaseJob(jobMeta);
+    try {
+      const created = await createQuestTaskForUser({ userId, period: safePeriod, title: safeTitle });
+      markRealtimeSelfWrite('quest_tasks', created?.id ?? null);
+      setQuestTasks((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        return [...list, created].sort((a, b) => {
+          const diff = String(a?.created_at ?? '').localeCompare(String(b?.created_at ?? ''));
+          if (diff !== 0) return diff;
+          return Number(a?.id ?? 0) - Number(b?.id ?? 0);
+        });
+      });
+      setSupabaseError(null);
+    } catch (error) {
+      console.error('[Supabase] Failed to create quest task:', error);
+      setSupabaseError(error.message || 'クエストの作成に失敗しました。');
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, saveLocalQuestTasks, userId]);
+
+  const handleToggleQuestTask = useCallback(async (task, nextCompleted, cycleId) => {
+    const id = task?.id ?? null;
+    if (id == null) return;
+
+    const nextCompletedCycleId = nextCompleted ? String(cycleId ?? '') : null;
+    const optimisticPatch = {
+      completed_cycle_id: nextCompletedCycleId,
+      updated_at: new Date().toISOString(),
+    };
+
+    setQuestTasks((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const next = list.map((t) => ((t?.id ?? null) === id ? { ...t, ...optimisticPatch } : t));
+      if (!userId) {
+        saveLocalQuestTasks(next);
+      }
+      return next;
+    });
+
+    if (!userId) return;
+
+    const jobMeta = { kind: 'questTaskToggle' };
+    beginSupabaseJob(jobMeta);
+    try {
+      markRealtimeSelfWrite('quest_tasks', id);
+      const saved = await updateQuestTaskForUser({
+        userId,
+        id,
+        patch: { completed_cycle_id: nextCompletedCycleId },
+      });
+      setQuestTasks((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const next = list.map((t) => ((t?.id ?? null) === id ? saved : t));
+        saveLocalQuestTasks(next);
+        return next;
+      });
+      setSupabaseError(null);
+    } catch (error) {
+      console.error('[Supabase] Failed to toggle quest task:', error);
+      setSupabaseError(error.message || 'クエスト状態の更新に失敗しました。');
+      requestSupabaseSync('quest_toggle_error');
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, saveLocalQuestTasks, userId]);
 
   const handleLoopTimelineSaveState = useCallback(async (patch) => {
     if (!userId) return;
@@ -997,46 +1172,6 @@ function App() {
     }
   }, [userId]);
 
-  const requestSupabaseSync = useCallback(
-    (reason = 'unknown', options = {}) => {
-      if (!userId) return;
-      const { showSpinner = false } = options;
-      const state = supabaseSyncStateRef.current;
-      state.pending = true;
-      state.lastReason = reason;
-
-      if (state.timerId) {
-        clearTimeout(state.timerId);
-      }
-
-      state.timerId = setTimeout(async () => {
-        const runState = supabaseSyncStateRef.current;
-        runState.timerId = null;
-
-        if (runState.inFlight) {
-          runState.pending = true;
-          return;
-        }
-
-        runState.inFlight = true;
-        const actionType = `supabase_resync:${String(runState.lastReason || 'unknown')}`;
-        runState.pending = false;
-        try {
-          await refreshFromSupabase(actionType, { showSpinner });
-        } catch {
-          // refreshFromSupabase がエラー状態を保持するためここでは握りつぶす
-        } finally {
-          runState.inFlight = false;
-          if (runState.pending) {
-            // 直近の要求が残っていればもう一度（短いデバウンス）
-            requestSupabaseSync(runState.lastReason || 'pending', { showSpinner: false });
-          }
-        }
-      }, 250);
-    },
-    [refreshFromSupabase, userId]
-  );
-
   // Supabase Realtime: 他端末/他ウィンドウのループタイムライン変更を検知して再同期
   useEffect(() => {
     if (!userId) return;
@@ -1110,6 +1245,8 @@ function App() {
       const localMemo = loadLocalQuickMemo();
       applyQuickMemoValue(localMemo);
 
+      setQuestTasks(loadLocalQuestTasks());
+
       // ローカルノート
       const allNotes = loadLocalNotes();
       const nextNotes = allNotes
@@ -1131,7 +1268,50 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [applyQuickMemoValue, auth?.isLoading, loadLocalNotes, loadLocalQuickMemo, loadLocalSchedules, refreshFromSupabase, replaceAppState, selectedDateStr, userId]);
+  }, [applyQuickMemoValue, auth?.isLoading, loadLocalNotes, loadLocalQuickMemo, loadLocalQuestTasks, loadLocalSchedules, refreshFromSupabase, replaceAppState, selectedDateStr, userId]);
+
+  // クエストは常にローカルキャッシュも更新（オフライン復帰用）
+  useEffect(() => {
+    saveLocalQuestTasks(questTasks);
+  }, [questTasks, saveLocalQuestTasks]);
+
+  // Supabase Realtime: 他端末/他ウィンドウのクエスト変更を検知して再同期
+  useEffect(() => {
+    if (!userId) return;
+
+    let isDisposed = false;
+    const channel = supabase
+      .channel(`quest_tasks:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'quest_tasks',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (isDisposed) return;
+          const rowId = payload?.new?.id ?? payload?.old?.id ?? null;
+          if (rowId != null && shouldIgnoreRealtimeEvent('quest_tasks', rowId)) {
+            return;
+          }
+          requestSupabaseSync('realtime:quest_tasks');
+        }
+      )
+      .subscribe((status) => {
+        console.info('[SupabaseRealtime] quest_tasks subscription', JSON.stringify({ status }));
+      });
+
+    return () => {
+      isDisposed = true;
+      try {
+        supabase.removeChannel(channel);
+      } catch {
+        // ignore
+      }
+    };
+  }, [requestSupabaseSync, shouldIgnoreRealtimeEvent, userId]);
 
   // Web: フォーカス復帰/表示復帰/オンライン復帰で安全に再同期
   useEffect(() => {
@@ -2928,6 +3108,9 @@ function App() {
                           onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
                           onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
                           onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
+                          questTasks={questTasks}
+                          onCreateQuestTask={handleCreateQuestTask}
+                          onToggleQuestTask={handleToggleQuestTask}
                         />
                       </div>
                     </div>
@@ -3048,6 +3231,9 @@ function App() {
                     onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
                     onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
                     onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
+                    questTasks={questTasks}
+                    onCreateQuestTask={handleCreateQuestTask}
+                    onToggleQuestTask={handleToggleQuestTask}
                   />
                 </div>
               </div>
