@@ -1337,10 +1337,17 @@ function App() {
           if (rowKey != null && shouldIgnoreRealtimeEvent('loop_timeline_state', rowKey)) {
             return;
           }
+          console.info('[SupabaseRealtime] loop_timeline_state changed', JSON.stringify({
+            eventType: payload?.eventType,
+            table: payload?.table,
+            timestamp: new Date().toISOString(),
+          }));
           requestSupabaseSync('realtime:loop_timeline');
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.info('[SupabaseRealtime] loop_timeline_state subscription', JSON.stringify({ status }));
+      });
 
     const markersChannel = supabase
       .channel(`loop_timeline_markers:${userId}`)
@@ -1358,10 +1365,17 @@ function App() {
           if (rowId != null && shouldIgnoreRealtimeEvent('loop_timeline_markers', rowId)) {
             return;
           }
+          console.info('[SupabaseRealtime] loop_timeline_markers changed', JSON.stringify({
+            eventType: payload?.eventType,
+            table: payload?.table,
+            timestamp: new Date().toISOString(),
+          }));
           requestSupabaseSync('realtime:loop_timeline');
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.info('[SupabaseRealtime] loop_timeline_markers subscription', JSON.stringify({ status }));
+      });
 
     return () => {
       isDisposed = true;
@@ -1440,6 +1454,11 @@ function App() {
           if (rowId != null && shouldIgnoreRealtimeEvent('quest_tasks', rowId)) {
             return;
           }
+          console.info('[SupabaseRealtime] quest_tasks changed', JSON.stringify({
+            eventType: payload?.eventType,
+            table: payload?.table,
+            timestamp: new Date().toISOString(),
+          }));
           requestSupabaseSync('realtime:quest_tasks');
         }
       )

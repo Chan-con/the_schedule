@@ -121,6 +121,13 @@ VITE_VAPID_PUBLIC_KEY=...
 	 	```
 
 	 	- Supabase Realtime は `loop_timeline_state` / `loop_timeline_markers` の変更を購読して、他端末/他ウィンドウに反映します。
+	 	- ⚠️ Supabase 側で **Realtime を有効化**していないと購読イベントが飛びません。
+	 		- Dashboard: Database → Replication → Realtime（テーブルごとにON / publicationへ追加）
+	 		- SQLで追加する場合（環境により publication 名が異なることがあります）:
+	 			```sql
+	 			alter publication supabase_realtime add table public.loop_timeline_state;
+	 			alter publication supabase_realtime add table public.loop_timeline_markers;
+	 			```
 
 	 - **Push通知（subscription保存）**
 	 	- Web Push を使う場合、端末ごとの購読情報（endpoint/鍵）を Supabase に保存します。
@@ -130,6 +137,12 @@ VITE_VAPID_PUBLIC_KEY=...
 	 	- 習慣タスク（チェックで完了、期間更新で自動復活）を保存します。
 	 	- 並び替え（ドラッグ&ドロップ）を同期したい場合は `sort_order` を追加してください。
 	 	- Supabase Realtime は `quest_tasks` の変更を購読して、他端末/他ウィンドウに反映します。
+	 	- ⚠️ Supabase 側で **Realtime を有効化**していないと購読イベントが飛びません。
+	 		- Dashboard: Database → Replication → Realtime（テーブルごとにON / publicationへ追加）
+	 		- SQLで追加する場合（環境により publication 名が異なることがあります）:
+	 			```sql
+	 			alter publication supabase_realtime add table public.quest_tasks;
+	 			```
 
 	 	```sql
 	 	create table public.quest_tasks (
