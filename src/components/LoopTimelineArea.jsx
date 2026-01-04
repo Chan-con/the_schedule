@@ -399,7 +399,7 @@ const LoopTimelineArea = React.forwardRef(({
     const cardRect = cardEl.getBoundingClientRect();
     const lineRect = lineEl.getBoundingClientRect();
     const top = Math.round((lineRect.top - cardRect.top) + dotY);
-    const left = Math.round((lineRect.left - cardRect.left) + (lineRect.width / 2));
+    const left = Math.floor((lineRect.left - cardRect.left) + (lineRect.width / 2.03));
     setCountdownOverlayPos({ top, left });
   }, [dotY]);
 
@@ -730,7 +730,7 @@ const LoopTimelineArea = React.forwardRef(({
                     <div className="relative cursor-pointer select-none rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">
                       {startMinute}
                       <span
-                        className="absolute left-full top-1/2 h-0 w-0 -translate-y-1/2 border-y-4 border-l-4 border-y-transparent border-l-slate-900"
+                        className="absolute left-full -ml-px top-1/2 h-0 w-0 -translate-y-1/2 border-y-4 border-l-4 border-y-transparent border-l-slate-900"
                         aria-hidden="true"
                       />
                     </div>
@@ -775,11 +775,11 @@ const LoopTimelineArea = React.forwardRef(({
 
           {scheduled && countdownOverlayPos && (
             <div
-              className="pointer-events-none absolute z-20 -translate-x-1/2"
+              className="pointer-events-none absolute z-20 h-0 w-0"
               style={{ top: `${countdownOverlayPos.top}px`, left: `${countdownOverlayPos.left}px` }}
             >
-              <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2">
-                <div className="relative select-none rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">
+              <div className="absolute bottom-full left-0 mb-4 -translate-x-1/2">
+                <div className="relative min-w-[52px] select-none rounded-full bg-slate-900 px-2 py-0.5 text-center text-[11px] font-semibold tabular-nums text-white">
                   {formatMmSs(countdownMs)}
                   <span
                     className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-4 border-t-4 border-x-transparent border-t-slate-900"
@@ -826,7 +826,7 @@ const LoopTimelineArea = React.forwardRef(({
                     autoFocus
                   />
                 ) : (
-                  <div className="cursor-pointer select-none text-[11px] font-semibold text-slate-700">
+                  <div className="cursor-pointer select-none rounded border border-slate-200 bg-white px-1 py-0.5 text-[11px] font-semibold leading-none text-slate-700">
                     {durationMinutes}
                   </div>
                 )}
