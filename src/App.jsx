@@ -12,7 +12,7 @@ import QuickMemoPad from './components/QuickMemoPad';
 import CornerFloatingMenu from './components/CornerFloatingMenu';
 import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQuickMemo';
 import { supabase } from './lib/supabaseClient';
-import { fetchQuestTasksForUser, createQuestTaskForUser, updateQuestTaskForUser } from './utils/supabaseQuestTasks';
+import { fetchQuestTasksForUser, createQuestTaskForUser, updateQuestTaskForUser, deleteQuestTaskForUser } from './utils/supabaseQuestTasks';
 import {
   fetchLoopTimelineMarkersForUser,
   fetchLoopTimelineStateForUser,
@@ -1037,6 +1037,84 @@ function App() {
       endSupabaseJob(jobMeta);
     }
   }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, saveLocalQuestTasks, userId]);
+
+  const handleUpdateQuestTask = useCallback(async (task, nextTitle) => {
+    const id = task?.id ?? null;
+    if (id == null) return;
+
+    const trimmed = String(nextTitle ?? '').trim();
+    if (!trimmed) return;
+
+    const optimisticPatch = {
+      title: trimmed,
+      updated_at: new Date().toISOString(),
+    };
+
+    setQuestTasks((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const next = list.map((t) => ((t?.id ?? null) === id ? { ...t, ...optimisticPatch } : t));
+      if (!userId) {
+        saveLocalQuestTasks(next);
+      }
+      return next;
+    });
+
+    if (!userId) return;
+
+    const jobMeta = { kind: 'questTaskUpdateTitle' };
+    beginSupabaseJob(jobMeta);
+    try {
+      markRealtimeSelfWrite('quest_tasks', id);
+      const saved = await updateQuestTaskForUser({
+        userId,
+        id,
+        patch: { title: trimmed },
+      });
+      setQuestTasks((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const next = list.map((t) => ((t?.id ?? null) === id ? saved : t));
+        saveLocalQuestTasks(next);
+        return next;
+      });
+      setSupabaseError(null);
+    } catch (error) {
+      console.error('[Supabase] Failed to update quest task:', error);
+      setSupabaseError(error.message || 'クエスト名の更新に失敗しました。');
+      requestSupabaseSync('quest_update_error');
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, saveLocalQuestTasks, userId]);
+
+  const handleDeleteQuestTask = useCallback(async (task) => {
+    const id = task?.id ?? null;
+    if (id == null) return;
+
+    setQuestTasks((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const next = list.filter((t) => (t?.id ?? null) !== id);
+      if (!userId) {
+        saveLocalQuestTasks(next);
+      }
+      return next;
+    });
+
+    if (!userId) return;
+
+    const jobMeta = { kind: 'questTaskDelete' };
+    beginSupabaseJob(jobMeta);
+    try {
+      markRealtimeSelfWrite('quest_tasks', id);
+      await deleteQuestTaskForUser({ userId, id });
+      setSupabaseError(null);
+    } catch (error) {
+      console.error('[Supabase] Failed to delete quest task:', error);
+      setSupabaseError(error.message || 'クエストの削除に失敗しました。');
+      requestSupabaseSync('quest_delete_error');
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, deleteQuestTaskForUser, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, saveLocalQuestTasks, userId]);
 
   const handleLoopTimelineSaveState = useCallback(async (patch) => {
     if (!userId) return;
@@ -3111,6 +3189,8 @@ function App() {
                           questTasks={questTasks}
                           onCreateQuestTask={handleCreateQuestTask}
                           onToggleQuestTask={handleToggleQuestTask}
+                          onUpdateQuestTask={handleUpdateQuestTask}
+                          onDeleteQuestTask={handleDeleteQuestTask}
                         />
                       </div>
                     </div>
@@ -3234,6 +3314,8 @@ function App() {
                     questTasks={questTasks}
                     onCreateQuestTask={handleCreateQuestTask}
                     onToggleQuestTask={handleToggleQuestTask}
+                    onUpdateQuestTask={handleUpdateQuestTask}
+                    onDeleteQuestTask={handleDeleteQuestTask}
                   />
                 </div>
               </div>

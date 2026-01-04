@@ -92,6 +92,8 @@ const Timeline = ({
 	questTasks = [],
 	onCreateQuestTask,
 	onToggleQuestTask,
+	onUpdateQuestTask,
+	onDeleteQuestTask,
 }) => {
 	const [draggedAllDayId, setDraggedAllDayId] = useState(null);
 	const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -989,6 +991,8 @@ const Timeline = ({
 						tasks={availableQuestTasks}
 						onCreateTask={onCreateQuestTask}
 						onToggleTask={onToggleQuestTask}
+						onUpdateTask={onUpdateQuestTask}
+						onDeleteTask={onDeleteQuestTask}
 						addInputRef={questAddInputRef}
 					/>
 				) : showLoopTimeline ? (

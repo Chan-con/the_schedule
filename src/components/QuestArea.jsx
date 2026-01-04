@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { toDateStrLocal } from '../utils/date';
 
 const normalizePeriod = (value) => {
@@ -52,11 +52,19 @@ const QuestArea = ({
   tasks = [],
   onCreateTask,
   onToggleTask,
+  onUpdateTask,
+  onDeleteTask,
   addInputRef,
 }) => {
   const [period, setPeriod] = useState('daily');
   const [title, setTitle] = useState('');
   const [nowMs, setNowMs] = useState(() => Date.now());
+
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [titleDirty, setTitleDirty] = useState(false);
+  const editTitleRef = useRef(null);
 
   // 0時跨ぎで cycle が切り替わるように定期更新
   useEffect(() => {
@@ -109,6 +117,77 @@ const QuestArea = ({
     }
   }, [addInputRef, onCreateTask, period, title]);
 
+  const openEditModal = useCallback((task) => {
+    if (!task) return;
+    setEditingTask(task);
+    setDraftTitle(String(task?.title ?? ''));
+    setTitleDirty(false);
+    setIsEditOpen(true);
+  }, []);
+
+  const closeEditModal = useCallback(() => {
+    if (titleDirty) {
+      const ok = window.confirm('変更は保存されていません。閉じますか？');
+      if (!ok) return;
+    }
+    setIsEditOpen(false);
+    setEditingTask(null);
+    setDraftTitle('');
+    setTitleDirty(false);
+  }, [titleDirty]);
+
+  useEffect(() => {
+    if (!isEditOpen) return;
+
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeEditModal();
+      }
+    };
+
+    const preventAllScroll = (e) => {
+      const isInModal = e.target.closest('.quest-modal-content');
+      if (!isInModal) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    document.body.classList.add('modal-open');
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleEsc);
+    document.addEventListener('wheel', preventAllScroll, { passive: false, capture: true });
+    document.addEventListener('touchmove', preventAllScroll, { passive: false, capture: true });
+
+    setTimeout(() => {
+      editTitleRef.current?.focus?.();
+      editTitleRef.current?.select?.();
+    }, 0);
+
+    return () => {
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+      document.removeEventListener('keydown', handleEsc);
+      document.removeEventListener('wheel', preventAllScroll, { capture: true });
+      document.removeEventListener('touchmove', preventAllScroll, { capture: true });
+    };
+  }, [closeEditModal, isEditOpen]);
+
+  useEffect(() => {
+    if (!isEditOpen) return;
+    const id = editingTask?.id ?? null;
+    if (id == null) return;
+    if (titleDirty) return;
+    const latest = safeTasks.find((t) => (t?.id ?? null) === id);
+    if (!latest) return;
+    const latestTitle = String(latest?.title ?? '');
+    if (latestTitle !== draftTitle) {
+      setDraftTitle(latestTitle);
+    }
+  }, [draftTitle, editingTask?.id, isEditOpen, safeTasks, titleDirty]);
+
   const renderTaskRow = (task) => {
     const isCompleted = String(task?.completed_cycle_id ?? '') === String(cycleId ?? '');
     const key = task?.id != null ? `quest-${task.id}` : `quest-${task?.title ?? 'unknown'}-${task?.created_at ?? ''}`;
@@ -116,7 +195,10 @@ const QuestArea = ({
     return (
       <div
         key={key}
-        className={`border border-gray-200 rounded-lg p-2.5 bg-white shadow-sm transition hover:shadow-md ${isCompleted ? 'opacity-70' : ''}`}
+        className={`border border-gray-200 rounded-lg p-2.5 bg-white shadow-sm transition hover:shadow-md cursor-pointer ${isCompleted ? 'opacity-70' : ''}`}
+        onDoubleClick={() => {
+          openEditModal(task);
+        }}
       >
         <div className="flex items-center gap-3">
           <div className="flex-1 min-w-0">
@@ -132,10 +214,14 @@ const QuestArea = ({
                 : 'bg-white border-gray-300 text-transparent hover:border-gray-400'
             }`}
             title={isCompleted ? '完了済み' : '未完了'}
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               if (typeof onToggleTask === 'function') {
                 onToggleTask(task, !isCompleted, cycleId);
               }
+            }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
             }}
           >
             ✓
@@ -154,8 +240,8 @@ const QuestArea = ({
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="border-b border-slate-200 bg-white px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="inline-flex items-center rounded-full bg-slate-100 p-1">
+        <div className="flex items-center gap-3">
+          <div className="flex w-full items-center gap-1 rounded-full bg-slate-100 p-1">
             {periodTabs.map((tab) => {
               const active = tab.key === period;
               return (
@@ -163,7 +249,7 @@ const QuestArea = ({
                   key={tab.key}
                   type="button"
                   onClick={() => setPeriod(tab.key)}
-                  className={`inline-flex h-8 items-center justify-center rounded-full border border-transparent px-3 text-xs font-semibold transition-all duration-200 ${
+                  className={`flex h-8 flex-1 items-center justify-center rounded-full border border-transparent px-2 text-xs font-semibold transition-all duration-200 ${
                     active ? 'bg-white text-indigo-600 shadow' : 'bg-transparent text-slate-500 hover:text-indigo-500'
                   }`}
                   aria-pressed={active}
@@ -173,7 +259,6 @@ const QuestArea = ({
               );
             })}
           </div>
-
         </div>
 
         <div className="mt-3 flex items-center gap-2">
@@ -235,6 +320,92 @@ const QuestArea = ({
           </div>
         )}
       </div>
+
+      {isEditOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="quest-modal-content w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-lg">
+            <div className="border-b border-slate-200 px-4 py-3">
+              <div className="text-sm font-semibold text-slate-900">クエストを編集</div>
+            </div>
+
+            <div className="px-4 py-3">
+              <label className="block text-xs font-semibold text-slate-500">名前</label>
+              <input
+                ref={editTitleRef}
+                type="text"
+                value={draftTitle}
+                onChange={(e) => {
+                  setDraftTitle(e.target.value);
+                  setTitleDirty(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const trimmed = String(draftTitle ?? '').trim();
+                    if (!trimmed) return;
+                    if (typeof onUpdateTask === 'function') {
+                      onUpdateTask(editingTask, trimmed);
+                    }
+                    setTitleDirty(false);
+                    setIsEditOpen(false);
+                    setEditingTask(null);
+                  }
+                }}
+                className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400"
+                maxLength={80}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-slate-200 px-4 py-3">
+              <button
+                type="button"
+                className="rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                onClick={() => {
+                  const target = editingTask;
+                  if (!target) return;
+                  const ok = window.confirm('このクエストを削除しますか？');
+                  if (!ok) return;
+                  if (typeof onDeleteTask === 'function') {
+                    onDeleteTask(target);
+                  }
+                  setTitleDirty(false);
+                  setIsEditOpen(false);
+                  setEditingTask(null);
+                }}
+              >
+                削除
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                  onClick={closeEditModal}
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={!String(draftTitle || '').trim()}
+                  onClick={() => {
+                    const trimmed = String(draftTitle ?? '').trim();
+                    if (!trimmed) return;
+                    if (typeof onUpdateTask === 'function') {
+                      onUpdateTask(editingTask, trimmed);
+                    }
+                    setTitleDirty(false);
+                    setIsEditOpen(false);
+                    setEditingTask(null);
+                  }}
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

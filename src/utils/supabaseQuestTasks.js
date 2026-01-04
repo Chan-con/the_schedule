@@ -120,3 +120,24 @@ export const updateQuestTaskForUser = async ({ userId, id, patch }) => {
     title: String(data?.title ?? ''),
   };
 };
+
+export const deleteQuestTaskForUser = async ({ userId, id }) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+  if (id == null) throw new Error('削除対象IDが指定されていません。');
+
+  const startedAt = nowPerf();
+  logQuest('delete', 'request', { userId, id });
+
+  const { error } = await supabase
+    .from(TABLE_NAME)
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId);
+
+  if (error) {
+    logQuest('delete', 'error', { userId, id, durationMs: buildDuration(startedAt), message: error.message });
+    throw new Error(`クエストの削除に失敗しました: ${error.message}`);
+  }
+
+  logQuest('delete', 'success', { userId, id, durationMs: buildDuration(startedAt) });
+};
