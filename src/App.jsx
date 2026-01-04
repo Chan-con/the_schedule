@@ -1611,8 +1611,50 @@ function App() {
   }, [applyQuickMemoValue, auth?.isLoading, loadLocalDailyQuestSnapshots, loadLocalDailyQuestTasksByDate, loadLocalNotes, loadLocalQuickMemo, loadLocalSchedules, refreshFromSupabase, replaceAppState, userId]);
 
   // 日次達成（デイリー全クリア）: 0時を跨いだら前日分を確定スナップショットとして保存
+  // さらに、前日に「完了」したタスクは翌日に未完了として再作成（不要ならユーザーが削除）
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    const getMsUntilNextLocalMidnight = () => {
+      const now = new Date();
+      const next = new Date(now);
+      // 0:00:00.050 に寄せて境界のズレを避ける
+      next.setHours(24, 0, 0, 50);
+      return Math.max(0, next.getTime() - now.getTime());
+    };
+
+    const sortDailyQuestTasks = (list) => {
+      const tasks = Array.isArray(list) ? list : [];
+      return tasks
+        .slice()
+        .sort((a, b) => {
+          const aOrder = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : null;
+          const bOrder = Number.isFinite(Number(b?.sort_order)) ? Number(b.sort_order) : null;
+          if (aOrder != null || bOrder != null) {
+            if (aOrder == null) return 1;
+            if (bOrder == null) return -1;
+            const diffOrder = aOrder - bOrder;
+            if (diffOrder !== 0) return diffOrder;
+          }
+          const diff = String(a?.created_at ?? '').localeCompare(String(b?.created_at ?? ''));
+          if (diff !== 0) return diff;
+          return Number(a?.id ?? 0) - Number(b?.id ?? 0);
+        });
+    };
+
+    const buildCarryOverTitles = (tasks) => {
+      const list = Array.isArray(tasks) ? tasks : [];
+      return list
+        .filter((t) => !!t?.completed)
+        .map((t) => String(t?.title ?? '').trim())
+        .filter(Boolean);
+    };
+
+    const shouldAutoAdvanceSelectedDate = (yesterdayStr) => {
+      const currentSelected = String(selectedDateStr ?? '').trim();
+      if (!currentSelected) return false;
+      return currentSelected === String(yesterdayStr ?? '').trim();
+    };
 
     const tick = async () => {
       const todayStr = toDateStrLocal(new Date());
@@ -1627,8 +1669,15 @@ function App() {
       const yesterdayStr = last;
       lastDailyQuestDateTickRef.current = todayStr;
 
-      // 今日へ切り替え
+      // 0時跨ぎ直後に「昨日の表示」が残らないよう、まずUI上の日付を進める
       setDailyQuestDateStr(todayStr);
+      if (shouldAutoAdvanceSelectedDate(yesterdayStr)) {
+        setSelectedDate(new Date());
+      }
+
+      // carry-over の元になる昨日のタスク（切替直前の状態）
+      const yesterdayTasksInMemory = Array.isArray(dailyQuestTasksRef.current) ? dailyQuestTasksRef.current : [];
+      const carryOverTitles = buildCarryOverTitles(yesterdayTasksInMemory);
 
       if (!userId) {
         // ローカル: 前日のスナップショットを作成
@@ -1659,14 +1708,47 @@ function App() {
 
         try {
           const map = loadLocalDailyQuestTasksByDate();
-          const todayTasks = map?.[todayStr];
-          setDailyQuestTasks(Array.isArray(todayTasks) ? todayTasks : []);
+          const todayTasks = Array.isArray(map?.[todayStr]) ? map[todayStr] : [];
+
+          const existingTitleSet = new Set(todayTasks.map((t) => String(t?.title ?? '').trim()).filter(Boolean));
+          const baseSort = Math.max(-1,
+            ...todayTasks
+              .map((t) => Number(t?.sort_order))
+              .filter((v) => Number.isFinite(v))
+          );
+          let nextOrder = Number.isFinite(baseSort) ? baseSort + 1 : todayTasks.length;
+          const nowIso = new Date().toISOString();
+
+          const carryOver = carryOverTitles
+            .filter((title) => !existingTitleSet.has(title))
+            .map((title) => {
+              const created = {
+                id: createTempId(),
+                user_id: null,
+                date_str: todayStr,
+                title,
+                completed: false,
+                sort_order: nextOrder,
+                created_at: nowIso,
+                updated_at: nowIso,
+              };
+              nextOrder += 1;
+              return created;
+            });
+
+          const nextTodayTasks = sortDailyQuestTasks([...todayTasks, ...carryOver]);
+          map[todayStr] = nextTodayTasks;
+          saveLocalDailyQuestTasksByDate(map);
+          setDailyQuestTasks(nextTodayTasks);
         } catch {
           setDailyQuestTasks([]);
         }
 
         return;
       }
+
+      // Supabase: いったん旧日の表示を消して、今日分へ
+      setDailyQuestTasks([]);
 
       // Supabase: 前日のスナップショットをRPCで記録
       try {
@@ -1675,20 +1757,75 @@ function App() {
         console.warn('[Supabase] record_daily_quest_snapshot skipped:', error);
       }
 
+      // Supabase: 前日「完了」タスクを翌日に未完了として再作成
+      if (carryOverTitles.length > 0) {
+        try {
+          // 同名が既に今日にある場合は重複を避ける（基本的に今日が空なら全作成される）
+          const createdTitles = new Set();
+          let sortOrder = 0;
+          for (const title of carryOverTitles) {
+            if (!title) continue;
+            if (createdTitles.has(title)) continue;
+            createdTitles.add(title);
+            const created = await createDailyQuestTaskForUser({
+              userId,
+              dateStr: todayStr,
+              title,
+              sortOrder,
+            });
+            sortOrder += 1;
+            markRealtimeSelfWrite('daily_quest_tasks', created?.id ?? null);
+          }
+        } catch (error) {
+          console.warn('[Supabase] carry over daily quest tasks skipped:', error);
+        }
+      }
+
       requestSupabaseSync('daily_quest_day_change');
     };
 
-    const id = window.setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    let disposed = false;
+    let midnightTimerId = null;
+
+    const scheduleMidnight = () => {
+      if (disposed) return;
+      const ms = getMsUntilNextLocalMidnight();
+      midnightTimerId = window.setTimeout(() => {
+        midnightTimerId = null;
+        tick().catch(() => {});
+        scheduleMidnight();
+      }, ms);
+    };
+
+    // フォールバック（環境によって setTimeout が遅延する場合の保険）
+    const intervalId = window.setInterval(() => {
       tick().catch(() => {});
     }, DAILY_QUEST_TICK_MS);
 
+    // 起動直後にも同期しておく
     tick().catch(() => {});
+    scheduleMidnight();
 
     return () => {
-      window.clearInterval(id);
+      disposed = true;
+      window.clearInterval(intervalId);
+      if (midnightTimerId != null) {
+        window.clearTimeout(midnightTimerId);
+      }
     };
-  }, [loadLocalDailyQuestSnapshots, loadLocalDailyQuestTasksByDate, recordDailyQuestSnapshot, requestSupabaseSync, saveLocalDailyQuestSnapshots, userId]);
+  }, [
+    createDailyQuestTaskForUser,
+    loadLocalDailyQuestSnapshots,
+    loadLocalDailyQuestTasksByDate,
+    markRealtimeSelfWrite,
+    recordDailyQuestSnapshot,
+    requestSupabaseSync,
+    saveLocalDailyQuestSnapshots,
+    saveLocalDailyQuestTasksByDate,
+    selectedDateStr,
+    setSelectedDate,
+    userId,
+  ]);
 
   // Supabase Realtime: daily_quest_tasks 変更を検知して再同期
   useEffect(() => {
