@@ -1645,9 +1645,19 @@ function App() {
     const buildCarryOverTitles = (tasks) => {
       const list = Array.isArray(tasks) ? tasks : [];
       return list
-        .filter((t) => !!t?.completed)
         .map((t) => String(t?.title ?? '').trim())
         .filter(Boolean);
+    };
+
+    const buildTitleCounts = (tasks) => {
+      const counts = new Map();
+      const list = Array.isArray(tasks) ? tasks : [];
+      for (const t of list) {
+        const title = String(t?.title ?? '').trim();
+        if (!title) continue;
+        counts.set(title, (counts.get(title) ?? 0) + 1);
+      }
+      return counts;
     };
 
     const shouldAutoAdvanceSelectedDate = (yesterdayStr) => {
@@ -1709,8 +1719,7 @@ function App() {
         try {
           const map = loadLocalDailyQuestTasksByDate();
           const todayTasks = Array.isArray(map?.[todayStr]) ? map[todayStr] : [];
-
-          const existingTitleSet = new Set(todayTasks.map((t) => String(t?.title ?? '').trim()).filter(Boolean));
+          const existingCounts = buildTitleCounts(todayTasks);
           const baseSort = Math.max(-1,
             ...todayTasks
               .map((t) => Number(t?.sort_order))
@@ -1720,8 +1729,12 @@ function App() {
           const nowIso = new Date().toISOString();
 
           const carryOver = carryOverTitles
-            .filter((title) => !existingTitleSet.has(title))
             .map((title) => {
+              const remaining = existingCounts.get(title) ?? 0;
+              if (remaining > 0) {
+                existingCounts.set(title, remaining - 1);
+                return null;
+              }
               const created = {
                 id: createTempId(),
                 user_id: null,
@@ -1734,7 +1747,8 @@ function App() {
               };
               nextOrder += 1;
               return created;
-            });
+            })
+            .filter(Boolean);
 
           const nextTodayTasks = sortDailyQuestTasks([...todayTasks, ...carryOver]);
           map[todayStr] = nextTodayTasks;
@@ -1757,16 +1771,26 @@ function App() {
         console.warn('[Supabase] record_daily_quest_snapshot skipped:', error);
       }
 
-      // Supabase: 前日「完了」タスクを翌日に未完了として再作成
+      // Supabase: 前日の全タスクを翌日に未完了として再作成
       if (carryOverTitles.length > 0) {
         try {
-          // 同名が既に今日にある場合は重複を避ける（基本的に今日が空なら全作成される）
-          const createdTitles = new Set();
-          let sortOrder = 0;
+          const existingToday = await fetchDailyQuestTasksForUserByDate({ userId, dateStr: todayStr }).catch(() => []);
+          const existingCounts = buildTitleCounts(existingToday);
+          const baseSort = Math.max(-1,
+            ...(Array.isArray(existingToday) ? existingToday : [])
+              .map((t) => Number(t?.sort_order))
+              .filter((v) => Number.isFinite(v))
+          );
+          let sortOrder = Number.isFinite(baseSort) ? baseSort + 1 : 0;
+
           for (const title of carryOverTitles) {
             if (!title) continue;
-            if (createdTitles.has(title)) continue;
-            createdTitles.add(title);
+            const remaining = existingCounts.get(title) ?? 0;
+            if (remaining > 0) {
+              existingCounts.set(title, remaining - 1);
+              continue;
+            }
+
             const created = await createDailyQuestTaskForUser({
               userId,
               dateStr: todayStr,
@@ -1815,6 +1839,7 @@ function App() {
     };
   }, [
     createDailyQuestTaskForUser,
+    fetchDailyQuestTasksForUserByDate,
     loadLocalDailyQuestSnapshots,
     loadLocalDailyQuestTasksByDate,
     markRealtimeSelfWrite,
