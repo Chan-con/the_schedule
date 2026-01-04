@@ -174,10 +174,6 @@ const QuestArea = ({
             })}
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <IconTrophy className="h-4 w-4" />
-            <span className="tabular-nums">{cycleId || ''}</span>
-          </div>
         </div>
 
         <div className="mt-3 flex items-center gap-2">
