@@ -852,7 +852,7 @@ const LoopTimelineArea = React.forwardRef(({
                       {/* 本来位置の点 */}
                       <div
                         className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer"
-                        style={{ top: `${baseY}px`, zIndex: it.zIndex }}
+                        style={{ top: `${baseY}px`, zIndex: it.zIndex + 2 }}
                         title={`${offset}分: ${String(m?.text ?? '')}`}
                         onDoubleClick={() => openEditMarkerModal(m)}
                       >
@@ -862,13 +862,13 @@ const LoopTimelineArea = React.forwardRef(({
                       {/* ラベル（縦は固定、近いものは横レーンに逃がす。常に横線で接続） */}
                       <div
                         className="absolute left-1/2 -translate-y-1/2 cursor-pointer select-none"
-                        style={{ top: `${baseY}px`, zIndex: it.zIndex }}
+                        style={{ top: `${baseY}px`, zIndex: it.zIndex + 1 }}
                         title={`${offset}分: ${String(m?.text ?? '')}`}
                         onDoubleClick={() => openEditMarkerModal(m)}
                       >
                         <div className="flex items-center">
                           <div
-                            className="h-px bg-slate-300"
+                            className="relative top-[0.25px] h-px bg-slate-500"
                             style={{ width: `${connectorWidthPx}px` }}
                             aria-hidden="true"
                           />
