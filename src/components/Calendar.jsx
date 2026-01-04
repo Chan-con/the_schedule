@@ -12,6 +12,15 @@ const IconCrown = (props) => (
   </svg>
 );
 
+const IconNote = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+    <path d="M14 2v5h5" />
+    <path d="M9 13h6" />
+    <path d="M9 17h6" />
+  </svg>
+);
+
 // 予定が過去かどうかを判定する関数
 const isSchedulePast = (schedule) => {
   const now = new Date();
@@ -1045,10 +1054,12 @@ const Calendar = ({
 
                 {noteDateSet.has(dateStr) && (
                   <span
-                    className="inline-block h-1 w-1 rounded-full bg-indigo-400"
+                    className="inline-flex"
                     aria-label="ノートあり"
                     title="ノートあり"
-                  />
+                  >
+                    <IconNote className="h-[9px] w-[9px] text-blue-500" />
+                  </span>
                 )}
               </div>
               
