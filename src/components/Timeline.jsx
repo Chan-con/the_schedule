@@ -105,7 +105,7 @@ const Timeline = ({
 	const [resizeStartHeight, setResizeStartHeight] = useState(0);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
 	const [isAltPressed, setIsAltPressed] = useState(false);
-	const questAddInputRef = useRef(null);
+	const questAreaRef = useRef(null);
 	const cardRef = useRef(null);
 	const timelineRef = useRef(null);
 	const allDaySectionRef = useRef(null);
@@ -568,11 +568,7 @@ const Timeline = ({
 		}
 
 		if (showQuest) {
-			try {
-				questAddInputRef.current?.focus?.();
-			} catch {
-				// ignore
-			}
+			questAreaRef.current?.openCreate?.();
 			return;
 		}
 
@@ -989,13 +985,13 @@ const Timeline = ({
 					/>
 				) : showQuest ? (
 					<QuestArea
+						ref={questAreaRef}
 						tasks={availableQuestTasks}
 						onCreateTask={onCreateQuestTask}
 						onToggleTask={onToggleQuestTask}
 						onUpdateTask={onUpdateQuestTask}
 						onDeleteTask={onDeleteQuestTask}
 						onReorderTasks={onReorderQuestTasks}
-						addInputRef={questAddInputRef}
 					/>
 				) : showLoopTimeline ? (
 					<LoopTimelineArea
