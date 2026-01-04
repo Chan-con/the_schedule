@@ -1947,15 +1947,20 @@ function App() {
     saveLocalNotes(nextAllNotes);
   }, [handleUpdateNote, loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteArchiveFlags, saveNoteImportantFlags, userId]);
 
-  const handleCommitDraftNote = useCallback((noteId) => {
+  const handleCommitDraftNote = useCallback((noteId, overrides) => {
     if (noteId == null) return;
     if (!userId) return;
 
     const currentNote = notesRef.current.find((note) => (note?.id ?? null) === noteId) || null;
     if (!currentNote || !currentNote.__isDraft) return;
 
-    const titleTrimmed = typeof currentNote.title === 'string' ? currentNote.title.trim() : '';
-    const contentTrimmed = typeof currentNote.content === 'string' ? currentNote.content.trim() : '';
+    const safeOverrides = overrides && typeof overrides === 'object' ? overrides : {};
+    const effectiveTitle = typeof safeOverrides.title === 'string' ? safeOverrides.title : currentNote.title;
+    const effectiveContent = typeof safeOverrides.content === 'string' ? safeOverrides.content : currentNote.content;
+    const effectiveDate = safeOverrides.date || currentNote.date;
+
+    const titleTrimmed = typeof effectiveTitle === 'string' ? effectiveTitle.trim() : '';
+    const contentTrimmed = typeof effectiveContent === 'string' ? effectiveContent.trim() : '';
     const shouldSkipBecauseEmpty = !titleTrimmed && !contentTrimmed;
     if (shouldSkipBecauseEmpty) return;
 
@@ -1967,9 +1972,9 @@ function App() {
     beginSupabaseJob(jobMeta);
     createNoteForUser({
       userId,
-      date: currentNote.date || selectedDateStr,
-      title: currentNote.title ?? '',
-      content: currentNote.content ?? '',
+      date: effectiveDate || selectedDateStr,
+      title: effectiveTitle ?? '',
+      content: effectiveContent ?? '',
     })
       .then(async (created) => {
         markRealtimeSelfWrite('notes', created?.id ?? null);

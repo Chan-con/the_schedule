@@ -76,7 +76,11 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
         // これにより、モーダルを閉じなくても重要/アーカイブ等が押せる。
         if (onCommitDraft && note?.id != null && note?.__isDraft) {
           try {
-            onCommitDraft(note.id);
+            onCommitDraft(note.id, {
+              title: draftTitle,
+              content: draftContent,
+              date: note?.date,
+            });
           } catch (error) {
             console.error('[Note] Failed to commit draft note:', error);
           }
@@ -85,7 +89,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
       }
       return true;
     });
-  }, [onCommitDraft, note, persistDraftIfNeeded]);
+  }, [draftContent, draftTitle, onCommitDraft, note, persistDraftIfNeeded]);
 
   const canShareThisNote = !!canShare && !!note && note?.id != null && !note?.__isDraft;
 
