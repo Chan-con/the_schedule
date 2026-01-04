@@ -18,6 +18,37 @@ const logSupabase = (action, phase, detail = {}) => {
 
 const TABLE_NAME = 'schedules';
 
+let scheduleTimeOrderSupport = 'unknown'; // 'unknown' | 'supported' | 'missing'
+let lastScheduleTimeOrderProbeAt = 0;
+const TIME_ORDER_PROBE_INTERVAL_MS = 5000;
+
+const shouldTryTimeOrder = () => {
+  if (scheduleTimeOrderSupport !== 'missing') return true;
+  return Date.now() - lastScheduleTimeOrderProbeAt >= TIME_ORDER_PROBE_INTERVAL_MS;
+};
+
+const isMissingColumnError = (error, columnName) => {
+  const msg = String(error?.message ?? '');
+  if (!msg) return false;
+  const lower = msg.toLowerCase();
+  if (!msg.includes(columnName)) return false;
+
+  // Postgres error examples:
+  // - column "time_order" does not exist
+  // - 列 "time_order" は存在しません
+  if (lower.includes('column') && (lower.includes('does not exist') || msg.includes('存在しません'))) {
+    return true;
+  }
+
+  // PostgREST schema cache error example:
+  // - Could not find the 'time_order' column of 'schedules' in the schema cache
+  if (lower.includes('schema cache') && lower.includes('could not find')) {
+    return true;
+  }
+
+  return false;
+};
+
 const sanitizeNotifications = (notifications) => {
   if (!notifications) return [];
   try {
@@ -38,6 +69,7 @@ export const mapFromSupabaseRow = (row) => {
   memo: row.memo || '',
     allDay: !!row.all_day,
     allDayOrder: typeof row.all_day_order === 'number' ? row.all_day_order : 0,
+    timeOrder: typeof row.time_order === 'number' ? row.time_order : 0,
     notifications: sanitizeNotifications(row.notifications),
     isTask: !!row.is_task,
     completed: !!row.completed,
@@ -57,6 +89,7 @@ const mapToSupabaseRow = (schedule, userId) => {
   memo: schedule?.memo || '',
     all_day: !!schedule?.allDay,
     all_day_order: typeof schedule?.allDayOrder === 'number' ? schedule.allDayOrder : 0,
+    time_order: typeof schedule?.timeOrder === 'number' ? schedule.timeOrder : 0,
     notifications,
     is_task: !!schedule?.isTask,
     completed: !!schedule?.completed,
@@ -69,14 +102,45 @@ export const fetchSchedulesForUser = async (userId) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   const startedAt = nowPerf();
   logSupabase('fetchSchedules', 'request', { userId });
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .select('*')
-    .eq('user_id', userId)
-    .order('date', { ascending: true })
-    .order('all_day', { ascending: false })
-    .order('all_day_order', { ascending: true })
-    .order('time', { ascending: true, nullsFirst: true });
+
+  const runQuery = async (withTimeOrder) => {
+    const selectFields = withTimeOrder
+      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, completed, created_at, updated_at'
+      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+
+    let query = supabase
+      .from(TABLE_NAME)
+      .select(selectFields)
+      .eq('user_id', userId)
+      .order('date', { ascending: true })
+      .order('all_day', { ascending: false })
+      .order('all_day_order', { ascending: true })
+      .order('time', { ascending: true, nullsFirst: true });
+
+    if (withTimeOrder) {
+      query = query.order('time_order', { ascending: true, nullsFirst: false });
+    }
+
+    return query;
+  };
+
+  let data;
+  let error;
+
+  const tryTimeOrder = shouldTryTimeOrder();
+  if (tryTimeOrder) {
+    ({ data, error } = await runQuery(true));
+    if (error && isMissingColumnError(error, 'time_order')) {
+      scheduleTimeOrderSupport = 'missing';
+      lastScheduleTimeOrderProbeAt = Date.now();
+      logSupabase('fetchSchedules', 'info', { userId, message: 'time_order column missing; fallback without ordering' });
+      ({ data, error } = await runQuery(false));
+    } else if (!error) {
+      scheduleTimeOrderSupport = 'supported';
+    }
+  } else {
+    ({ data, error } = await runQuery(false));
+  }
 
   if (error) {
     logSupabase('fetchSchedules', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });
@@ -90,21 +154,44 @@ export const fetchSchedulesForUser = async (userId) => {
 
 export const createScheduleForUser = async (schedule, userId) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
-  const payload = mapToSupabaseRow(schedule, userId);
-  delete payload.id;
+  const basePayload = mapToSupabaseRow(schedule, userId);
+  delete basePayload.id;
   const startedAt = nowPerf();
   logSupabase('createSchedule', 'request', {
     userId,
-    date: payload.date,
-    time: payload.time,
-    allDay: payload.all_day,
+    date: basePayload.date,
+    time: basePayload.time,
+    allDay: basePayload.all_day,
   });
 
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .insert([payload])
-    .select()
-    .single();
+  const runInsert = async (withTimeOrder) => {
+    const payload = { ...basePayload };
+    if (!withTimeOrder) {
+      delete payload.time_order;
+    }
+    return supabase
+      .from(TABLE_NAME)
+      .insert([payload])
+      .select()
+      .single();
+  };
+
+  let data;
+  let error;
+  const tryTimeOrder = shouldTryTimeOrder();
+  if (tryTimeOrder) {
+    ({ data, error } = await runInsert(true));
+    if (error && isMissingColumnError(error, 'time_order')) {
+      scheduleTimeOrderSupport = 'missing';
+      lastScheduleTimeOrderProbeAt = Date.now();
+      logSupabase('createSchedule', 'info', { userId, message: 'time_order column missing; retry without time_order' });
+      ({ data, error } = await runInsert(false));
+    } else if (!error) {
+      scheduleTimeOrderSupport = 'supported';
+    }
+  } else {
+    ({ data, error } = await runInsert(false));
+  }
 
   if (error) {
     logSupabase('createSchedule', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });
@@ -124,28 +211,51 @@ export const updateScheduleForUser = async (schedule, userId) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   if (!schedule?.id) throw new Error('更新対象の予定IDが指定されていません。');
 
-  const payload = mapToSupabaseRow(schedule, userId);
+  const basePayload = mapToSupabaseRow(schedule, userId);
   const startedAt = nowPerf();
   logSupabase('updateSchedule', 'request', {
     userId,
-    scheduleId: payload.id,
-    date: payload.date,
-    time: payload.time,
-    allDay: payload.all_day,
+    scheduleId: basePayload.id,
+    date: basePayload.date,
+    time: basePayload.time,
+    allDay: basePayload.all_day,
   });
 
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .update(payload)
-    .eq('id', schedule.id)
-    .eq('user_id', userId)
-    .select()
-    .single();
+  const runUpdate = async (withTimeOrder) => {
+    const payload = { ...basePayload };
+    if (!withTimeOrder) {
+      delete payload.time_order;
+    }
+    return supabase
+      .from(TABLE_NAME)
+      .update(payload)
+      .eq('id', schedule.id)
+      .eq('user_id', userId)
+      .select()
+      .single();
+  };
+
+  let data;
+  let error;
+  const tryTimeOrder = shouldTryTimeOrder();
+  if (tryTimeOrder) {
+    ({ data, error } = await runUpdate(true));
+    if (error && isMissingColumnError(error, 'time_order')) {
+      scheduleTimeOrderSupport = 'missing';
+      lastScheduleTimeOrderProbeAt = Date.now();
+      logSupabase('updateSchedule', 'info', { userId, scheduleId: schedule.id, message: 'time_order column missing; retry without time_order' });
+      ({ data, error } = await runUpdate(false));
+    } else if (!error) {
+      scheduleTimeOrderSupport = 'supported';
+    }
+  } else {
+    ({ data, error } = await runUpdate(false));
+  }
 
   if (error) {
     logSupabase('updateSchedule', 'error', {
       userId,
-      scheduleId: payload.id,
+      scheduleId: basePayload.id,
       durationMs: buildDuration(startedAt),
       message: error.message,
     });
@@ -196,10 +306,38 @@ export const upsertSchedulesForUser = async (schedules, userId) => {
 
   const startedAt = nowPerf();
   logSupabase('upsertSchedules', 'request', { userId, count: rows.length });
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .upsert(rows, { onConflict: 'id' })
-    .select();
+
+  const runUpsert = async (withTimeOrder) => {
+    const payloadRows = withTimeOrder
+      ? rows
+      : rows.map((row) => {
+        const next = { ...row };
+        delete next.time_order;
+        return next;
+      });
+
+    return supabase
+      .from(TABLE_NAME)
+      .upsert(payloadRows, { onConflict: 'id' })
+      .select();
+  };
+
+  let data;
+  let error;
+  const tryTimeOrder = shouldTryTimeOrder();
+  if (tryTimeOrder) {
+    ({ data, error } = await runUpsert(true));
+    if (error && isMissingColumnError(error, 'time_order')) {
+      scheduleTimeOrderSupport = 'missing';
+      lastScheduleTimeOrderProbeAt = Date.now();
+      logSupabase('upsertSchedules', 'info', { userId, message: 'time_order column missing; retry without time_order' });
+      ({ data, error } = await runUpsert(false));
+    } else if (!error) {
+      scheduleTimeOrderSupport = 'supported';
+    }
+  } else {
+    ({ data, error } = await runUpsert(false));
+  }
 
   if (error) {
     logSupabase('upsertSchedules', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });

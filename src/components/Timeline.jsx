@@ -1,14 +1,10 @@
-import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import MemoWithLinks from './MemoWithLinks';
 import TaskArea from './TaskArea';
 import NoteArea from './NoteArea';
 import LoopTimelineArea from './LoopTimelineArea';
 import QuestArea from './QuestArea';
 import { toDateStrLocal } from '../utils/date';
-
-const ALL_DAY_MIN_HEIGHT = 120;
-const TIMELINE_MIN_HEIGHT = 120;
-const RESIZE_HANDLE_HEIGHT = 12;
 
 const isSchedulePast = (schedule, selectedDate) => {
 	if (!selectedDate) return false;
@@ -127,12 +123,9 @@ const Timeline = ({
 	onReorderQuestTasks,
 }) => {
 	const [draggedAllDayId, setDraggedAllDayId] = useState(null);
-	const [dragOverIndex, setDragOverIndex] = useState(null);
-	const [allDayHeight, setAllDayHeight] = useState(200);
-	const [heightLoaded, setHeightLoaded] = useState(false);
-	const [isResizing, setIsResizing] = useState(false);
-	const [resizeStartY, setResizeStartY] = useState(0);
-	const [resizeStartHeight, setResizeStartHeight] = useState(0);
+	const [allDayDragOverIndex, setAllDayDragOverIndex] = useState(null);
+	const [draggedTimeInfo, setDraggedTimeInfo] = useState(null);
+	const [timeDragOverInfo, setTimeDragOverInfo] = useState(null);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
 	const [isAltPressed, setIsAltPressed] = useState(false);
 	const [questNowMs, setQuestNowMs] = useState(() => Date.now());
@@ -140,9 +133,7 @@ const Timeline = ({
 	const questAreaRef = useRef(null);
 	const cardRef = useRef(null);
 	const timelineRef = useRef(null);
-	const allDaySectionRef = useRef(null);
 	const headerRef = useRef(null);
-	const resizeLimitsRef = useRef({ maxHeight: ALL_DAY_MIN_HEIGHT });
 
 	useEffect(() => {
 		const handleKeyDown = (event) => {
@@ -177,22 +168,7 @@ const Timeline = ({
 		return () => window.clearInterval(id);
 	}, []);
 
-	const computeAllDayMaxHeight = useCallback((fallback = 600) => {
-		const minHeight = ALL_DAY_MIN_HEIGHT;
-		const headerHeight = headerRef.current?.offsetHeight ?? 0;
-		const cardHeight = cardRef.current?.clientHeight;
-		const parentHeight = cardRef.current?.parentElement?.clientHeight;
-		const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : undefined;
-		const effectiveCardMax = [cardHeight, parentHeight, viewportHeight, fallback]
-			.map((value) => Number(value))
-			.find((value) => Number.isFinite(value) && value > 0);
-		const structuralReserve = headerHeight + TIMELINE_MIN_HEIGHT + RESIZE_HANDLE_HEIGHT;
-		const limit = (effectiveCardMax ?? fallback) - structuralReserve;
-		return Math.max(minHeight, limit);
-	}, []);
-
 	const currentTab = ['timeline', 'tasks', 'notes', 'loop', 'quest'].includes(activeTab) ? activeTab : 'timeline';
-	const showTimeline = currentTab === 'timeline';
 	const showTasks = currentTab === 'tasks';
 	const showNotes = currentTab === 'notes';
 	const showLoopTimeline = currentTab === 'loop';
@@ -219,44 +195,6 @@ const Timeline = ({
 		}
 		return count;
 	}, [availableQuestTasks, questCycleIds]);
-
-	// NOTE: カードの最大縦幅をJSで固定すると、親のレイアウト次第で余白が発生しやすいので
-	// ここでは height/maxHeight を強制せず、親コンテナ（flex + overflow）に任せる。
-
-	useEffect(() => {
-		if (typeof window === 'undefined' || !showTimeline) return undefined;
-		let frame = null;
-		const handleResize = () => {
-			if (frame) {
-				cancelAnimationFrame(frame);
-			}
-			frame = requestAnimationFrame(() => {
-				setAllDayHeight((previous) => {
-					if (isResizing) {
-						return previous;
-					}
-					const maxHeight = computeAllDayMaxHeight(previous);
-					return Math.min(Math.max(ALL_DAY_MIN_HEIGHT, previous), maxHeight);
-				});
-			});
-		};
-
-		window.addEventListener('resize', handleResize);
-		return () => {
-			window.removeEventListener('resize', handleResize);
-			if (frame) {
-				cancelAnimationFrame(frame);
-			}
-		};
-	}, [computeAllDayMaxHeight, isResizing, showTimeline]);
-
-	useEffect(() => {
-		if (!showTimeline || isResizing) return;
-		const maxHeight = computeAllDayMaxHeight(allDayHeight);
-		if (allDayHeight > maxHeight) {
-			setAllDayHeight(maxHeight);
-		}
-	}, [allDayHeight, computeAllDayMaxHeight, isResizing, showTimeline]);
 
 	const timelineEntries = useMemo(() => (Array.isArray(schedules) ? schedules : []), [schedules]);
 	const scheduleEntries = useMemo(
@@ -297,139 +235,50 @@ const Timeline = ({
 		});
 	}, [allDaySchedules, allDayTasks]);
 
-	const sortedTimeItems = useMemo(() => {
-		const allItems = [...timeSchedules, ...timeTasks];
-		return allItems.sort((a, b) => {
-			const aTime = a?.time || '';
-			const bTime = b?.time || '';
-			if (!aTime && !bTime) {
+	const timeBuckets = useMemo(() => {
+		const items = [...timeSchedules, ...timeTasks];
+		const buckets = new Map();
+		for (const schedule of items) {
+			const key = schedule?.time ? String(schedule.time) : '';
+			if (!buckets.has(key)) {
+				buckets.set(key, []);
+			}
+			buckets.get(key).push(schedule);
+		}
+
+		const keys = Array.from(buckets.keys());
+		keys.sort((a, b) => {
+			if (!a && !b) return 0;
+			if (!a) return 1;
+			if (!b) return -1;
+			return a.localeCompare(b);
+		});
+
+		const sorted = keys.map((key) => {
+			const bucketItems = buckets.get(key) || [];
+			const list = [...bucketItems].sort((a, b) => {
+				const orderDiff = (a?.timeOrder ?? 0) - (b?.timeOrder ?? 0);
+				if (orderDiff !== 0) return orderDiff;
 				if (!!a?.completed !== !!b?.completed) {
 					return a.completed ? 1 : -1;
 				}
-				if (!!a?.isTask !== !!b?.isTask) {
-					return a.isTask ? 1 : -1;
-				}
 				return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
-			}
-			if (!aTime) return 1;
-			if (!bTime) return -1;
-			if (aTime !== bTime) return aTime.localeCompare(bTime);
-			if (!!a?.isTask !== !!b?.isTask) {
-				return a.isTask ? 1 : -1;
-			}
-			if (!!a?.completed !== !!b?.completed) {
-				return a.completed ? 1 : -1;
-			}
-			return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+			});
+			return { key, items: list };
 		});
+
+		return sorted;
 	}, [timeSchedules, timeTasks]);
 
-	useEffect(() => {
-		const handleMouseMove = (event) => {
-			if (!isResizing) return;
-
-			const maxHeight = resizeLimitsRef.current?.maxHeight ?? computeAllDayMaxHeight();
-			const clientY = event.clientY || (event.touches && event.touches[0]?.clientY) || 0;
-			const deltaY = clientY - resizeStartY;
-			const candidateHeight = resizeStartHeight + deltaY;
-			const clampedHeight = Math.max(
-				ALL_DAY_MIN_HEIGHT,
-				Math.min(maxHeight, candidateHeight)
-			);
-			setAllDayHeight(clampedHeight);
-		};
-
-		const handleTouchMove = (event) => {
-			if (!isResizing || !event.touches || event.touches.length === 0) return;
-			event.preventDefault();
-
-			const maxHeight = resizeLimitsRef.current?.maxHeight ?? computeAllDayMaxHeight();
-			const clientY = event.touches[0].clientY;
-			const deltaY = clientY - resizeStartY;
-			const candidateHeight = resizeStartHeight + deltaY;
-			const clampedHeight = Math.max(
-				ALL_DAY_MIN_HEIGHT,
-				Math.min(maxHeight, candidateHeight)
-			);
-			setAllDayHeight(clampedHeight);
-		};
-
-		const handleMouseUp = () => {
-			setIsResizing(false);
-		};
-
-		const handleTouchEnd = () => {
-			setIsResizing(false);
-		};
-
-		if (isResizing) {
-			document.addEventListener('mousemove', handleMouseMove);
-			document.addEventListener('mouseup', handleMouseUp);
-			document.addEventListener('touchmove', handleTouchMove, { passive: false });
-			document.addEventListener('touchend', handleTouchEnd);
-			document.body.style.userSelect = 'none';
+	const flattenedTimeItems = useMemo(() => {
+		const flat = [];
+		for (const bucket of timeBuckets) {
+			bucket.items.forEach((schedule, indexInBucket) => {
+				flat.push({ schedule, timeKey: bucket.key, indexInBucket });
+			});
 		}
-
-		return () => {
-			document.removeEventListener('mousemove', handleMouseMove);
-			document.removeEventListener('mouseup', handleMouseUp);
-			document.removeEventListener('touchmove', handleTouchMove);
-			document.removeEventListener('touchend', handleTouchEnd);
-			document.body.style.userSelect = '';
-		};
-	}, [computeAllDayMaxHeight, isResizing, resizeStartY, resizeStartHeight]);
-
-	const handleResizeStart = (event) => {
-		event.preventDefault();
-		setIsResizing(true);
-		const clientY = event.clientY || (event.touches && event.touches[0]?.clientY) || 0;
-		setResizeStartY(clientY);
-		setResizeStartHeight(allDayHeight);
-		resizeLimitsRef.current = {
-			maxHeight: computeAllDayMaxHeight(),
-		};
-	};
-
-	const handleTouchStartResize = (event) => {
-		if (!event.touches || event.touches.length === 0) return;
-		event.preventDefault();
-		setIsResizing(true);
-		const clientY = event.touches[0].clientY;
-		setResizeStartY(clientY);
-		setResizeStartHeight(allDayHeight);
-		resizeLimitsRef.current = {
-			maxHeight: computeAllDayMaxHeight(),
-		};
-	};
-
-	useLayoutEffect(() => {
-		const load = async () => {
-			try {
-				const stored = localStorage.getItem('allDayHeight');
-				if (!stored) {
-					setHeightLoaded(true);
-					return;
-				}
-				const raw = parseInt(stored, 10);
-				if (!Number.isNaN(raw)) {
-					const dynamicMax = computeAllDayMaxHeight();
-					const clamped = Math.min(Math.max(raw, ALL_DAY_MIN_HEIGHT), dynamicMax);
-					setAllDayHeight(clamped);
-				}
-				setHeightLoaded(true);
-			} catch (error) {
-				console.warn('終日エリア高さの読み込みに失敗:', error);
-				setHeightLoaded(true);
-			}
-		};
-		load();
-		return undefined;
-	}, [computeAllDayMaxHeight]);
-
-	useEffect(() => {
-		if (!heightLoaded || isResizing) return;
-		localStorage.setItem('allDayHeight', String(allDayHeight));
-	}, [allDayHeight, isResizing, heightLoaded]);
+		return flat;
+	}, [timeBuckets]);
 
 
 	const handleAllDayDragStart = (event, schedule) => {
@@ -453,24 +302,24 @@ const Timeline = ({
 			card.style.opacity = '1';
 		}
 		setDraggedAllDayId(null);
-		setDragOverIndex(null);
+		setAllDayDragOverIndex(null);
 	};
 
 	const handleAllDayDragOver = (event, index) => {
 		event.preventDefault();
 		event.dataTransfer.dropEffect = 'move';
-		setDragOverIndex(index);
+		setAllDayDragOverIndex(index);
 	};
 
 	const handleAllDayDragLeave = (event) => {
 		if (!event.currentTarget.contains(event.relatedTarget)) {
-			setDragOverIndex(null);
+			setAllDayDragOverIndex(null);
 		}
 	};
 
 	const handleAllDayDrop = (event, dropIndex) => {
 		event.preventDefault();
-		setDragOverIndex(null);
+		setAllDayDragOverIndex(null);
 
 		if (!draggedAllDayId) return;
 
@@ -502,6 +351,83 @@ const Timeline = ({
 		}
 
 		setDraggedAllDayId(null);
+	};
+
+	const handleTimeDragStart = (event, schedule, timeKey) => {
+		if (isMemoHovering || !schedule?.id) {
+			event.preventDefault();
+			return;
+		}
+
+		const card = event.currentTarget;
+		if (card) {
+			card.style.opacity = '0.5';
+		}
+
+		setDraggedTimeInfo({ id: schedule.id, timeKey: timeKey ?? '' });
+		setTimeDragOverInfo(null);
+		event.dataTransfer.effectAllowed = 'move';
+		event.dataTransfer.setData('text/plain', String(schedule.id));
+	};
+
+	const handleTimeDragEnd = (event) => {
+		const card = event.currentTarget;
+		if (card) {
+			card.style.opacity = '1';
+		}
+		setDraggedTimeInfo(null);
+		setTimeDragOverInfo(null);
+	};
+
+	const handleTimeDragOver = (event, { timeKey, indexInBucket }) => {
+		if (!draggedTimeInfo) return;
+		if (String(draggedTimeInfo.timeKey ?? '') !== String(timeKey ?? '')) return;
+		event.preventDefault();
+		event.dataTransfer.dropEffect = 'move';
+		setTimeDragOverInfo({ timeKey: timeKey ?? '', indexInBucket });
+	};
+
+	const handleTimeDragLeave = (event) => {
+		if (!event.currentTarget.contains(event.relatedTarget)) {
+			setTimeDragOverInfo(null);
+		}
+	};
+
+	const handleTimeDrop = (event, { timeKey, dropIndexInBucket }) => {
+		event.preventDefault();
+		setTimeDragOverInfo(null);
+
+		if (!draggedTimeInfo?.id) return;
+		if (String(draggedTimeInfo.timeKey ?? '') !== String(timeKey ?? '')) return;
+
+		const bucket = timeBuckets.find((b) => String(b.key ?? '') === String(timeKey ?? ''));
+		if (!bucket) {
+			setDraggedTimeInfo(null);
+			return;
+		}
+
+		const currentOrder = bucket.items;
+		const currentIndex = currentOrder.findIndex((item) => String(item?.id ?? '') === String(draggedTimeInfo.id));
+		if (currentIndex === -1) {
+			setDraggedTimeInfo(null);
+			return;
+		}
+
+		const nextOrder = [...currentOrder];
+		const draggedSchedule = nextOrder.splice(currentIndex, 1)[0];
+		const targetIndex = Math.max(0, Math.min(dropIndexInBucket, nextOrder.length));
+		nextOrder.splice(targetIndex, 0, draggedSchedule);
+
+		const updatedSchedules = nextOrder.map((schedule, index) => ({
+			...schedule,
+			timeOrder: index,
+		}));
+
+		if (onScheduleUpdate) {
+			onScheduleUpdate(updatedSchedules, 'schedule_reorder_same_time');
+		}
+
+		setDraggedTimeInfo(null);
 	};
 
 	const tabs = [
@@ -667,7 +593,7 @@ const Timeline = ({
 	const renderAllDayCard = (schedule, index) => {
 		const key = getScheduleKey(schedule, index, 'all-day-');
 		const isDragged = draggedAllDayId === schedule?.id;
-		const isDropTarget = dragOverIndex === index;
+		const isDropTarget = allDayDragOverIndex === index;
 		const isPast = isSchedulePast(schedule, selectedDate);
  		const isTaskItem = !!schedule?.isTask;
  		const isCompleted = !!schedule?.completed;
@@ -753,6 +679,11 @@ const Timeline = ({
 
 	const renderTimeCard = (schedule, index, isFirst, isLast) => {
 		const key = getScheduleKey(schedule, index, 'time-');
+		const timeKey = schedule?.time ? String(schedule.time) : '';
+		const isDragged = draggedTimeInfo?.id === schedule?.id;
+		const isDropTarget =
+			(timeDragOverInfo?.timeKey ?? null) === timeKey &&
+			(timeDragOverInfo?.indexInBucket ?? null) === index;
 		const isPast = isSchedulePast(schedule, selectedDate);
 		const isTaskSchedule = !!schedule?.isTask;
 		const isCompleted = !!schedule?.completed;
@@ -785,7 +716,15 @@ const Timeline = ({
 				<div
 					className={`relative flex-1 cursor-pointer overflow-hidden rounded-lg border border-indigo-100 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md ${
 						isPast ? 'opacity-80' : ''
-					} ${shouldDimForTask(schedule) ? 'opacity-60' : ''}`}
+					} ${shouldDimForTask(schedule) ? 'opacity-60' : ''} ${
+						isDragged ? 'opacity-60 ring-2 ring-indigo-200' : ''
+					} ${isDropTarget ? 'ring-2 ring-indigo-300 bg-indigo-50/70' : ''}`}
+					draggable={!!schedule?.id}
+					onDragStart={(event) => handleTimeDragStart(event, schedule, timeKey)}
+					onDragEnd={handleTimeDragEnd}
+					onDragOver={(event) => handleTimeDragOver(event, { timeKey, indexInBucket: index })}
+					onDragLeave={handleTimeDragLeave}
+					onDrop={(event) => handleTimeDrop(event, { timeKey, dropIndexInBucket: index })}
 					onDoubleClick={() => onEdit && onEdit(schedule)}
 					onContextMenu={(event) => {
 						if (!isAltPressed) return;
@@ -852,89 +791,46 @@ const Timeline = ({
 		);
 	};
 
-	const renderAllDaySection = () => {
-		const clampedHeight = Math.max(ALL_DAY_MIN_HEIGHT, allDayHeight || ALL_DAY_MIN_HEIGHT);
-		const totalAllDayItems = sortedAllDayItems.length;
-		const hasAllDayItems = totalAllDayItems > 0;
-
-		return (
-			<div
-				ref={allDaySectionRef}
-				className="relative border-b border-slate-200 bg-white"
-				style={{ height: `${clampedHeight}px` }}
-			>
-				<div className="flex h-full min-h-0 flex-col py-3">
-					<div className="flex items-center justify-between px-4 pb-2 text-[11px] text-slate-500">
-						<div className="inline-flex items-center gap-2">
-							<span className="inline-flex h-6 items-center rounded-full bg-amber-100 px-3 font-semibold text-amber-700">
-								終日
-							</span>
-							<span className="text-slate-400">(ドラッグで並び替え可能)</span>
-						</div>
-						{hasAllDayItems && (
-							<span className="text-slate-400">
-								{totalAllDayItems}件
-							</span>
-						)}
-					</div>
-					<div className="flex-1 min-h-0">
-						<div className="custom-scrollbar h-full overflow-y-auto px-4 pb-3">
-							{!hasAllDayItems ? (
-								<div className="flex min-h-full flex-col items-center justify-center gap-2 text-xs text-slate-400">
-									<span>終日の予定やタスクはありません</span>
-									<span className="text-[11px] text-slate-300">「＋」ボタンから項目を追加できます</span>
-								</div>
-							) : (
-								<div className="card-stack">
-									{sortedAllDayItems.map((item, index) => renderAllDayCard(item, index))}
-									{draggedAllDayId && (
-										<div
-											className={`h-12 rounded-lg border-2 border-dashed transition-colors duration-200 ${
-												dragOverIndex === totalAllDayItems
-													? 'border-indigo-300 bg-indigo-50/60'
-													: 'border-transparent'
-											}`}
-											onDragOver={(event) => handleAllDayDragOver(event, totalAllDayItems)}
-											onDragLeave={handleAllDayDragLeave}
-											onDrop={(event) => handleAllDayDrop(event, totalAllDayItems)}
-										>
-											<span className="sr-only">ここにドロップして末尾に移動</span>
-										</div>
-									)}
-								</div>
-							)}
-						</div>
-					</div>
-				</div>
-				<div
-					className={`absolute inset-x-0 bottom-0 flex h-4 items-center justify-center cursor-row-resize select-none ${
-						isResizing ? 'bg-indigo-100/60' : 'bg-transparent'
-					}`}
-					onMouseDown={handleResizeStart}
-					onTouchStart={handleTouchStartResize}
-				>
-					<div
-						className={`h-1 w-16 rounded-full transition-colors duration-200 ${
-							isResizing ? 'bg-indigo-400' : 'bg-slate-300 hover:bg-indigo-300'
-						}`}
-					/>
-				</div>
-			</div>
-		);
-	};
-
 	const renderTimelineSection = () => (
 		<div className="flex-1 min-h-0">
 			<div className="flex h-full min-h-0 flex-col">
 				<div className="flex-1 min-h-0">
 					<div className="custom-scrollbar h-full overflow-y-auto px-4 pb-[18px]">
 						<div className="py-4">
+							{sortedAllDayItems.length > 0 && (
+								<div className="pb-6">
+									<div className="flex items-center gap-3 pb-3 text-[11px] font-semibold text-slate-400">
+										<span className="h-px flex-1 bg-slate-200" />
+										<span className="tracking-wide">終日</span>
+										<span className="h-px flex-1 bg-slate-200" />
+									</div>
+									<div className="card-stack">
+										{sortedAllDayItems.map((item, index) => renderAllDayCard(item, index))}
+										{draggedAllDayId && (
+											<div
+												className={`h-12 rounded-lg border-2 border-dashed transition-colors duration-200 ${
+													allDayDragOverIndex === sortedAllDayItems.length
+														? 'border-indigo-300 bg-indigo-50/60'
+														: 'border-transparent'
+												}`}
+												onDragOver={(event) => handleAllDayDragOver(event, sortedAllDayItems.length)}
+												onDragLeave={handleAllDayDragLeave}
+												onDrop={(event) => handleAllDayDrop(event, sortedAllDayItems.length)}
+											>
+												<span className="sr-only">ここにドロップして末尾に移動</span>
+											</div>
+										)}
+									</div>
+								</div>
+							)}
+
 							<div className="flex items-center gap-3 pb-3 text-[11px] font-semibold text-slate-400">
 								<span className="h-px flex-1 bg-slate-200" />
 								<span className="tracking-wide">時間指定</span>
 								<span className="h-px flex-1 bg-slate-200" />
 							</div>
-							{sortedTimeItems.length === 0 ? (
+
+							{flattenedTimeItems.length === 0 ? (
 								<div className="flex min-h-[calc(100%-2rem)] flex-col items-center justify-center gap-2 text-slate-400">
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
@@ -954,16 +850,33 @@ const Timeline = ({
 									<span className="text-xs text-slate-300">「＋」ボタンから予定を追加できます</span>
 								</div>
 							) : (
-												<div className="card-stack pb-2">
-													{sortedTimeItems.map((schedule, index) =>
-														renderTimeCard(
-															schedule,
-															index,
-															index === 0,
-															index === sortedTimeItems.length - 1
-														)
-													)}
+								<div className="card-stack pb-2">
+									{timeBuckets.map((bucket) => (
+										<React.Fragment key={bucket.key || 'no-time'}>
+											{bucket.items.map((schedule, indexInBucket) => {
+												const overallIndex = flattenedTimeItems.findIndex((entry) => entry.schedule?.id === schedule?.id);
+												const isFirst = overallIndex === 0;
+												const isLast = overallIndex === flattenedTimeItems.length - 1;
+												return renderTimeCard(schedule, indexInBucket, isFirst, isLast);
+											})}
+											{draggedTimeInfo && String(draggedTimeInfo.timeKey ?? '') === String(bucket.key ?? '') && (
+												<div
+													className={`h-12 rounded-lg border-2 border-dashed transition-colors duration-200 ${
+														(timeDragOverInfo?.timeKey ?? null) === String(bucket.key ?? '') &&
+														(timeDragOverInfo?.indexInBucket ?? null) === bucket.items.length
+															? 'border-indigo-300 bg-indigo-50/60'
+															: 'border-transparent'
+													}`}
+													onDragOver={(event) => handleTimeDragOver(event, { timeKey: bucket.key, indexInBucket: bucket.items.length })}
+													onDragLeave={handleTimeDragLeave}
+													onDrop={(event) => handleTimeDrop(event, { timeKey: bucket.key, dropIndexInBucket: bucket.items.length })}
+												>
+													<span className="sr-only">ここにドロップして末尾に移動</span>
 												</div>
+											)}
+										</React.Fragment>
+									))}
+								</div>
 							)}
 						</div>
 					</div>
@@ -1086,7 +999,6 @@ const Timeline = ({
 						ref={timelineRef}
 						className="flex h-full min-h-0 flex-col overflow-hidden rounded-b-lg bg-slate-100/70"
 					>
-						{renderAllDaySection()}
 						{renderTimelineSection()}
 					</div>
 				)}

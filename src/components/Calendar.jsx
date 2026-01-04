@@ -457,7 +457,78 @@ const Calendar = ({
 
               setDragOverScheduleInfo(hoverInfo);
             } else {
-              setDragOverScheduleInfo(null);
+              let hoverInfo = null;
+              if (hoveredDate && draggedSchedule) {
+                const calendarElement = calendarRef.current;
+                const dateButton = calendarElement?.querySelector(`button[data-date="${hoveredDate}"]`);
+                if (dateButton) {
+                  const draggedScheduleId = draggedSchedule?.id != null ? String(draggedSchedule.id) : null;
+                  const draggedTimeKey = draggedSchedule?.time ? String(draggedSchedule.time) : '';
+
+                  const allScheduleElements = Array.from(
+                    dateButton.querySelectorAll('.schedule-item[data-schedule-id][data-all-day="false"]')
+                  );
+
+                  const scheduleElements = allScheduleElements.filter((element) => {
+                    const elementTime = element.getAttribute('data-time') || '';
+                    return elementTime === draggedTimeKey;
+                  });
+
+                  if (scheduleElements.length > 0) {
+                    const pointerY = e.clientY;
+                    let insertionIndex = scheduleElements.length;
+                    let hoverScheduleId = null;
+
+                    const normalizeId = (value) => {
+                      if (value == null || value === '') {
+                        return null;
+                      }
+                      return value;
+                    };
+
+                    for (let index = 0; index < scheduleElements.length; index += 1) {
+                      const element = scheduleElements[index];
+                      const rectSchedule = element.getBoundingClientRect();
+                      const scheduleId = normalizeId(element.getAttribute('data-schedule-id'));
+
+                      if (pointerY < rectSchedule.top) {
+                        insertionIndex = index;
+                        hoverScheduleId = scheduleId;
+                        break;
+                      }
+
+                      if (pointerY <= rectSchedule.bottom) {
+                        insertionIndex = index;
+                        hoverScheduleId = scheduleId;
+                        break;
+                      }
+                    }
+
+                    if (hoverScheduleId == null) {
+                      const lastElement = scheduleElements[scheduleElements.length - 1];
+                      const lastRect = lastElement.getBoundingClientRect();
+                      if (pointerY > lastRect.bottom) {
+                        insertionIndex = scheduleElements.length;
+                      }
+                    }
+
+                    if (draggedScheduleId != null && hoverScheduleId === draggedScheduleId) {
+                      hoverScheduleId = null;
+                    }
+
+                    hoverInfo = {
+                      scheduleId: hoverScheduleId,
+                      index: insertionIndex,
+                      date: hoveredDate,
+                      timeKey: draggedTimeKey,
+                    };
+                  } else {
+                    hoverInfo = { scheduleId: null, date: hoveredDate, index: 0, timeKey: draggedTimeKey };
+                  }
+                }
+              }
+
+              setDragOverScheduleInfo(hoverInfo);
             }
           }
         }
@@ -537,6 +608,47 @@ const Calendar = ({
                 }));
 
                 onScheduleUpdate(updatedSchedules, 'schedule_reorder_all_day_calendar');
+              }
+            }
+          } else if (!draggedSchedule.allDay && dragOverScheduleInfo?.date === draggedSchedule.date) {
+            const draggedTimeKey = draggedSchedule?.time ? String(draggedSchedule.time) : '';
+            const hoverTimeKey = typeof dragOverScheduleInfo?.timeKey === 'string' ? dragOverScheduleInfo.timeKey : draggedTimeKey;
+            if (draggedTimeKey === hoverTimeKey && onScheduleUpdate) {
+              const dayTimeSchedules = schedules
+                .filter(s => s.date === draggedSchedule.date && !s.allDay && String(s?.time ? s.time : '') === draggedTimeKey);
+
+              if (dayTimeSchedules.length > 1) {
+                const sortedSameTime = [...dayTimeSchedules].sort((a, b) => {
+                  const orderDiff = (a.timeOrder || 0) - (b.timeOrder || 0);
+                  if (orderDiff !== 0) return orderDiff;
+                  return String(a.id).localeCompare(String(b.id));
+                });
+
+                const originalOrderIds = sortedSameTime.map(s => String(s.id));
+                const withoutDragged = sortedSameTime.filter(s => String(s.id) !== String(draggedSchedule.id));
+
+                let insertionIndex = withoutDragged.length;
+                if (typeof dragOverScheduleInfo.index === 'number') {
+                  insertionIndex = dragOverScheduleInfo.index;
+                }
+
+                insertionIndex = Math.max(0, Math.min(insertionIndex, withoutDragged.length));
+
+                const reordered = [...withoutDragged];
+                reordered.splice(insertionIndex, 0, draggedSchedule);
+
+                const newOrderIds = reordered.map(s => String(s.id));
+                const orderChanged = originalOrderIds.length !== newOrderIds.length ||
+                  originalOrderIds.some((id, index) => id !== newOrderIds[index]);
+
+                if (orderChanged) {
+                  const updatedSchedules = reordered.map((schedule, index) => ({
+                    ...schedule,
+                    timeOrder: index
+                  }));
+
+                  onScheduleUpdate(updatedSchedules, 'schedule_reorder_same_time_calendar');
+                }
               }
             }
           }
@@ -715,11 +827,25 @@ const Calendar = ({
     // 終日予定をallDayOrder順でソート（タイムラインと同じ順序）
     const sortedAllDaySchedules = allDaySchedules.sort((a, b) => (a.allDayOrder || 0) - (b.allDayOrder || 0));
     
-    // 時間指定予定を時間順でソート
+    // 時間指定予定を時間順でソート（同時刻はtimeOrder順）
     const sortedTimeSchedules = timeSchedules.sort((a, b) => {
-      if (!a.time) return 1;
-      if (!b.time) return -1;
-      return a.time.localeCompare(b.time);
+      const aTime = a?.time ? String(a.time) : '';
+      const bTime = b?.time ? String(b.time) : '';
+
+      if (!aTime && !bTime) {
+        const orderDiff = (a?.timeOrder || 0) - (b?.timeOrder || 0);
+        if (orderDiff !== 0) return orderDiff;
+        return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+      }
+
+      if (!aTime) return 1;
+      if (!bTime) return -1;
+
+      if (aTime !== bTime) return aTime.localeCompare(bTime);
+
+      const orderDiff = (a?.timeOrder || 0) - (b?.timeOrder || 0);
+      if (orderDiff !== 0) return orderDiff;
+      return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
     });
     
     // 終日予定を先に、その後に時間指定予定を配置
@@ -908,9 +1034,9 @@ const Calendar = ({
                     const isDimTask = shouldDimForTask(schedule);
                     const isHoverTarget =
                       isCustomDragging &&
-                      draggedSchedule?.allDay &&
-                      schedule.allDay &&
                       dragOverScheduleInfo?.date === dateStr &&
+                      ((draggedSchedule?.allDay && schedule.allDay) ||
+                        (!draggedSchedule?.allDay && !schedule.allDay && String(dragOverScheduleInfo?.timeKey ?? '') === String(schedule?.time ? schedule.time : ''))) &&
                       (dragOverScheduleInfo?.scheduleId ?? null) === (scheduleId ?? null);
                     const isDraggedSchedule = draggedScheduleId != null && scheduleId === draggedScheduleId;
 
@@ -920,6 +1046,7 @@ const Calendar = ({
                         draggable={false}
                         data-schedule-id={scheduleId ?? ''}
                         data-all-day={schedule.allDay ? 'true' : 'false'}
+                        data-time={schedule?.time ? String(schedule.time) : ''}
                         className={`
                           schedule-item text-[0.7rem] px-1 py-[3px] rounded truncate w-full leading-snug select-none
                           ${schedule.allDay
