@@ -354,6 +354,20 @@ input[type="number"].notification-input {
     @apply my-1;
   }
 
+  /* GFMタスクリストは先頭のマーカー（・）を表示しない */
+  .note-markdown ul.contains-task-list {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .note-markdown li.task-list-item {
+    list-style: none;
+  }
+
+  .note-markdown li.task-list-item > input[type='checkbox'] {
+    @apply mr-2 align-middle;
+  }
+
   .note-markdown blockquote {
     @apply border-l-4 border-gray-200 pl-4 text-gray-700;
   }

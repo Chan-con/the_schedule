@@ -450,6 +450,26 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={handleToggleEditing}
+              className="inline-flex h-9 w-9 p-1 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-colors duration-200 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
+              title={isEditing ? '表示モードへ' : '編集モードへ'}
+              aria-label={isEditing ? '表示モードへ' : '編集モードへ'}
+            >
+              {isEditing ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                </svg>
+              )}
+            </button>
+
+            <button
+              type="button"
               disabled={!canShareThisNote}
               onClick={handleCopyShareUrl}
               className={`inline-flex h-9 w-9 p-1 items-center justify-center rounded-full border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
@@ -492,26 +512,6 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <rect x="9" y="9" width="13" height="13" rx="2" />
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleToggleEditing}
-              className="inline-flex h-9 w-9 p-1 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-colors duration-200 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
-              title={isEditing ? '表示モードへ' : '編集モードへ'}
-              aria-label={isEditing ? '表示モードへ' : '編集モードへ'}
-            >
-              {isEditing ? (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
                 </svg>
               )}
             </button>
@@ -592,7 +592,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-          <div className="space-y-6 p-4">
+          <div className={isEditing ? 'flex min-h-full flex-col gap-6 p-4' : 'space-y-6 p-4'}>
             {isEditing ? (
               <>
                 <div>
@@ -617,14 +617,13 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                   />
                 </div>
 
-                <div>
+                <div className="flex flex-1 min-h-0 flex-col">
                   <label className="block text-gray-700 font-medium mb-2">本文（Markdown対応）</label>
                   <textarea
                     ref={contentTextareaRef}
                     value={content}
                     placeholder="本文"
-                    className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
-                    style={{ minHeight: '55vh' }}
+                    className="w-full flex-1 min-h-0 border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
                     onFocus={() => {
                       isContentFocusedRef.current = true;
                     }}
@@ -653,7 +652,25 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
             ) : (
               <div className="note-markdown w-full px-1 text-sm text-gray-800">
                 {content.trim() ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: renderMarkdownLink }}>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: renderMarkdownLink,
+                      input: ({ type, ...props }) => {
+                        if (type === 'checkbox') {
+                          return (
+                            <input
+                              {...props}
+                              type="checkbox"
+                              className="custom-checkbox mr-2 align-middle"
+                              disabled
+                            />
+                          );
+                        }
+                        return <input {...props} type={type} />;
+                      },
+                    }}
+                  >
                     {content}
                   </ReactMarkdown>
                 ) : (
