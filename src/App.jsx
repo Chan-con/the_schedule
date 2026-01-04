@@ -853,7 +853,49 @@ function App() {
         setLoopTimelineState(remoteLoopState);
         setLoopTimelineMarkers(Array.isArray(remoteLoopMarkers) ? remoteLoopMarkers : []);
 
-        const nextQuestTasks = Array.isArray(remoteQuestTasks) ? remoteQuestTasks : [];
+        const remoteQuestList = Array.isArray(remoteQuestTasks) ? remoteQuestTasks : [];
+        const remoteHasSortOrder = remoteQuestList.some((t) => Number.isFinite(Number(t?.sort_order)));
+        const localQuestList = Array.isArray(questTasksRef.current) ? questTasksRef.current : [];
+        const localHasSortOrder = localQuestList.some((t) => Number.isFinite(Number(t?.sort_order)));
+        const localSortOrderById = new Map(
+          localQuestList
+            .map((t) => [t?.id ?? null, t])
+            .filter(([id]) => id != null)
+        );
+
+        const mergedQuestTasks = (!remoteHasSortOrder && localHasSortOrder)
+          ? remoteQuestList.map((t) => {
+              const id = t?.id ?? null;
+              if (id == null) return t;
+              const local = localSortOrderById.get(id);
+              const localOrder = Number.isFinite(Number(local?.sort_order)) ? Number(local.sort_order) : null;
+              if (localOrder == null) return t;
+              return { ...t, sort_order: localOrder };
+            })
+          : remoteQuestList;
+
+        const nextQuestTasks = mergedQuestTasks
+          .slice()
+          .sort((a, b) => {
+            const aPeriod = String(a?.period ?? '');
+            const bPeriod = String(b?.period ?? '');
+            const periodDiff = aPeriod.localeCompare(bPeriod);
+            if (periodDiff !== 0) return periodDiff;
+            const aOrder = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : null;
+            const bOrder = Number.isFinite(Number(b?.sort_order)) ? Number(b.sort_order) : null;
+            if (aOrder != null || bOrder != null) {
+              if (aOrder == null) return 1;
+              if (bOrder == null) return -1;
+              const diffOrder = aOrder - bOrder;
+              if (diffOrder !== 0) return diffOrder;
+            }
+            const aCreated = String(a?.created_at ?? '');
+            const bCreated = String(b?.created_at ?? '');
+            const diff = aCreated.localeCompare(bCreated);
+            if (diff !== 0) return diff;
+            return Number(a?.id ?? 0) - Number(b?.id ?? 0);
+          });
+
         setQuestTasks(nextQuestTasks);
         saveLocalQuestTasks(nextQuestTasks);
 
