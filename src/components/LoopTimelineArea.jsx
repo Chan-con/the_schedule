@@ -172,7 +172,6 @@ const LoopTimelineArea = React.forwardRef(({
   const progressRatio = durationMinutes > 0 ? loopMinutes / durationMinutes : 0;
 
   const safeMarkers = useMemo(() => (Array.isArray(markers) ? markers : []), [markers]);
-  const markerCount = safeMarkers.length;
 
   const [isEditingDurationOnLine, setIsEditingDurationOnLine] = useState(false);
   const [durationInlineValue, setDurationInlineValue] = useState('');
@@ -191,15 +190,6 @@ const LoopTimelineArea = React.forwardRef(({
     setDurationMinutesInput(String(next));
     setIsEditingDurationOnLine(false);
   }, [durationInlineValue, durationMinutes]);
-
-  const lineMinHeightPx = useMemo(() => {
-    // 縦ラインは基本「表示エリアの高さ」に追従させる。
-    // ただしマーカー（通知表示）が増えたら必要量だけ最小高さを増やし、足りない分はスクロールで見せる。
-    // 小さくしたい時に縮まらないのを避けるため、ベースは小さめに。
-    const base = 80;
-    const perMarker = 34;
-    return Math.min(1400, base + markerCount * perMarker);
-  }, [markerCount]);
 
   const [isEditingStartMinuteOnBubble, setIsEditingStartMinuteOnBubble] = useState(false);
   const [startMinuteInlineValue, setStartMinuteInlineValue] = useState('');
@@ -220,15 +210,23 @@ const LoopTimelineArea = React.forwardRef(({
   }, [startMinute, startMinuteInlineValue]);
 
   const lineContainerRef = useRef(null);
-  const [lineHeight, setLineHeight] = useState(520);
 
+  // NOTE:
+  // スクロール領域(可視ウィンドウ)の高さに追従して縦線を伸縮させる。
+  const [scrollViewportHeightPx, setScrollViewportHeightPx] = useState(0);
+  const [scrollViewportWidthPx, setScrollViewportWidthPx] = useState(0);
   useEffect(() => {
-    const el = lineContainerRef.current;
+    const el = scrollAreaRef.current;
     if (!el) return undefined;
+    const update = () => {
+      const h = Math.max(0, Math.floor(el.clientHeight || 0));
+      const w = Math.max(0, Math.floor(el.clientWidth || 0));
+      setScrollViewportHeightPx((prev) => (prev === h ? prev : h));
+      setScrollViewportWidthPx((prev) => (prev === w ? prev : w));
+    };
+    update();
     const ro = new ResizeObserver(() => {
-      const rect = el.getBoundingClientRect();
-      const h = Math.max(280, Math.floor(rect.height || 0));
-      setLineHeight(h);
+      window.requestAnimationFrame(update);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -236,8 +234,162 @@ const LoopTimelineArea = React.forwardRef(({
 
   const lineTopPadPx = 18;
   const lineBottomPadPx = 22;
-  const usableLineHeight = Math.max(1, lineHeight - lineTopPadPx - lineBottomPadPx);
-  const dotY = Math.round(lineTopPadPx + progressRatio * usableLineHeight);
+
+  // マーカーラベルの被り回避:
+  // - 点(本来位置)は baseY のまま
+  // - ラベルは縦にズラさず、近いものだけ横方向の「レーン」に逃がす
+  // - 点とラベルは常に細い横線で接続する
+  const markerLabelHeightPx = 26;
+  const markerLabelHalfPx = Math.floor(markerLabelHeightPx / 2);
+  const markerLabelGapPx = 6;
+  // 横方向の配置パラメータ
+  const markerConnectorBasePx = 16;
+  const markerLabelXGapPx = 8;
+  const markerLabelMaxWidthPx = 112; // max-w-28 相当
+  const markerLabelMinWidthPx = 48;
+
+  const baseLineBoxHeightPx = useMemo(() => {
+    // 可能な限りスクロールバーを出さないため、基本は可視ウィンドウの高さに合わせる。
+    // ※スクロールを出さない要求のため、ここで高さを増やさない。
+    return Math.max(160, scrollViewportHeightPx);
+  }, [scrollViewportHeightPx]);
+
+  // 右側にラベルを出すための利用可能幅（スクロール禁止のため、この範囲で詰めて配置する）
+  const availableRightPx = useMemo(() => {
+    const lineCenterX = 48; // w-24 の中央
+    const rightPadding = 12;
+    const w = Math.max(0, scrollViewportWidthPx);
+    return Math.max(0, Math.floor(w - lineCenterX - rightPadding));
+  }, [scrollViewportWidthPx]);
+
+  const computeMarkerLayout = useCallback((lineBoxHeightPx) => {
+    const usable = Math.max(1, lineBoxHeightPx - lineTopPadPx - lineBottomPadPx);
+    return {
+      dotY: Math.round(lineTopPadPx + progressRatio * usable),
+      markers: [],
+    };
+  }, [lineBottomPadPx, lineTopPadPx, progressRatio]);
+
+  const computePackedMarkerLayout = useCallback((lineBoxHeightPx) => {
+    const base = computeMarkerLayout(lineBoxHeightPx);
+    // computeMarkerLayout は markers を空にしているため、ここで items を再構築
+    const usable = Math.max(1, lineBoxHeightPx - lineTopPadPx - lineBottomPadPx);
+    const loopNow = running ? loopMinutes : null;
+
+    // 直近(次)のマーカー（未終了）を算出（z-index用）
+    let nextKey = null;
+    if (loopNow != null && durationMinutes > 0) {
+      let bestDelta = Infinity;
+      for (const m of safeMarkers) {
+        const text = String(m?.text ?? '').trim();
+        if (!text) continue;
+        const offset = clampInt(m?.offset_minutes ?? 0, { min: 0, max: durationMinutes, fallback: 0 });
+        const rawDelta = offset - loopNow;
+        const delta = rawDelta > 0 ? rawDelta : (rawDelta + durationMinutes);
+        if (delta <= 0) continue;
+        const key = m?.id ?? `${text}:${offset}`;
+        if (delta < bestDelta) {
+          bestDelta = delta;
+          nextKey = key;
+        }
+      }
+    }
+
+    const items = safeMarkers
+      .map((m) => {
+        const text = String(m?.text ?? '').trim();
+        if (!text) return null;
+        const offset = clampInt(m?.offset_minutes ?? 0, { min: 0, max: durationMinutes, fallback: 0 });
+        const key = m?.id ?? `${text}:${offset}`;
+        const baseY = Math.round(lineTopPadPx + (durationMinutes > 0 ? (offset / durationMinutes) * usable : 0));
+
+        let isAlerted = false;
+        let isUpcoming = false;
+        if (loopNow != null && durationMinutes > 0) {
+          const epsilon = 0.01;
+          isAlerted = offset <= (loopNow + epsilon);
+          isUpcoming = !isAlerted;
+        }
+
+        const zIndex = (nextKey != null && key === nextKey)
+          ? 30
+          : (isUpcoming ? 20 : 10);
+
+        return { key, marker: m, text, offset, baseY, zIndex };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.baseY - b.baseY);
+
+    // 縦方向で重なるものをクラスター化して、同一Yのまま横に詰めて配置
+    const clusters = [];
+    let current = null;
+    for (const it of items) {
+      const startY = it.baseY - markerLabelHalfPx;
+      const endY = it.baseY + markerLabelHalfPx;
+      if (!current) {
+        current = { startY, endY, items: [it] };
+        continue;
+      }
+      if (startY <= current.endY + markerLabelGapPx) {
+        current.endY = Math.max(current.endY, endY);
+        current.items.push(it);
+      } else {
+        clusters.push(current);
+        current = { startY, endY, items: [it] };
+      }
+    }
+    if (current) clusters.push(current);
+
+    const laidOut = [];
+    for (const c of clusters) {
+      const n = c.items.length;
+      const gapTotal = markerLabelXGapPx * Math.max(0, n - 1);
+      const usableRight = Math.max(0, availableRightPx - markerConnectorBasePx - gapTotal);
+      const slotW = Math.max(
+        markerLabelMinWidthPx,
+        Math.min(markerLabelMaxWidthPx, Math.floor((usableRight || 0) / Math.max(1, n)))
+      );
+
+      for (let i = 0; i < n; i += 1) {
+        const it = c.items[i];
+        // ラベルが必ず収まるように、横線(=開始位置)を計算
+        const maxStart = Math.max(0, availableRightPx - slotW);
+        const start = Math.min(
+          maxStart,
+          markerConnectorBasePx + i * (slotW + markerLabelXGapPx)
+        );
+        laidOut.push({ ...it, connectorWidthPx: Math.max(8, Math.floor(start)), labelMaxWidthPx: slotW });
+      }
+    }
+
+    return { dotY: base.dotY, markers: laidOut };
+  }, [
+    availableRightPx,
+    computeMarkerLayout,
+    durationMinutes,
+    lineBottomPadPx,
+    lineTopPadPx,
+    loopMinutes,
+    markerConnectorBasePx,
+    markerLabelGapPx,
+    markerLabelHalfPx,
+    markerLabelMaxWidthPx,
+    markerLabelMinWidthPx,
+    markerLabelXGapPx,
+    running,
+    safeMarkers,
+  ]);
+
+  const { lineBoxHeightPx, dotY, markerLayout } = useMemo(() => {
+    // スクロール禁止: 高さは可視ウィンドウ固定。
+    const targetH = baseLineBoxHeightPx;
+    const layout = computePackedMarkerLayout(targetH);
+    return {
+      lineBoxHeightPx: targetH,
+      dotY: layout.dotY,
+      markerLayout: layout.markers,
+    };
+  }, [baseLineBoxHeightPx, computePackedMarkerLayout]);
 
   const [countdownOverlayPos, setCountdownOverlayPos] = useState(null);
   const updateCountdownOverlayPos = useCallback(() => {
@@ -638,12 +790,12 @@ const LoopTimelineArea = React.forwardRef(({
             </div>
           )}
 
-          <div ref={scrollAreaRef} className="custom-scrollbar-auto mt-3 flex-1 min-h-0 overflow-auto">
+            <div ref={scrollAreaRef} className="mt-3 flex-1 min-h-0 overflow-hidden">
             <div className="flex min-h-full gap-4">
               <div
                 ref={lineContainerRef}
                 className="relative w-24 flex-shrink-0 min-h-full"
-                style={{ minHeight: lineMinHeightPx }}
+                  style={{ height: `${lineBoxHeightPx}px` }}
               >
               <div
                 className="absolute left-1/2 w-1 -translate-x-1/2 rounded bg-slate-200"
@@ -688,25 +840,47 @@ const LoopTimelineArea = React.forwardRef(({
                 title={running ? `現在: ${Math.floor(loopMinutes)}分` : '停止中'}
               />
 
-                {safeMarkers.map((m) => {
-                  const offset = clampInt(m?.offset_minutes ?? 0, { min: 0, max: durationMinutes, fallback: 0 });
-                  const y = Math.round(lineTopPadPx + (offset / durationMinutes) * usableLineHeight);
+                {markerLayout.map((it) => {
+                  const m = it.marker;
+                  const offset = it.offset;
+                  const baseY = it.baseY;
+                  const key = it.key;
+                  const connectorWidthPx = it.connectorWidthPx;
+
                   return (
-                    <div
-                      key={m?.id ?? `${m?.text}-${offset}`}
-                      className="absolute left-1/2 -translate-y-1/2 cursor-pointer select-none"
-                      style={{ top: `${y}px` }}
-                      title={`${offset}分: ${String(m?.text ?? '')}`}
-                      onDoubleClick={() => openEditMarkerModal(m)}
-                    >
-                      <div className="flex items-center">
-                        <div className="h-2 w-2 -translate-x-1/2 rounded-full bg-slate-500" aria-hidden="true" />
-                        <div className="ml-2 max-w-28 truncate rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-800">
-                          {String(m?.text ?? '')}
-                          <span className="ml-2 text-[10px] font-semibold text-slate-600">{offset}分</span>
+                    <React.Fragment key={key}>
+                      {/* 本来位置の点 */}
+                      <div
+                        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer"
+                        style={{ top: `${baseY}px`, zIndex: it.zIndex }}
+                        title={`${offset}分: ${String(m?.text ?? '')}`}
+                        onDoubleClick={() => openEditMarkerModal(m)}
+                      >
+                        <div className="h-2 w-2 rounded-full bg-slate-500" aria-hidden="true" />
+                      </div>
+
+                      {/* ラベル（縦は固定、近いものは横レーンに逃がす。常に横線で接続） */}
+                      <div
+                        className="absolute left-1/2 -translate-y-1/2 cursor-pointer select-none"
+                        style={{ top: `${baseY}px`, zIndex: it.zIndex }}
+                        title={`${offset}分: ${String(m?.text ?? '')}`}
+                        onDoubleClick={() => openEditMarkerModal(m)}
+                      >
+                        <div className="flex items-center">
+                          <div
+                            className="h-px bg-slate-300"
+                            style={{ width: `${connectorWidthPx}px` }}
+                            aria-hidden="true"
+                          />
+                          <div
+                            className="ml-1 truncate rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-800"
+                            style={{ maxWidth: `${it.labelMaxWidthPx ?? 112}px` }}
+                          >
+                            {String(m?.text ?? '')}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    </React.Fragment>
                   );
                 })}
               </div>
