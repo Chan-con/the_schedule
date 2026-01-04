@@ -14,9 +14,23 @@ const shouldTrySortOrder = () => {
 const isMissingColumnError = (error, columnName) => {
   const msg = String(error?.message ?? '');
   if (!msg) return false;
-  if (!msg.toLowerCase().includes('column')) return false;
+  const lower = msg.toLowerCase();
   if (!msg.includes(columnName)) return false;
-  return msg.toLowerCase().includes('does not exist') || msg.includes('存在しません');
+
+  // Postgres error examples:
+  // - column "sort_order" does not exist
+  // - 列 "sort_order" は存在しません
+  if (lower.includes('column') && (lower.includes('does not exist') || msg.includes('存在しません'))) {
+    return true;
+  }
+
+  // PostgREST schema cache error example:
+  // - Could not find the 'sort_order' column of 'quest_tasks' in the schema cache
+  if (lower.includes('schema cache') && lower.includes('could not find')) {
+    return true;
+  }
+
+  return false;
 };
 
 const nowPerf = () => (typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now());
