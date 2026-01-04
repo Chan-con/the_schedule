@@ -153,6 +153,28 @@ const listSchedulesInRange = async ({ env, startDate, endDate }) => {
   return await supabaseFetch({ env, path: query });
 };
 
+const listLoopTimelineStatesForUsers = async ({ env, userIds }) => {
+  const ids = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
+  if (ids.length === 0) return [];
+  const select = "user_id,duration_minutes,start_delay_minutes,start_at,status";
+  const inList = ids.map((id) => encodeURIComponent(String(id))).join(",");
+  const query =
+    `/rest/v1/loop_timeline_state?select=${encodeURIComponent(select)}` +
+    `&user_id=in.(${inList})`;
+  return await supabaseFetch({ env, path: query });
+};
+
+const listLoopTimelineMarkersForUsers = async ({ env, userIds }) => {
+  const ids = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
+  if (ids.length === 0) return [];
+  const select = "id,user_id,text,offset_minutes";
+  const inList = ids.map((id) => encodeURIComponent(String(id))).join(",");
+  const query =
+    `/rest/v1/loop_timeline_markers?select=${encodeURIComponent(select)}` +
+    `&user_id=in.(${inList})`;
+  return await supabaseFetch({ env, path: query });
+};
+
 const markSubscriptionInactive = async ({ env, userId, endpoint }) => {
   await supabaseFetch({
     env,
@@ -199,6 +221,41 @@ const tryInsertSendLog = async ({ env, row }) => {
   }
 };
 
+const tryInsertLoopSendLog = async ({ env, row }) => {
+  const path =
+    `/rest/v1/push_send_log?on_conflict=${encodeURIComponent(
+      "user_id,endpoint,loop_marker_id,fire_at"
+    )}`;
+
+  // ignore duplicates
+  const url = new URL(path, mustEnv(env, "SUPABASE_URL"));
+  const key = mustEnv(env, "SUPABASE_SERVICE_ROLE_KEY");
+
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=ignore-duplicates,return=representation",
+    },
+    body: JSON.stringify(row),
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Supabase insert loop log failed: ${res.status} ${text}`);
+  }
+
+  if (!text) return false;
+  try {
+    const data = JSON.parse(text);
+    return Array.isArray(data) ? data.length > 0 : !!data;
+  } catch {
+    return false;
+  }
+};
+
 const loadApplicationServerKeys = async (env) => {
   const publicKey = mustEnv(env, "VAPID_PUBLIC_KEY");
   const privateKey = mustEnv(env, "VAPID_PRIVATE_KEY_PKCS8");
@@ -233,15 +290,32 @@ const runCron = async (env) => {
   const startDate = toDateStrUTC(addDaysUTC(now, -2));
   const endDate = toDateStrUTC(addDaysUTC(now, lookaheadDays + 2));
 
-  const [subscriptions, schedules] = await Promise.all([
-    listActiveSubscriptions({ env }),
+  const subscriptions = await listActiveSubscriptions({ env });
+  const subsList = Array.isArray(subscriptions) ? subscriptions : [];
+  const userIds = Array.from(
+    new Set(subsList.map((s) => s?.user_id).filter(Boolean).map((v) => String(v)))
+  );
+
+  const [schedules, loopStates, loopMarkers] = await Promise.all([
     listSchedulesInRange({ env, startDate, endDate }),
+    listLoopTimelineStatesForUsers({ env, userIds }),
+    listLoopTimelineMarkersForUsers({ env, userIds }),
   ]);
 
   const applicationServerKeys = await loadApplicationServerKeys(env);
 
   const scheduleList = Array.isArray(schedules) ? schedules : [];
-  const subsList = Array.isArray(subscriptions) ? subscriptions : [];
+  const loopStateList = Array.isArray(loopStates) ? loopStates : [];
+  const loopMarkerList = Array.isArray(loopMarkers) ? loopMarkers : [];
+
+  const loopStateByUserId = new Map(loopStateList.map((s) => [String(s?.user_id || ""), s]));
+  const loopMarkersByUserId = new Map();
+  for (const m of loopMarkerList) {
+    const uid = String(m?.user_id || "");
+    if (!uid) continue;
+    if (!loopMarkersByUserId.has(uid)) loopMarkersByUserId.set(uid, []);
+    loopMarkersByUserId.get(uid).push(m);
+  }
 
   // endpoint単位で評価（多端末送信対応）
   for (const sub of subsList) {
@@ -302,6 +376,78 @@ const runCron = async (env) => {
 
         if (res.status === 404 || res.status === 410) {
           await markSubscriptionInactive({ env, userId, endpoint });
+        }
+      }
+    }
+
+    // ループタイムライン通知（マーカー到達）
+    const loopState = loopStateByUserId.get(String(userId));
+    const status = String(loopState?.status || "").toLowerCase();
+    const isRunning = status === "running";
+    const isPaused = status === "paused" || status.startsWith("paused:");
+    const startAtRaw = loopState?.start_at;
+    const startAtMs = startAtRaw ? Date.parse(String(startAtRaw)) : NaN;
+    const durationMinutes = Number(loopState?.duration_minutes);
+
+    if (isRunning && !isPaused && Number.isFinite(startAtMs) && Number.isFinite(durationMinutes) && durationMinutes > 0) {
+      const nowMs = now.getTime();
+      if (startAtMs <= nowMs) {
+        const durationMs = durationMinutes * 60_000;
+        const elapsedMs = Math.max(0, nowMs - startAtMs);
+        const currentCycle = Math.floor(elapsedMs / durationMs);
+
+        const markersForUser = loopMarkersByUserId.get(String(userId)) || [];
+        for (const marker of markersForUser) {
+          const markerId = marker?.id;
+          const text = String(marker?.text || "").trim();
+          if (!text) continue;
+          if (markerId == null) continue;
+
+          const rawOffset = Number(marker?.offset_minutes);
+          const offsetMinutes = Number.isFinite(rawOffset)
+            ? Math.min(durationMinutes, Math.max(0, Math.floor(rawOffset)))
+            : 0;
+
+          const candidateCycles = [currentCycle, currentCycle + 1];
+          for (const cycle of candidateCycles) {
+            const fireAtMs = startAtMs + (cycle * durationMs) + (offsetMinutes * 60_000);
+            const diff = fireAtMs - nowMs;
+            if (diff < -windowMs || diff > windowMs) continue;
+
+            const fireAtIso = new Date(fireAtMs).toISOString();
+            const shouldSend = await tryInsertLoopSendLog({
+              env,
+              row: {
+                user_id: userId,
+                endpoint,
+                loop_marker_id: markerId,
+                fire_at: fireAtIso,
+              },
+            });
+            if (!shouldSend) continue;
+
+            const baseUrl = String(env.PUBLIC_APP_URL || "").replace(/\/+$/, "");
+            const payload = JSON.stringify({
+              title: text,
+              body: "ループ通知",
+              url: `${baseUrl || ""}/`,
+            });
+
+            const res = await sendPush({
+              env,
+              applicationServerKeys,
+              target: {
+                endpoint,
+                keys: { p256dh, auth },
+              },
+              payload,
+              ttl: 60,
+            });
+
+            if (res.status === 404 || res.status === 410) {
+              await markSubscriptionInactive({ env, userId, endpoint });
+            }
+          }
         }
       }
     }

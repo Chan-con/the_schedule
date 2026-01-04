@@ -324,6 +324,7 @@ const LoopTimelineArea = React.forwardRef(({
 
   const lastNotifiedCycleByMarkerKeyRef = useRef(new Map());
   const prevLoopProgressRef = useRef({ durationMinutes: null, cycle: null, loopMinutes: null });
+  const lastSeenStartAtMsRef = useRef(null);
 
   const resetLoopNotificationState = useCallback(() => {
     lastNotifiedCycleByMarkerKeyRef.current.clear();
@@ -343,6 +344,14 @@ const LoopTimelineArea = React.forwardRef(({
     if (scheduled) return;
     if (durationMinutes <= 0) return;
     if (startAtMs == null) return;
+
+    // タブ再訪（初回マウント）で start_at が過去の場合、0分マーカーを即時発火させない。
+    // 「開始した直後」の場合のみ 0分マーカーを拾う。
+    const startAtChanged = lastSeenStartAtMsRef.current !== startAtMs;
+    if (startAtChanged) {
+      lastSeenStartAtMsRef.current = startAtMs;
+      resetLoopNotificationState();
+    }
 
     const durationMs = durationMinutes * 60 * 1000;
     const elapsedMs = Math.max(0, nowMs - startAtMs);
@@ -371,11 +380,17 @@ const LoopTimelineArea = React.forwardRef(({
       showLoopAlert(marker.text);
     };
 
-    // 初回tick（開始直後）は prev が無いので、0分マーカーだけは必ず拾っておく。
+    // 初回tick: 開始直後(短時間)のときだけ 0分マーカーを拾う。
+    // そうでない場合（ループ実行中に「ループ」タブを開いた等）は、状態同期のみ行う。
     if (nextPrev.cycle == null || nextPrev.loopMinutes == null) {
-      for (const marker of markerItems) {
-        if (marker.offset === 0) {
-          fireIfNeeded(marker, cycle);
+      const startAgeMs = Math.max(0, nowMs - startAtMs);
+      const shouldFireZeroOffset = startAgeMs <= 1500; // 250ms tick + 実行環境の揺れを吸収
+
+      if (shouldFireZeroOffset) {
+        for (const marker of markerItems) {
+          if (marker.offset === 0) {
+            fireIfNeeded(marker, cycle);
+          }
         }
       }
       prevLoopProgressRef.current = { durationMinutes, cycle, loopMinutes: loopMinutesNow };

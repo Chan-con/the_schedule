@@ -222,6 +222,17 @@ VITE_VAPID_PUBLIC_KEY=...
 	 	```
 	 	- ※ `push_send_log` は Cron 送信側（service role）だけが書き込む想定です。
 
+	 	- **ループタイムライン通知（マーカー到達）も Push で送りたい場合**
+	 		- `push_send_log` に `loop_marker_id` を追加し、重複防止用の unique を追加してください（Workers がこのキーで `on_conflict` を使います）。
+
+	 	```sql
+	 	alter table public.push_send_log
+	 	  add column if not exists loop_marker_id bigint;
+
+	 	create unique index if not exists push_send_log_loop_unique
+	 	  on public.push_send_log (user_id, endpoint, loop_marker_id, fire_at);
+	 	```
+
 ## Push通知（Cloudflare Workers 連携）
 
 このアプリ（Cloudflare Pages）でブラウザを閉じていても通知を出すには Web Push が必要です。
