@@ -18,7 +18,7 @@ const formatUpdatedDateTime = (value) => {
   });
 };
 
-const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleImportant, canShare = false }) => {
+const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleImportant, onCommitDraft, canShare = false }) => {
   const titleRef = useRef(null);
   const contentTextareaRef = useRef(null);
   const lastRightClickCaretRef = useRef(null);
@@ -71,11 +71,21 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
       // 編集→表示: このタイミングで保存
       if (prev) {
         persistDraftIfNeeded();
+
+        // 新規（下書き）ノートは、表示へ戻した時点で作成しておく。
+        // これにより、モーダルを閉じなくても重要/アーカイブ等が押せる。
+        if (onCommitDraft && note?.id != null && note?.__isDraft) {
+          try {
+            onCommitDraft(note.id);
+          } catch (error) {
+            console.error('[Note] Failed to commit draft note:', error);
+          }
+        }
         return false;
       }
       return true;
     });
-  }, [persistDraftIfNeeded]);
+  }, [onCommitDraft, note, persistDraftIfNeeded]);
 
   const canShareThisNote = !!canShare && !!note && note?.id != null && !note?.__isDraft;
 

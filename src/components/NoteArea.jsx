@@ -26,6 +26,7 @@ const NoteArea = ({
   onDeleteNote,
   onToggleArchiveNote,
   onToggleImportantNote,
+  onCommitDraftNote,
   canShare = false,
   isAltPressed = false,
   selectedDateStr = '',
@@ -261,6 +262,7 @@ const NoteArea = ({
         onUpdate={onUpdateNote}
         onToggleArchive={onToggleArchiveNote}
         onToggleImportant={onToggleImportantNote}
+        onCommitDraft={onCommitDraftNote}
         canShare={canShare}
       />
     </div>

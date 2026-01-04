@@ -108,6 +108,7 @@ const Timeline = ({
 	onTabChange,
 	tasks = [],
 	notes = [],
+	onCommitDraftNote,
 	loopTimelineState,
 	loopTimelineMarkers,
 	onLoopTimelineSaveState,
@@ -968,6 +969,7 @@ const Timeline = ({
 						onDeleteNote={onDeleteNote}
 						onToggleArchiveNote={onToggleArchiveNote}
 						onToggleImportantNote={onToggleImportantNote}
+						onCommitDraftNote={onCommitDraftNote}
 						canShare={canShareNotes}
 						isAltPressed={isAltPressed}
 						selectedDateStr={selectedDateStr}

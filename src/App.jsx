@@ -529,10 +529,16 @@ function App() {
   const lastLoginRequestForNoteRef = useRef(null);
   const notesRef = useRef([]);
   const questTasksRef = useRef([]);
+  const activeNoteIdRef = useRef(null);
+  const noteDraftCreateInFlightRef = useRef(new Set());
 
   useEffect(() => {
     notesRef.current = Array.isArray(notes) ? notes : [];
   }, [notes]);
+
+  useEffect(() => {
+    activeNoteIdRef.current = activeNoteId;
+  }, [activeNoteId]);
 
   useEffect(() => {
     questTasksRef.current = Array.isArray(questTasks) ? questTasks : [];
@@ -1941,6 +1947,65 @@ function App() {
     saveLocalNotes(nextAllNotes);
   }, [handleUpdateNote, loadLocalNotes, noteArchiveUserKey, saveLocalNotes, saveNoteArchiveFlags, saveNoteImportantFlags, userId]);
 
+  const handleCommitDraftNote = useCallback((noteId) => {
+    if (noteId == null) return;
+    if (!userId) return;
+
+    const currentNote = notesRef.current.find((note) => (note?.id ?? null) === noteId) || null;
+    if (!currentNote || !currentNote.__isDraft) return;
+
+    const titleTrimmed = typeof currentNote.title === 'string' ? currentNote.title.trim() : '';
+    const contentTrimmed = typeof currentNote.content === 'string' ? currentNote.content.trim() : '';
+    const shouldSkipBecauseEmpty = !titleTrimmed && !contentTrimmed;
+    if (shouldSkipBecauseEmpty) return;
+
+    const inFlight = noteDraftCreateInFlightRef.current;
+    if (inFlight.has(noteId)) return;
+    inFlight.add(noteId);
+
+    const jobMeta = { kind: 'noteCreate' };
+    beginSupabaseJob(jobMeta);
+    createNoteForUser({
+      userId,
+      date: currentNote.date || selectedDateStr,
+      title: currentNote.title ?? '',
+      content: currentNote.content ?? '',
+    })
+      .then(async (created) => {
+        markRealtimeSelfWrite('notes', created?.id ?? null);
+        setNotes((prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          const filtered = list.filter((n) => (n?.id ?? null) !== noteId);
+          return [created, ...filtered];
+        });
+        setSupabaseError(null);
+        refreshCalendarNoteDates().catch(() => {});
+
+        // まだ同じ下書きを開いている場合だけ、IDを差し替えて開いたままにする
+        if (created?.id != null && activeNoteIdRef.current != null && String(activeNoteIdRef.current) === String(noteId)) {
+          setActiveNoteId(created.id);
+        }
+
+        try {
+          const freshAll = await fetchNotesForUser(userId);
+          setNotes(applyNoteFlagsToNotes(Array.isArray(freshAll) ? freshAll : [], {
+            archiveFlags: noteArchiveFlagsRef.current,
+            importantFlags: noteImportantFlagsRef.current,
+          }));
+        } catch {
+          // 失敗しても作成済みのローカル状態は維持
+        }
+      })
+      .catch((error) => {
+        console.error('[Supabase] Failed to create note:', error);
+        setSupabaseError(error.message || 'ノートの作成に失敗しました。');
+      })
+      .finally(() => {
+        inFlight.delete(noteId);
+        endSupabaseJob(jobMeta);
+      });
+  }, [beginSupabaseJob, createNoteForUser, endSupabaseJob, fetchNotesForUser, markRealtimeSelfWrite, refreshCalendarNoteDates, selectedDateStr, userId]);
+
   const handleRequestCloseNote = useCallback((noteId) => {
     const restoreFromLink = () => {
       const snapshot = noteLinkReturnStateRef.current;
@@ -1975,6 +2040,7 @@ function App() {
 
     // 通常のクローズ
     setActiveNoteId(null);
+    activeNoteIdRef.current = null;
 
     if (typeof window !== 'undefined') {
       const fromHash = parseNoteIdFromHash(window.location.hash);
@@ -2020,40 +2086,7 @@ function App() {
         return;
       }
 
-      const jobMeta = { kind: 'noteCreate' };
-      beginSupabaseJob(jobMeta);
-      createNoteForUser({
-        userId,
-        date: currentNote.date || selectedDateStr,
-        title: currentNote.title ?? '',
-        content: currentNote.content ?? '',
-      })
-        .then(async (created) => {
-          markRealtimeSelfWrite('notes', created?.id ?? null);
-          setNotes((prev) => {
-            const list = Array.isArray(prev) ? prev : [];
-            const filtered = list.filter((n) => (n?.id ?? null) !== noteId);
-            return [created, ...filtered];
-          });
-          setSupabaseError(null);
-          refreshCalendarNoteDates().catch(() => {});
-          try {
-            const freshAll = await fetchNotesForUser(userId);
-            setNotes(applyNoteFlagsToNotes(Array.isArray(freshAll) ? freshAll : [], {
-              archiveFlags: noteArchiveFlagsRef.current,
-              importantFlags: noteImportantFlagsRef.current,
-            }));
-          } catch {
-            // 失敗しても作成済みのローカル状態は維持
-          }
-        })
-        .catch((error) => {
-          console.error('[Supabase] Failed to create note:', error);
-          setSupabaseError(error.message || 'ノートの作成に失敗しました。');
-        })
-        .finally(() => {
-          endSupabaseJob(jobMeta);
-        });
+      handleCommitDraftNote(noteId);
       return;
     }
 
@@ -2145,11 +2178,11 @@ function App() {
   }, [
     beginSupabaseJob,
     endSupabaseJob,
+    handleCommitDraftNote,
     loadLocalNotes,
     markRealtimeSelfWrite,
     refreshCalendarNoteDates,
     saveLocalNotes,
-    selectedDateStr,
     userId,
   ]);
 
@@ -3294,6 +3327,7 @@ function App() {
                           onDeleteNote={handleDeleteNote}
                           onToggleArchiveNote={handleToggleArchiveNote}
                           onToggleImportantNote={handleToggleImportantNote}
+                          onCommitDraftNote={handleCommitDraftNote}
                           canShareNotes={isAuthenticated}
                           activeNoteId={activeNoteId}
                           onActiveNoteIdChange={setActiveNoteId}
@@ -3421,6 +3455,7 @@ function App() {
                     onDeleteNote={handleDeleteNote}
                     onToggleArchiveNote={handleToggleArchiveNote}
                     onToggleImportantNote={handleToggleImportantNote}
+                    onCommitDraftNote={handleCommitDraftNote}
                     canShareNotes={isAuthenticated}
                     activeNoteId={activeNoteId}
                     onActiveNoteIdChange={setActiveNoteId}
