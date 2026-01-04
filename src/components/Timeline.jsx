@@ -744,7 +744,7 @@ const Timeline = ({
 									<span className="mr-1 text-xs" aria-hidden="true">⚡</span>
 								)}
 								<span
-									className={`truncate font-medium ${
+									className={`min-w-0 break-words whitespace-normal font-medium ${
 										isTaskSchedule && isCompleted ? 'line-through text-slate-500' : 'text-slate-900'
 									}`}
 									title={schedule?.name ? String(schedule.name) : isTaskSchedule ? '名称未設定のタスク' : '名称未設定の予定'}
