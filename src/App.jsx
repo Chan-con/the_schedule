@@ -952,6 +952,16 @@ function App() {
     const safePeriod = String(period ?? 'daily');
     const nowIso = new Date().toISOString();
 
+    const nextSortOrder = (() => {
+      const list = Array.isArray(questTasksRef.current) ? questTasksRef.current : [];
+      const orders = list
+        .filter((t) => String(t?.period ?? '') === safePeriod)
+        .map((t) => Number(t?.sort_order))
+        .filter((v) => Number.isFinite(v));
+      if (orders.length === 0) return 0;
+      return Math.max(...orders) + 1;
+    })();
+
     if (!userId) {
       const next = [
         ...questTasksRef.current,
@@ -961,6 +971,7 @@ function App() {
           period: safePeriod,
           title: safeTitle,
           completed_cycle_id: null,
+          sort_order: nextSortOrder,
           created_at: nowIso,
           updated_at: nowIso,
         },
@@ -973,11 +984,19 @@ function App() {
     const jobMeta = { kind: 'questTaskCreate' };
     beginSupabaseJob(jobMeta);
     try {
-      const created = await createQuestTaskForUser({ userId, period: safePeriod, title: safeTitle });
+      const created = await createQuestTaskForUser({ userId, period: safePeriod, title: safeTitle, sortOrder: nextSortOrder });
       markRealtimeSelfWrite('quest_tasks', created?.id ?? null);
       setQuestTasks((prev) => {
         const list = Array.isArray(prev) ? prev : [];
         return [...list, created].sort((a, b) => {
+          const aOrder = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : null;
+          const bOrder = Number.isFinite(Number(b?.sort_order)) ? Number(b.sort_order) : null;
+          if (aOrder != null || bOrder != null) {
+            if (aOrder == null) return 1;
+            if (bOrder == null) return -1;
+            const diffOrder = aOrder - bOrder;
+            if (diffOrder !== 0) return diffOrder;
+          }
           const diff = String(a?.created_at ?? '').localeCompare(String(b?.created_at ?? ''));
           if (diff !== 0) return diff;
           return Number(a?.id ?? 0) - Number(b?.id ?? 0);
@@ -991,6 +1010,53 @@ function App() {
       endSupabaseJob(jobMeta);
     }
   }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, saveLocalQuestTasks, userId]);
+
+  const handleReorderQuestTasks = useCallback(async (period, orderedIds) => {
+    const safePeriod = String(period ?? 'daily');
+    const ids = Array.isArray(orderedIds) ? orderedIds.map((v) => (v == null ? null : v)).filter((v) => v != null) : [];
+    if (ids.length === 0) return;
+
+    const orderMap = new Map(ids.map((id, index) => [id, index]));
+    const nowIso = new Date().toISOString();
+
+    setQuestTasks((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const next = list.map((t) => {
+        if (String(t?.period ?? '') !== safePeriod) return t;
+        const id = t?.id ?? null;
+        if (id == null) return t;
+        const nextOrder = orderMap.get(id);
+        if (nextOrder == null) return t;
+        return {
+          ...t,
+          sort_order: nextOrder,
+          updated_at: nowIso,
+        };
+      });
+      saveLocalQuestTasks(next);
+      return next;
+    });
+
+    if (!userId) return;
+
+    const jobMeta = { kind: 'questTaskReorder' };
+    beginSupabaseJob(jobMeta);
+    try {
+      await Promise.all(
+        ids.map(async (id) => {
+          markRealtimeSelfWrite('quest_tasks', id);
+          await updateQuestTaskForUser({ userId, id, patch: { sort_order: orderMap.get(id) } });
+        })
+      );
+      setSupabaseError(null);
+    } catch (error) {
+      console.error('[Supabase] Failed to reorder quest tasks:', error);
+      setSupabaseError(error.message || 'クエストの並び替えに失敗しました。');
+      requestSupabaseSync('quest_reorder_error');
+    } finally {
+      endSupabaseJob(jobMeta);
+    }
+  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, saveLocalQuestTasks, userId]);
 
   const handleToggleQuestTask = useCallback(async (task, nextCompleted, cycleId) => {
     const id = task?.id ?? null;
@@ -1114,7 +1180,7 @@ function App() {
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, deleteQuestTaskForUser, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, saveLocalQuestTasks, userId]);
+  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, saveLocalQuestTasks, userId]);
 
   const handleLoopTimelineSaveState = useCallback(async (patch) => {
     if (!userId) return;
@@ -3191,6 +3257,7 @@ function App() {
                           onToggleQuestTask={handleToggleQuestTask}
                           onUpdateQuestTask={handleUpdateQuestTask}
                           onDeleteQuestTask={handleDeleteQuestTask}
+                          onReorderQuestTasks={handleReorderQuestTasks}
                         />
                       </div>
                     </div>
@@ -3316,6 +3383,7 @@ function App() {
                     onToggleQuestTask={handleToggleQuestTask}
                     onUpdateQuestTask={handleUpdateQuestTask}
                     onDeleteQuestTask={handleDeleteQuestTask}
+                    onReorderQuestTasks={handleReorderQuestTasks}
                   />
                 </div>
               </div>

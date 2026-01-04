@@ -128,6 +128,7 @@ VITE_VAPID_PUBLIC_KEY=...
 
 	 - **クエスト（デイリー/ウィークリー/マンスリー）**
 	 	- 習慣タスク（チェックで完了、期間更新で自動復活）を保存します。
+	 	- 並び替え（ドラッグ&ドロップ）を同期したい場合は `sort_order` を追加してください。
 	 	- Supabase Realtime は `quest_tasks` の変更を購読して、他端末/他ウィンドウに反映します。
 
 	 	```sql
@@ -137,6 +138,7 @@ VITE_VAPID_PUBLIC_KEY=...
 	 	  period text not null check (period in ('daily','weekly','monthly')),
 	 	  title text not null,
 	 	  completed_cycle_id text,
+	 	  sort_order integer not null default 0,
 	 	  created_at timestamptz not null default now(),
 	 	  updated_at timestamptz not null default now()
 	 	);

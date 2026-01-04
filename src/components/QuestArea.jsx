@@ -54,6 +54,7 @@ const QuestArea = ({
   onToggleTask,
   onUpdateTask,
   onDeleteTask,
+  onReorderTasks,
   addInputRef,
 }) => {
   const [period, setPeriod] = useState('daily');
@@ -74,6 +75,9 @@ const QuestArea = ({
 
   const cycleId = useMemo(() => getCycleId(period, nowMs), [nowMs, period]);
 
+  const [draggedTaskId, setDraggedTaskId] = useState(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState(null);
+
   const safeTasks = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
   const periodTasks = useMemo(() => {
@@ -82,6 +86,14 @@ const QuestArea = ({
       .filter((t) => normalizePeriod(t?.period) === p)
       .slice()
       .sort((a, b) => {
+        const aOrder = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : null;
+        const bOrder = Number.isFinite(Number(b?.sort_order)) ? Number(b.sort_order) : null;
+        if (aOrder != null || bOrder != null) {
+          if (aOrder == null) return 1;
+          if (bOrder == null) return -1;
+          const diffOrder = aOrder - bOrder;
+          if (diffOrder !== 0) return diffOrder;
+        }
         const aCreated = String(a?.created_at ?? '');
         const bCreated = String(b?.created_at ?? '');
         const diff = aCreated.localeCompare(bCreated);
@@ -102,6 +114,49 @@ const QuestArea = ({
   }, [cycleId, periodTasks]);
 
   const allCleared = periodTasks.length > 0 && incomplete.length === 0;
+
+  const isTaskCompletedInCycle = useCallback((t) => {
+    return String(t?.completed_cycle_id ?? '') === String(cycleId ?? '');
+  }, [cycleId]);
+
+  const applyReorder = useCallback((dragId, overId, dropToEnd = false) => {
+    const dragKey = dragId ?? null;
+    if (dragKey == null) return;
+
+    const draggedTask = periodTasks.find((t) => (t?.id ?? null) === dragKey) || null;
+    if (!draggedTask) return;
+
+    const draggedCompleted = isTaskCompletedInCycle(draggedTask);
+    const sectionList = draggedCompleted ? completed : incomplete;
+    const sectionIds = sectionList.map((t) => t?.id).filter((id) => id != null);
+    const fromIndex = sectionIds.findIndex((id) => id === dragKey);
+    if (fromIndex === -1) return;
+
+    let toIndex = sectionIds.length - 1;
+    if (!dropToEnd && overId != null) {
+      const overTask = periodTasks.find((t) => (t?.id ?? null) === overId) || null;
+      if (overTask && isTaskCompletedInCycle(overTask) === draggedCompleted) {
+        const idx = sectionIds.findIndex((id) => id === overId);
+        if (idx !== -1) {
+          toIndex = idx;
+        }
+      }
+    }
+
+    if (toIndex === fromIndex) return;
+
+    const nextSectionIds = sectionIds.slice();
+    nextSectionIds.splice(fromIndex, 1);
+    nextSectionIds.splice(Math.min(toIndex, nextSectionIds.length), 0, dragKey);
+
+    const incompleteIds = draggedCompleted ? incomplete.map((t) => t?.id).filter((id) => id != null) : nextSectionIds;
+    const completedIds = draggedCompleted ? nextSectionIds : completed.map((t) => t?.id).filter((id) => id != null);
+
+    const nextOrderIds = [...incompleteIds, ...completedIds];
+    if (typeof onReorderTasks === 'function') {
+      onReorderTasks(period, nextOrderIds);
+    }
+  }, [completed, incomplete, isTaskCompletedInCycle, onReorderTasks, period, periodTasks]);
 
   const commitCreate = useCallback(() => {
     const trimmed = String(title || '').trim();
@@ -189,15 +244,58 @@ const QuestArea = ({
   }, [draftTitle, editingTask?.id, isEditOpen, safeTasks, titleDirty]);
 
   const renderTaskRow = (task) => {
-    const isCompleted = String(task?.completed_cycle_id ?? '') === String(cycleId ?? '');
+    const isCompleted = isTaskCompletedInCycle(task);
     const key = task?.id != null ? `quest-${task.id}` : `quest-${task?.title ?? 'unknown'}-${task?.created_at ?? ''}`;
+    const taskId = task?.id ?? null;
+    const isOver = taskId != null && dragOverTaskId === taskId;
 
     return (
       <div
         key={key}
-        className={`border border-gray-200 rounded-lg p-2.5 bg-white shadow-sm transition hover:shadow-md cursor-pointer ${isCompleted ? 'opacity-70' : ''}`}
+        className={`border border-gray-200 rounded-lg p-2.5 bg-white shadow-sm transition hover:shadow-md cursor-pointer ${isCompleted ? 'opacity-70' : ''} ${isOver ? 'ring-2 ring-indigo-200' : ''}`}
         onDoubleClick={() => {
           openEditModal(task);
+        }}
+        draggable={taskId != null}
+        onDragStart={(event) => {
+          if (taskId == null) {
+            event.preventDefault();
+            return;
+          }
+          const card = event.currentTarget;
+          if (card) {
+            card.style.opacity = '0.5';
+          }
+          setDraggedTaskId(taskId);
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', String(taskId));
+        }}
+        onDragEnd={(event) => {
+          const card = event.currentTarget;
+          if (card) {
+            card.style.opacity = '1';
+          }
+          setDraggedTaskId(null);
+          setDragOverTaskId(null);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+          if (taskId != null) {
+            setDragOverTaskId(taskId);
+          }
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            setDragOverTaskId(null);
+          }
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragOverTaskId(null);
+          if (draggedTaskId == null || taskId == null) return;
+          applyReorder(draggedTaskId, taskId, false);
+          setDraggedTaskId(null);
         }}
       >
         <div className="flex items-center gap-3">
@@ -208,6 +306,7 @@ const QuestArea = ({
           </div>
           <button
             type="button"
+            draggable={false}
             className={`inline-flex size-6 flex-shrink-0 items-center justify-center rounded-lg border p-0 text-[11px] font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
               isCompleted
                 ? 'bg-green-500 border-green-600 text-white'
@@ -308,6 +407,24 @@ const QuestArea = ({
 
             {incomplete.map((t) => renderTaskRow(t))}
 
+            {draggedTaskId != null && incomplete.length > 0 && (
+              <div
+                className="rounded-lg border border-dashed border-slate-200 bg-white/70 p-3 text-center text-xs text-slate-400"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  applyReorder(draggedTaskId, null, true);
+                  setDraggedTaskId(null);
+                  setDragOverTaskId(null);
+                }}
+              >
+                ここにドロップして末尾へ
+              </div>
+            )}
+
             {completed.length > 0 && (
               <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
                 <span className="flex-1 h-px bg-gray-200" />
@@ -317,6 +434,24 @@ const QuestArea = ({
             )}
 
             {completed.map((t) => renderTaskRow(t))}
+
+            {draggedTaskId != null && completed.length > 0 && (
+              <div
+                className="mt-2 rounded-lg border border-dashed border-slate-200 bg-white/70 p-3 text-center text-xs text-slate-400"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  applyReorder(draggedTaskId, null, true);
+                  setDraggedTaskId(null);
+                  setDragOverTaskId(null);
+                }}
+              >
+                ここにドロップして末尾へ
+              </div>
+            )}
           </div>
         )}
       </div>
