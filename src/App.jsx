@@ -1670,6 +1670,18 @@ function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    const normalizeTitleKey = (value) => {
+      const trimmed = String(value ?? '').trim();
+      if (!trimmed) return '';
+      let normalized = trimmed;
+      try {
+        normalized = normalized.normalize('NFKC');
+      } catch {
+        // ignore
+      }
+      return normalized.toLowerCase();
+    };
+
     const getMsUntilNextLocalMidnight = () => {
       const now = new Date();
       const next = new Date(now);
@@ -1911,6 +1923,97 @@ function App() {
         return window.__theScheduleDebug;
       };
 
+      const listDailyQuestTasks = async ({ dateStr } = {}) => {
+        const safeDate = String(dateStr ?? '').trim();
+        if (!safeDate) throw new Error('listDailyQuestTasks には { dateStr } が必要です');
+        if (!userId) {
+          const map = loadLocalDailyQuestTasksByDate();
+          return Array.isArray(map?.[safeDate]) ? map[safeDate] : [];
+        }
+        return fetchDailyQuestTasksForUserByDate({ userId, dateStr: safeDate });
+      };
+
+      const createDailyQuestTaskOnDate = async ({ dateStr, title } = {}) => {
+        const safeDate = String(dateStr ?? '').trim();
+        const safeTitle = String(title ?? '').trim();
+        if (!safeDate || !safeTitle) {
+          throw new Error('createDailyQuestTaskOnDate には { dateStr, title } が必要です');
+        }
+
+        if (!userId) {
+          const map = loadLocalDailyQuestTasksByDate();
+          const prev = Array.isArray(map?.[safeDate]) ? map[safeDate] : [];
+          const exists = prev.some((t) => normalizeTitleKey(t?.title) === normalizeTitleKey(safeTitle));
+          if (exists) throw new Error('同名のクエストは登録できません。');
+
+          const baseSort = Math.max(-1,
+            ...prev
+              .map((t) => Number(t?.sort_order))
+              .filter((v) => Number.isFinite(v))
+          );
+          const sortOrder = Number.isFinite(baseSort) ? baseSort + 1 : prev.length;
+          const nowIso = new Date().toISOString();
+          const created = {
+            id: createTempId(),
+            user_id: null,
+            date_str: safeDate,
+            title: safeTitle,
+            completed: false,
+            sort_order: sortOrder,
+            created_at: nowIso,
+            updated_at: nowIso,
+          };
+          const next = sortDailyQuestTasks([...prev, created]);
+          map[safeDate] = next;
+          saveLocalDailyQuestTasksByDate(map);
+          return created;
+        }
+
+        const existing = await fetchDailyQuestTasksForUserByDate({ userId, dateStr: safeDate }).catch(() => []);
+        const exists = (Array.isArray(existing) ? existing : []).some((t) => normalizeTitleKey(t?.title) === normalizeTitleKey(safeTitle));
+        if (exists) throw new Error('同名のクエストは登録できません。');
+
+        const baseSort = Math.max(-1,
+          ...(Array.isArray(existing) ? existing : [])
+            .map((t) => Number(t?.sort_order))
+            .filter((v) => Number.isFinite(v))
+        );
+        const sortOrder = Number.isFinite(baseSort) ? baseSort + 1 : 0;
+        const created = await createDailyQuestTaskForUser({ userId, dateStr: safeDate, title: safeTitle, sortOrder });
+        markRealtimeSelfWrite('daily_quest_tasks', created?.id ?? null);
+        return created;
+      };
+
+      const deleteDailyQuestTaskByTitleOnDate = async ({ dateStr, title } = {}) => {
+        const safeDate = String(dateStr ?? '').trim();
+        const safeTitle = String(title ?? '').trim();
+        if (!safeDate || !safeTitle) {
+          throw new Error('deleteDailyQuestTaskByTitleOnDate には { dateStr, title } が必要です');
+        }
+
+        if (!userId) {
+          const map = loadLocalDailyQuestTasksByDate();
+          const prev = Array.isArray(map?.[safeDate]) ? map[safeDate] : [];
+          const key = normalizeTitleKey(safeTitle);
+          const next = prev.filter((t) => normalizeTitleKey(t?.title) !== key);
+          map[safeDate] = next;
+          saveLocalDailyQuestTasksByDate(map);
+          return { deleted: prev.length - next.length };
+        }
+
+        const existing = await fetchDailyQuestTasksForUserByDate({ userId, dateStr: safeDate }).catch(() => []);
+        const key = normalizeTitleKey(safeTitle);
+        const targets = (Array.isArray(existing) ? existing : []).filter((t) => normalizeTitleKey(t?.title) === key);
+        if (targets.length === 0) return { deleted: 0 };
+        for (const t of targets) {
+          const id = t?.id ?? null;
+          if (id == null) continue;
+          markRealtimeSelfWrite('daily_quest_tasks', id);
+          await deleteDailyQuestTaskForUser({ userId, id });
+        }
+        return { deleted: targets.length };
+      };
+
       const previewDailyQuestCarryOver = async ({ fromDateStr, toDateStr } = {}) => {
         const safeFrom = String(fromDateStr ?? '').trim();
         const safeTo = String(toDateStr ?? '').trim();
@@ -2031,6 +2134,9 @@ function App() {
       debugRoot.previewDailyQuestCarryOver = previewDailyQuestCarryOver;
       debugRoot.runDailyQuestCarryOver = runDailyQuestCarryOver;
       debugRoot.forceDailyQuestTick = () => tick();
+      debugRoot.listDailyQuestTasks = listDailyQuestTasks;
+      debugRoot.createDailyQuestTaskOnDate = createDailyQuestTaskOnDate;
+      debugRoot.deleteDailyQuestTaskByTitleOnDate = deleteDailyQuestTaskByTitleOnDate;
     }
 
     let disposed = false;
