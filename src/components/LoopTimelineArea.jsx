@@ -162,7 +162,7 @@ const LoopTimelineArea = ({
 
   const durationMinutes = clampInt(durationMinutesInput, { min: 1, max: 24 * 60, fallback: DEFAULT_DURATION_MINUTES });
   const startMinute = useMemo(() => {
-    // 0=すぐ開始
+    // 0-59: 次にその「分」になったら開始（即開始は再生ダブルクリック）
     return clampInt(delayMinutesInput, { min: 0, max: 59, fallback: 0 });
   }, [delayMinutesInput]);
   const startAtMs = useMemo(() => parseStartAtMs(state?.start_at), [state?.start_at]);
@@ -306,7 +306,7 @@ const LoopTimelineArea = ({
     }
 
     const startAtDate = new Date();
-    const shouldStartNow = forceImmediate || startMinute === 0;
+    const shouldStartNow = forceImmediate;
 
     if (shouldStartNow) {
       // すぐ開始
@@ -324,7 +324,7 @@ const LoopTimelineArea = ({
     await onSaveState({
       duration_minutes: durationMinutes,
       // 互換のためフィールド名は維持（値は「開始する分」）
-      start_delay_minutes: shouldStartNow ? 0 : startMinute,
+      start_delay_minutes: startMinute,
       start_at: startAt,
       status: 'running',
     });
