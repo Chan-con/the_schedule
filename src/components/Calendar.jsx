@@ -4,6 +4,14 @@ import { isJapaneseHoliday, getJapaneseHolidayName } from '../utils/holidays';
 
 const WHEEL_NAVIGATION_DELAY_MS = 150;
 
+const IconCrown = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <path d="M3 7l4 6 5-7 5 7 4-6" />
+    <path d="M5 21h14" />
+    <path d="M7 14h10l-1 7H8l-1-7z" />
+  </svg>
+);
+
 // 予定が過去かどうかを判定する関数
 const isSchedulePast = (schedule) => {
   const now = new Date();
@@ -47,6 +55,7 @@ const Calendar = ({
   onToggleTask,
   onScheduleUpdate,
   noteDates = [],
+  dailyQuestCrowns = {},
   onVisibleRangeChange,
 }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -103,6 +112,13 @@ const Calendar = ({
     const list = Array.isArray(noteDates) ? noteDates : [];
     return new Set(list.filter(Boolean));
   }, [noteDates]);
+
+  const dailyQuestCrownByDate = useMemo(() => {
+    if (dailyQuestCrowns && typeof dailyQuestCrowns === 'object' && !Array.isArray(dailyQuestCrowns)) {
+      return dailyQuestCrowns;
+    }
+    return {};
+  }, [dailyQuestCrowns]);
 
   const toDateStr = useCallback((date) => {
     if (!date) return '';
@@ -999,6 +1015,30 @@ const Calendar = ({
                       title={holiday ? getJapaneseHolidayName(date) : ''}
                     >
                       {date.getDate()}
+                    </span>
+                  );
+                })()}
+
+                {(() => {
+                  const crown = dailyQuestCrownByDate?.[dateStr] ?? null;
+                  if (!crown) return null;
+                  const status = String(crown?.status ?? '').trim();
+                  const totalCount = Number.isFinite(Number(crown?.totalCount)) ? Number(crown.totalCount) : null;
+                  const isProvisional = status === 'provisional';
+                  const isConfirmed = status === 'confirmed';
+                  if (!isProvisional && !isConfirmed) return null;
+
+                  const title = isConfirmed
+                    ? (totalCount != null ? `デイリー達成（総数: ${totalCount}）` : 'デイリー達成')
+                    : 'デイリー達成（暫定）';
+
+                  return (
+                    <span
+                      className={isProvisional ? 'inline-flex opacity-60' : 'inline-flex'}
+                      aria-label={title}
+                      title={title}
+                    >
+                      <IconCrown className={`h-2.5 w-2.5 ${isProvisional ? 'text-amber-400' : 'text-amber-500'}`} />
                     </span>
                   );
                 })()}

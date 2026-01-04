@@ -4,7 +4,6 @@ import TaskArea from './TaskArea';
 import NoteArea from './NoteArea';
 import LoopTimelineArea from './LoopTimelineArea';
 import QuestArea from './QuestArea';
-import { toDateStrLocal } from '../utils/date';
 
 const isSchedulePast = (schedule, selectedDate) => {
 	if (!selectedDate) return false;
@@ -55,34 +54,6 @@ const getScheduleKey = (schedule, index, prefix) => {
 	return `${prefix}${index}-${schedule?.name ?? 'schedule'}`;
 };
 
-const normalizeQuestPeriod = (value) => {
-	const v = String(value || '').trim();
-	if (v === 'daily' || v === 'weekly' || v === 'monthly') return v;
-	return 'daily';
-};
-
-const getQuestCycleId = (period, nowMs) => {
-	const now = new Date(typeof nowMs === 'number' ? nowMs : Date.now());
-	const p = normalizeQuestPeriod(period);
-
-	if (p === 'daily') {
-		return toDateStrLocal(now);
-	}
-
-	if (p === 'weekly') {
-		const base = new Date(now);
-		base.setHours(0, 0, 0, 0);
-		const day = base.getDay(); // 0:Sun ... 6:Sat
-		const daysSinceMonday = (day + 6) % 7; // Mon->0, Tue->1, ... Sun->6
-		base.setDate(base.getDate() - daysSinceMonday);
-		return toDateStrLocal(base);
-	}
-
-	// monthly
-	const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-	monthStart.setHours(0, 0, 0, 0);
-	return toDateStrLocal(monthStart);
-};
 
 const Timeline = ({
 	schedules = [],
@@ -116,7 +87,7 @@ const Timeline = ({
 	onLoopTimelineUpdateMarker,
 	onLoopTimelineDeleteMarker,
 	canShareLoopTimeline = false,
-	questTasks = [],
+	dailyQuestTasks = [],
 	onCreateQuestTask,
 	onToggleQuestTask,
 	onUpdateQuestTask,
@@ -129,7 +100,6 @@ const Timeline = ({
 	const [timeDragOverInfo, setTimeDragOverInfo] = useState(null);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
 	const [isAltPressed, setIsAltPressed] = useState(false);
-	const [questNowMs, setQuestNowMs] = useState(() => Date.now());
 	const loopTimelineAreaRef = useRef(null);
 	const questAreaRef = useRef(null);
 	const cardRef = useRef(null);
@@ -164,11 +134,6 @@ const Timeline = ({
 		};
 	}, []);
 
-	useEffect(() => {
-		const id = window.setInterval(() => setQuestNowMs(Date.now()), 30_000);
-		return () => window.clearInterval(id);
-	}, []);
-
 	const currentTab = ['timeline', 'tasks', 'notes', 'loop', 'quest'].includes(activeTab) ? activeTab : 'timeline';
 	const showTasks = currentTab === 'tasks';
 	const showNotes = currentTab === 'notes';
@@ -176,26 +141,11 @@ const Timeline = ({
 	const showQuest = currentTab === 'quest';
 	const availableTasks = Array.isArray(tasks) ? tasks : [];
 	const availableNotes = Array.isArray(notes) ? notes : [];
-	const availableQuestTasks = useMemo(() => (Array.isArray(questTasks) ? questTasks : []), [questTasks]);
-
-	const questCycleIds = useMemo(() => {
-		return {
-			daily: getQuestCycleId('daily', questNowMs),
-			weekly: getQuestCycleId('weekly', questNowMs),
-			monthly: getQuestCycleId('monthly', questNowMs),
-		};
-	}, [questNowMs]);
+	const availableQuestTasks = useMemo(() => (Array.isArray(dailyQuestTasks) ? dailyQuestTasks : []), [dailyQuestTasks]);
 
 	const questIncompleteTotal = useMemo(() => {
-		let count = 0;
-		for (const task of availableQuestTasks) {
-			const period = normalizeQuestPeriod(task?.period);
-			const cycleId = questCycleIds[period];
-			const done = String(task?.completed_cycle_id ?? '') === String(cycleId ?? '');
-			if (!done) count += 1;
-		}
-		return count;
-	}, [availableQuestTasks, questCycleIds]);
+		return availableQuestTasks.filter((t) => !t?.completed).length;
+	}, [availableQuestTasks]);
 
 	const timelineEntries = useMemo(() => (Array.isArray(schedules) ? schedules : []), [schedules]);
 	const scheduleEntries = useMemo(

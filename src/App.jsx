@@ -12,7 +12,17 @@ import QuickMemoPad from './components/QuickMemoPad';
 import CornerFloatingMenu from './components/CornerFloatingMenu';
 import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQuickMemo';
 import { supabase } from './lib/supabaseClient';
-import { fetchQuestTasksForUser, createQuestTaskForUser, updateQuestTaskForUser, deleteQuestTaskForUser } from './utils/supabaseQuestTasks';
+import {
+  fetchDailyQuestTasksForUserByDate,
+  createDailyQuestTaskForUser,
+  updateDailyQuestTaskForUser,
+  deleteDailyQuestTaskForUser,
+  reorderDailyQuestTasks,
+} from './utils/supabaseDailyQuestTasks';
+import {
+  fetchDailyQuestSnapshotsForUserInRange,
+  recordDailyQuestSnapshot,
+} from './utils/supabaseDailyQuestSnapshots';
 import {
   fetchLoopTimelineMarkersForUser,
   fetchLoopTimelineStateForUser,
@@ -64,7 +74,9 @@ const createTempId = () => Date.now();
 
 const QUICK_MEMO_STORAGE_KEY = 'quickMemoPadContent';
 const NOTES_STORAGE_KEY = 'notes';
-const QUEST_TASKS_STORAGE_KEY = 'questTasks';
+const DAILY_QUEST_TASKS_STORAGE_KEY = 'dailyQuestTasksByDateV1';
+const DAILY_QUEST_SNAPSHOTS_STORAGE_KEY = 'dailyQuestSnapshotsV1';
+const DAILY_QUEST_TICK_MS = 30_000;
 const NOTE_ARCHIVE_FLAGS_STORAGE_KEY = 'noteArchiveFlagsV1';
 const NOTE_IMPORTANT_FLAGS_STORAGE_KEY = 'noteImportantFlagsV1';
 const MEMO_SPLIT_STORAGE_KEY = 'memoSplitRatio';
@@ -210,28 +222,54 @@ function App() {
     return [];
   }, []);
 
-  const loadLocalQuestTasks = useCallback(() => {
+  const loadLocalDailyQuestTasksByDate = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return {};
+    }
+
+    try {
+      const stored = window.localStorage.getItem(DAILY_QUEST_TASKS_STORAGE_KEY);
+      if (!stored) return {};
+      const parsed = JSON.parse(stored);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      console.warn('⚠️ Failed to load daily quest tasks from localStorage:', error);
+      return {};
+    }
+  }, []);
+
+  const saveLocalDailyQuestTasksByDate = useCallback((nextMap) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const safe = nextMap && typeof nextMap === 'object' ? nextMap : {};
+      window.localStorage.setItem(DAILY_QUEST_TASKS_STORAGE_KEY, JSON.stringify(safe));
+    } catch (error) {
+      console.warn('⚠️ Failed to persist daily quest tasks to localStorage:', error);
+    }
+  }, []);
+
+  const loadLocalDailyQuestSnapshots = useCallback(() => {
     if (typeof window === 'undefined') {
       return [];
     }
 
     try {
-      const stored = window.localStorage.getItem(QUEST_TASKS_STORAGE_KEY);
+      const stored = window.localStorage.getItem(DAILY_QUEST_SNAPSHOTS_STORAGE_KEY);
       if (!stored) return [];
       const parsed = JSON.parse(stored);
       return Array.isArray(parsed) ? parsed : [];
     } catch (error) {
-      console.warn('⚠️ Failed to load quest tasks from localStorage:', error);
+      console.warn('⚠️ Failed to load daily quest snapshots from localStorage:', error);
       return [];
     }
   }, []);
 
-  const saveLocalQuestTasks = useCallback((nextTasks) => {
+  const saveLocalDailyQuestSnapshots = useCallback((nextList) => {
     if (typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem(QUEST_TASKS_STORAGE_KEY, JSON.stringify(Array.isArray(nextTasks) ? nextTasks : []));
+      window.localStorage.setItem(DAILY_QUEST_SNAPSHOTS_STORAGE_KEY, JSON.stringify(Array.isArray(nextList) ? nextList : []));
     } catch (error) {
-      console.warn('⚠️ Failed to persist quest tasks to localStorage:', error);
+      console.warn('⚠️ Failed to persist daily quest snapshots to localStorage:', error);
     }
   }, []);
 
@@ -369,7 +407,8 @@ function App() {
     quick_memos: new Map(),
     loop_timeline_state: new Map(),
     loop_timeline_markers: new Map(),
-    quest_tasks: new Map(),
+    daily_quest_tasks: new Map(),
+    daily_quest_snapshots: new Map(),
   });
   const REALTIME_SELF_WRITE_WINDOW_MS = 2000;
 
@@ -519,7 +558,9 @@ function App() {
   const [isQuickMemoLoaded, setIsQuickMemoLoaded] = useState(false);
 
   const [notes, setNotes] = useState([]);
-  const [questTasks, setQuestTasks] = useState(() => []);
+  const [dailyQuestDateStr, setDailyQuestDateStr] = useState(() => toDateStrLocal(new Date()));
+  const [dailyQuestTasks, setDailyQuestTasks] = useState(() => []);
+  const [calendarDailyQuestSnapshots, setCalendarDailyQuestSnapshots] = useState(() => []);
   const [activeNoteId, setActiveNoteId] = useState(null);
   const [sharedNoteId, setSharedNoteId] = useState(null);
   const noteLinkReturnStateRef = useRef(null);
@@ -528,9 +569,11 @@ function App() {
   const lastHashNoteIdRef = useRef(null);
   const lastLoginRequestForNoteRef = useRef(null);
   const notesRef = useRef([]);
-  const questTasksRef = useRef([]);
+  const dailyQuestTasksRef = useRef([]);
+  const calendarDailyQuestSnapshotsRef = useRef([]);
   const activeNoteIdRef = useRef(null);
   const noteDraftCreateInFlightRef = useRef(new Set());
+  const lastDailyQuestDateTickRef = useRef(null);
 
   useEffect(() => {
     notesRef.current = Array.isArray(notes) ? notes : [];
@@ -541,8 +584,12 @@ function App() {
   }, [activeNoteId]);
 
   useEffect(() => {
-    questTasksRef.current = Array.isArray(questTasks) ? questTasks : [];
-  }, [questTasks]);
+    dailyQuestTasksRef.current = Array.isArray(dailyQuestTasks) ? dailyQuestTasks : [];
+  }, [dailyQuestTasks]);
+
+  useEffect(() => {
+    calendarDailyQuestSnapshotsRef.current = Array.isArray(calendarDailyQuestSnapshots) ? calendarDailyQuestSnapshots : [];
+  }, [calendarDailyQuestSnapshots]);
 
   const openSharedNote = useCallback(
     (noteId) => {
@@ -559,6 +606,31 @@ function App() {
     },
     [isMobile]
   );
+
+  const calendarDailyQuestCrownsByDate = useMemo(() => {
+    const map = {};
+    const snapshots = Array.isArray(calendarDailyQuestSnapshots) ? calendarDailyQuestSnapshots : [];
+    for (const row of snapshots) {
+      const dateStr = String(row?.date_str ?? '').trim();
+      if (!dateStr) continue;
+      if (!row?.is_cleared) continue;
+      const totalCount = Number.isFinite(Number(row?.total_count)) ? Number(row.total_count) : null;
+      map[dateStr] = { status: 'confirmed', ...(totalCount != null ? { totalCount } : {}) };
+    }
+
+    // 今日だけは「暫定」表示（0時を跨ぐまで確定しない）
+    const todayStr = String(dailyQuestDateStr ?? '').trim();
+    if (todayStr) {
+      const tasks = Array.isArray(dailyQuestTasks) ? dailyQuestTasks : [];
+      const hasTasks = tasks.length > 0;
+      const allDone = hasTasks && tasks.every((t) => !!t?.completed);
+      if (allDone && !map[todayStr]) {
+        map[todayStr] = { status: 'provisional' };
+      }
+    }
+
+    return map;
+  }, [calendarDailyQuestSnapshots, dailyQuestDateStr, dailyQuestTasks]);
 
   // メモ等のリンク（hash）からノートを開いた場合、閉じた時に戻せるよう現在の表示状態を記憶
   useEffect(() => {
@@ -792,7 +864,9 @@ function App() {
         const visibleRange = calendarVisibleRangeRef.current;
         const hasVisibleRange = !!(visibleRange?.startDate && visibleRange?.endDate);
 
-        const [remoteSchedules, remoteQuickMemo, remoteNotes, remoteNoteDates, remoteLoopState, remoteLoopMarkers, remoteQuestTasks] = await Promise.all([
+        const todayStr = toDateStrLocal(new Date());
+
+        const [remoteSchedules, remoteQuickMemo, remoteNotes, remoteNoteDates, remoteLoopState, remoteLoopMarkers, remoteDailyQuestTasks, remoteDailyQuestSnapshots] = await Promise.all([
           fetchSchedulesForUser(userId),
           fetchQuickMemoForUser(userId),
           fetchNotesForUser(userId),
@@ -811,10 +885,20 @@ function App() {
             console.warn('[Supabase] loop_timeline_markers fetch skipped:', error);
             return [];
           }),
-          fetchQuestTasksForUser(userId).catch((error) => {
-            console.warn('[Supabase] quest_tasks fetch skipped:', error);
+          fetchDailyQuestTasksForUserByDate({ userId, dateStr: todayStr }).catch((error) => {
+            console.warn('[Supabase] daily_quest_tasks fetch skipped:', error);
             return [];
           }),
+          hasVisibleRange
+            ? fetchDailyQuestSnapshotsForUserInRange({
+                userId,
+                startDate: visibleRange.startDate,
+                endDate: visibleRange.endDate,
+              }).catch((error) => {
+                console.warn('[Supabase] daily_quest_snapshots fetch skipped:', error);
+                return [];
+              })
+            : Promise.resolve([]),
         ]);
         if (isCancelledFn()) return;
 
@@ -856,54 +940,24 @@ function App() {
           setCalendarNoteDates(remoteNoteDates);
         }
 
+        setDailyQuestDateStr(todayStr);
+        setDailyQuestTasks(Array.isArray(remoteDailyQuestTasks) ? remoteDailyQuestTasks : []);
+
+        if (Array.isArray(remoteDailyQuestSnapshots)) {
+          setCalendarDailyQuestSnapshots(remoteDailyQuestSnapshots);
+        }
+
         setLoopTimelineState(remoteLoopState);
         setLoopTimelineMarkers(Array.isArray(remoteLoopMarkers) ? remoteLoopMarkers : []);
 
-        const remoteQuestList = Array.isArray(remoteQuestTasks) ? remoteQuestTasks : [];
-        const remoteHasSortOrder = remoteQuestList.some((t) => Number.isFinite(Number(t?.sort_order)));
-        const localQuestList = Array.isArray(questTasksRef.current) ? questTasksRef.current : [];
-        const localHasSortOrder = localQuestList.some((t) => Number.isFinite(Number(t?.sort_order)));
-        const localSortOrderById = new Map(
-          localQuestList
-            .map((t) => [t?.id ?? null, t])
-            .filter(([id]) => id != null)
-        );
-
-        const mergedQuestTasks = (!remoteHasSortOrder && localHasSortOrder)
-          ? remoteQuestList.map((t) => {
-              const id = t?.id ?? null;
-              if (id == null) return t;
-              const local = localSortOrderById.get(id);
-              const localOrder = Number.isFinite(Number(local?.sort_order)) ? Number(local.sort_order) : null;
-              if (localOrder == null) return t;
-              return { ...t, sort_order: localOrder };
-            })
-          : remoteQuestList;
-
-        const nextQuestTasks = mergedQuestTasks
-          .slice()
-          .sort((a, b) => {
-            const aPeriod = String(a?.period ?? '');
-            const bPeriod = String(b?.period ?? '');
-            const periodDiff = aPeriod.localeCompare(bPeriod);
-            if (periodDiff !== 0) return periodDiff;
-            const aOrder = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : null;
-            const bOrder = Number.isFinite(Number(b?.sort_order)) ? Number(b.sort_order) : null;
-            if (aOrder != null || bOrder != null) {
-              if (aOrder == null) return 1;
-              if (bOrder == null) return -1;
-              const diffOrder = aOrder - bOrder;
-              if (diffOrder !== 0) return diffOrder;
-            }
-            const aCreated = String(a?.created_at ?? '');
-            const bCreated = String(b?.created_at ?? '');
-            const diff = aCreated.localeCompare(bCreated);
-            if (diff !== 0) return diff;
-            return Number(a?.id ?? 0) - Number(b?.id ?? 0);
-          });
-
-        setQuestTasks(nextQuestTasks);
-        saveLocalQuestTasks(nextQuestTasks);
+        // ローカルキャッシュ（オフライン復帰用）
+        try {
+          const map = loadLocalDailyQuestTasksByDate();
+          map[todayStr] = Array.isArray(remoteDailyQuestTasks) ? remoteDailyQuestTasks : [];
+          saveLocalDailyQuestTasksByDate(map);
+        } catch {
+          // ignore
+        }
 
         setSupabaseError(null);
         hasFetchedRemoteRef.current = true;
@@ -950,7 +1004,7 @@ function App() {
         }));
       }
     },
-    [applyQuickMemoValue, beginSupabaseJob, endSupabaseJob, replaceAppState, saveLocalQuestTasks, userId]
+    [applyQuickMemoValue, beginSupabaseJob, endSupabaseJob, loadLocalDailyQuestTasksByDate, replaceAppState, saveLocalDailyQuestTasksByDate, userId]
   );
 
   const requestSupabaseSync = useCallback(
@@ -993,17 +1047,16 @@ function App() {
     [refreshFromSupabase, userId]
   );
 
-  const handleCreateQuestTask = useCallback(async ({ period, title }) => {
+  const handleCreateQuestTask = useCallback(async ({ title }) => {
     const safeTitle = String(title ?? '').trim();
     if (!safeTitle) return;
 
-    const safePeriod = String(period ?? 'daily');
+    const dateStr = String(dailyQuestDateStr ?? '').trim() || toDateStrLocal(new Date());
     const nowIso = new Date().toISOString();
 
     const nextSortOrder = (() => {
-      const list = Array.isArray(questTasksRef.current) ? questTasksRef.current : [];
+      const list = Array.isArray(dailyQuestTasksRef.current) ? dailyQuestTasksRef.current : [];
       const orders = list
-        .filter((t) => String(t?.period ?? '') === safePeriod)
         .map((t) => Number(t?.sort_order))
         .filter((v) => Number.isFinite(v));
       if (orders.length === 0) return 0;
@@ -1011,32 +1064,20 @@ function App() {
     })();
 
     if (!userId) {
-      const next = [
-        ...questTasksRef.current,
-        {
-          id: createTempId(),
-          user_id: null,
-          period: safePeriod,
-          title: safeTitle,
-          completed_cycle_id: null,
-          sort_order: nextSortOrder,
-          created_at: nowIso,
-          updated_at: nowIso,
-        },
-      ];
-      setQuestTasks(next);
-      saveLocalQuestTasks(next);
-      return;
-    }
+      const created = {
+        id: createTempId(),
+        user_id: null,
+        date_str: dateStr,
+        title: safeTitle,
+        completed: false,
+        sort_order: nextSortOrder,
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
 
-    const jobMeta = { kind: 'questTaskCreate' };
-    beginSupabaseJob(jobMeta);
-    try {
-      const created = await createQuestTaskForUser({ userId, period: safePeriod, title: safeTitle, sortOrder: nextSortOrder });
-      markRealtimeSelfWrite('quest_tasks', created?.id ?? null);
-      setQuestTasks((prev) => {
+      setDailyQuestTasks((prev) => {
         const list = Array.isArray(prev) ? prev : [];
-        return [...list, created].sort((a, b) => {
+        const next = [...list, created].sort((a, b) => {
           const aOrder = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : null;
           const bOrder = Number.isFinite(Number(b?.sort_order)) ? Number(b.sort_order) : null;
           if (aOrder != null || bOrder != null) {
@@ -1049,28 +1090,71 @@ function App() {
           if (diff !== 0) return diff;
           return Number(a?.id ?? 0) - Number(b?.id ?? 0);
         });
+
+        try {
+          const map = loadLocalDailyQuestTasksByDate();
+          map[dateStr] = next;
+          saveLocalDailyQuestTasksByDate(map);
+        } catch {
+          // ignore
+        }
+
+        return next;
+      });
+      return;
+    }
+
+    const jobMeta = { kind: 'dailyQuestTaskCreate' };
+    beginSupabaseJob(jobMeta);
+    try {
+      const created = await createDailyQuestTaskForUser({ userId, dateStr, title: safeTitle, sortOrder: nextSortOrder });
+      markRealtimeSelfWrite('daily_quest_tasks', created?.id ?? null);
+      setDailyQuestTasks((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const next = [...list, created].sort((a, b) => {
+          const aOrder = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : null;
+          const bOrder = Number.isFinite(Number(b?.sort_order)) ? Number(b.sort_order) : null;
+          if (aOrder != null || bOrder != null) {
+            if (aOrder == null) return 1;
+            if (bOrder == null) return -1;
+            const diffOrder = aOrder - bOrder;
+            if (diffOrder !== 0) return diffOrder;
+          }
+          const diff = String(a?.created_at ?? '').localeCompare(String(b?.created_at ?? ''));
+          if (diff !== 0) return diff;
+          return Number(a?.id ?? 0) - Number(b?.id ?? 0);
+        });
+
+        try {
+          const map = loadLocalDailyQuestTasksByDate();
+          map[dateStr] = next;
+          saveLocalDailyQuestTasksByDate(map);
+        } catch {
+          // ignore
+        }
+
+        return next;
       });
       setSupabaseError(null);
     } catch (error) {
-      console.error('[Supabase] Failed to create quest task:', error);
-      setSupabaseError(error.message || 'クエストの作成に失敗しました。');
+      console.error('[Supabase] Failed to create daily quest task:', error);
+      setSupabaseError(error.message || 'デイリータスクの作成に失敗しました。');
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, saveLocalQuestTasks, userId]);
+  }, [beginSupabaseJob, dailyQuestDateStr, loadLocalDailyQuestTasksByDate, saveLocalDailyQuestTasksByDate, endSupabaseJob, markRealtimeSelfWrite, userId]);
 
-  const handleReorderQuestTasks = useCallback(async (period, orderedIds) => {
-    const safePeriod = String(period ?? 'daily');
+  const handleReorderQuestTasks = useCallback(async (_period, orderedIds) => {
+    const dateStr = String(dailyQuestDateStr ?? '').trim() || toDateStrLocal(new Date());
     const ids = Array.isArray(orderedIds) ? orderedIds.map((v) => (v == null ? null : v)).filter((v) => v != null) : [];
     if (ids.length === 0) return;
 
     const orderMap = new Map(ids.map((id, index) => [id, index]));
     const nowIso = new Date().toISOString();
 
-    setQuestTasks((prev) => {
+    setDailyQuestTasks((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       const next = list.map((t) => {
-        if (String(t?.period ?? '') !== safePeriod) return t;
         const id = t?.id ?? null;
         if (id == null) return t;
         const nextOrder = orderMap.get(id);
@@ -1080,82 +1164,105 @@ function App() {
           sort_order: nextOrder,
           updated_at: nowIso,
         };
+      }).sort((a, b) => {
+        const aOrder = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : null;
+        const bOrder = Number.isFinite(Number(b?.sort_order)) ? Number(b.sort_order) : null;
+        if (aOrder != null || bOrder != null) {
+          if (aOrder == null) return 1;
+          if (bOrder == null) return -1;
+          const diff = aOrder - bOrder;
+          if (diff !== 0) return diff;
+        }
+        return String(a?.created_at ?? '').localeCompare(String(b?.created_at ?? ''));
       });
-      saveLocalQuestTasks(next);
+
+      try {
+        const map = loadLocalDailyQuestTasksByDate();
+        map[dateStr] = next;
+        saveLocalDailyQuestTasksByDate(map);
+      } catch {
+        // ignore
+      }
+
       return next;
     });
 
     if (!userId) return;
 
-    const jobMeta = { kind: 'questTaskReorder' };
+    const jobMeta = { kind: 'dailyQuestTaskReorder' };
     beginSupabaseJob(jobMeta);
     try {
-      await Promise.all(
-        ids.map(async (id) => {
-          markRealtimeSelfWrite('quest_tasks', id);
-          await updateQuestTaskForUser({ userId, id, patch: { sort_order: orderMap.get(id) } });
-        })
-      );
+      ids.forEach((id) => markRealtimeSelfWrite('daily_quest_tasks', id));
+      await reorderDailyQuestTasks({ dateStr, orderedIds: ids });
       setSupabaseError(null);
+      // sort_order を確実に揃える
+      requestSupabaseSync('daily_quest_reorder');
     } catch (error) {
-      console.error('[Supabase] Failed to reorder quest tasks:', error);
-      setSupabaseError(error.message || 'クエストの並び替えに失敗しました。');
-      requestSupabaseSync('quest_reorder_error');
+      console.error('[Supabase] Failed to reorder daily quest tasks:', error);
+      setSupabaseError(error.message || 'デイリータスクの並び替えに失敗しました。');
+      requestSupabaseSync('daily_quest_reorder_error');
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, saveLocalQuestTasks, userId]);
+  }, [beginSupabaseJob, dailyQuestDateStr, endSupabaseJob, loadLocalDailyQuestTasksByDate, markRealtimeSelfWrite, requestSupabaseSync, saveLocalDailyQuestTasksByDate, userId]);
 
-  const handleToggleQuestTask = useCallback(async (task, nextCompleted, cycleId) => {
+  const handleToggleQuestTask = useCallback(async (task, nextCompleted) => {
     const id = task?.id ?? null;
     if (id == null) return;
+    const dateStr = String(dailyQuestDateStr ?? '').trim() || toDateStrLocal(new Date());
 
-    const nextCompletedCycleId = nextCompleted ? String(cycleId ?? '') : null;
     const optimisticPatch = {
-      completed_cycle_id: nextCompletedCycleId,
+      completed: !!nextCompleted,
       updated_at: new Date().toISOString(),
     };
 
-    setQuestTasks((prev) => {
+    setDailyQuestTasks((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       const next = list.map((t) => ((t?.id ?? null) === id ? { ...t, ...optimisticPatch } : t));
-      if (!userId) {
-        saveLocalQuestTasks(next);
+      try {
+        const map = loadLocalDailyQuestTasksByDate();
+        map[dateStr] = next;
+        saveLocalDailyQuestTasksByDate(map);
+      } catch {
+        // ignore
       }
       return next;
     });
 
     if (!userId) return;
 
-    const jobMeta = { kind: 'questTaskToggle' };
+    const jobMeta = { kind: 'dailyQuestTaskToggle' };
     beginSupabaseJob(jobMeta);
     try {
-      markRealtimeSelfWrite('quest_tasks', id);
-      const saved = await updateQuestTaskForUser({
-        userId,
-        id,
-        patch: { completed_cycle_id: nextCompletedCycleId },
-      });
-      setQuestTasks((prev) => {
+      markRealtimeSelfWrite('daily_quest_tasks', id);
+      const saved = await updateDailyQuestTaskForUser({ userId, id, patch: { completed: !!nextCompleted } });
+      setDailyQuestTasks((prev) => {
         const list = Array.isArray(prev) ? prev : [];
         const next = list.map((t) => ((t?.id ?? null) === id ? saved : t));
-        saveLocalQuestTasks(next);
+        try {
+          const map = loadLocalDailyQuestTasksByDate();
+          map[dateStr] = next;
+          saveLocalDailyQuestTasksByDate(map);
+        } catch {
+          // ignore
+        }
         return next;
       });
       setSupabaseError(null);
     } catch (error) {
-      console.error('[Supabase] Failed to toggle quest task:', error);
-      setSupabaseError(error.message || 'クエスト状態の更新に失敗しました。');
-      requestSupabaseSync('quest_toggle_error');
+      console.error('[Supabase] Failed to toggle daily quest task:', error);
+      setSupabaseError(error.message || 'デイリータスク状態の更新に失敗しました。');
+      requestSupabaseSync('daily_quest_toggle_error');
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, saveLocalQuestTasks, userId]);
+  }, [beginSupabaseJob, dailyQuestDateStr, endSupabaseJob, loadLocalDailyQuestTasksByDate, markRealtimeSelfWrite, requestSupabaseSync, saveLocalDailyQuestTasksByDate, userId]);
 
   const handleUpdateQuestTask = useCallback(async (task, nextTitle) => {
     const id = task?.id ?? null;
     if (id == null) return;
 
+    const dateStr = String(dailyQuestDateStr ?? '').trim() || toDateStrLocal(new Date());
     const trimmed = String(nextTitle ?? '').trim();
     if (!trimmed) return;
 
@@ -1164,71 +1271,82 @@ function App() {
       updated_at: new Date().toISOString(),
     };
 
-    setQuestTasks((prev) => {
+    setDailyQuestTasks((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       const next = list.map((t) => ((t?.id ?? null) === id ? { ...t, ...optimisticPatch } : t));
-      if (!userId) {
-        saveLocalQuestTasks(next);
+      try {
+        const map = loadLocalDailyQuestTasksByDate();
+        map[dateStr] = next;
+        saveLocalDailyQuestTasksByDate(map);
+      } catch {
+        // ignore
       }
       return next;
     });
 
     if (!userId) return;
 
-    const jobMeta = { kind: 'questTaskUpdateTitle' };
+    const jobMeta = { kind: 'dailyQuestTaskUpdateTitle' };
     beginSupabaseJob(jobMeta);
     try {
-      markRealtimeSelfWrite('quest_tasks', id);
-      const saved = await updateQuestTaskForUser({
-        userId,
-        id,
-        patch: { title: trimmed },
-      });
-      setQuestTasks((prev) => {
+      markRealtimeSelfWrite('daily_quest_tasks', id);
+      const saved = await updateDailyQuestTaskForUser({ userId, id, patch: { title: trimmed } });
+      setDailyQuestTasks((prev) => {
         const list = Array.isArray(prev) ? prev : [];
         const next = list.map((t) => ((t?.id ?? null) === id ? saved : t));
-        saveLocalQuestTasks(next);
+        try {
+          const map = loadLocalDailyQuestTasksByDate();
+          map[dateStr] = next;
+          saveLocalDailyQuestTasksByDate(map);
+        } catch {
+          // ignore
+        }
         return next;
       });
       setSupabaseError(null);
     } catch (error) {
-      console.error('[Supabase] Failed to update quest task:', error);
-      setSupabaseError(error.message || 'クエスト名の更新に失敗しました。');
-      requestSupabaseSync('quest_update_error');
+      console.error('[Supabase] Failed to update daily quest task title:', error);
+      setSupabaseError(error.message || 'デイリータスク名の更新に失敗しました。');
+      requestSupabaseSync('daily_quest_update_error');
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, saveLocalQuestTasks, userId]);
+  }, [beginSupabaseJob, dailyQuestDateStr, endSupabaseJob, loadLocalDailyQuestTasksByDate, markRealtimeSelfWrite, requestSupabaseSync, saveLocalDailyQuestTasksByDate, userId]);
 
   const handleDeleteQuestTask = useCallback(async (task) => {
     const id = task?.id ?? null;
     if (id == null) return;
+    const dateStr = String(dailyQuestDateStr ?? '').trim() || toDateStrLocal(new Date());
 
-    setQuestTasks((prev) => {
+    setDailyQuestTasks((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       const next = list.filter((t) => (t?.id ?? null) !== id);
-      if (!userId) {
-        saveLocalQuestTasks(next);
+      try {
+        const map = loadLocalDailyQuestTasksByDate();
+        map[dateStr] = next;
+        saveLocalDailyQuestTasksByDate(map);
+      } catch {
+        // ignore
       }
       return next;
     });
 
     if (!userId) return;
 
-    const jobMeta = { kind: 'questTaskDelete' };
+    const jobMeta = { kind: 'dailyQuestTaskDelete' };
     beginSupabaseJob(jobMeta);
     try {
-      markRealtimeSelfWrite('quest_tasks', id);
-      await deleteQuestTaskForUser({ userId, id });
+      markRealtimeSelfWrite('daily_quest_tasks', id);
+      await deleteDailyQuestTaskForUser({ userId, id });
       setSupabaseError(null);
     } catch (error) {
-      console.error('[Supabase] Failed to delete quest task:', error);
-      setSupabaseError(error.message || 'クエストの削除に失敗しました。');
-      requestSupabaseSync('quest_delete_error');
+      console.error('[Supabase] Failed to delete daily quest task:', error);
+      setSupabaseError(error.message || 'デイリータスクの削除に失敗しました。');
+      requestSupabaseSync('daily_quest_delete_error');
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, saveLocalQuestTasks, userId]);
+  }, [beginSupabaseJob, dailyQuestDateStr, endSupabaseJob, loadLocalDailyQuestTasksByDate, markRealtimeSelfWrite, requestSupabaseSync, saveLocalDailyQuestTasksByDate, userId]);
 
   const handleLoopTimelineSaveState = useCallback(async (patch) => {
     if (!userId) return;
@@ -1451,7 +1569,23 @@ function App() {
       const localMemo = loadLocalQuickMemo();
       applyQuickMemoValue(localMemo);
 
-      setQuestTasks(loadLocalQuestTasks());
+      try {
+        const todayStr = toDateStrLocal(new Date());
+        const map = loadLocalDailyQuestTasksByDate();
+        const todayTasks = map?.[todayStr];
+        setDailyQuestDateStr(todayStr);
+        setDailyQuestTasks(Array.isArray(todayTasks) ? todayTasks : []);
+      } catch {
+        setDailyQuestDateStr(toDateStrLocal(new Date()));
+        setDailyQuestTasks([]);
+      }
+
+      try {
+        const snapshots = loadLocalDailyQuestSnapshots();
+        setCalendarDailyQuestSnapshots(Array.isArray(snapshots) ? snapshots : []);
+      } catch {
+        setCalendarDailyQuestSnapshots([]);
+      }
 
       // ローカルノート
       const allNotes = loadLocalNotes();
@@ -1474,44 +1608,168 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [applyQuickMemoValue, auth?.isLoading, loadLocalNotes, loadLocalQuickMemo, loadLocalQuestTasks, loadLocalSchedules, refreshFromSupabase, replaceAppState, selectedDateStr, userId]);
+  }, [applyQuickMemoValue, auth?.isLoading, loadLocalDailyQuestSnapshots, loadLocalDailyQuestTasksByDate, loadLocalNotes, loadLocalQuickMemo, loadLocalSchedules, refreshFromSupabase, replaceAppState, userId]);
 
-  // クエストは常にローカルキャッシュも更新（オフライン復帰用）
+  // 日次達成（デイリー全クリア）: 0時を跨いだら前日分を確定スナップショットとして保存
   useEffect(() => {
-    saveLocalQuestTasks(questTasks);
-  }, [questTasks, saveLocalQuestTasks]);
+    if (typeof window === 'undefined') return;
 
-  // Supabase Realtime: 他端末/他ウィンドウのクエスト変更を検知して再同期
+    const tick = async () => {
+      const todayStr = toDateStrLocal(new Date());
+      const last = lastDailyQuestDateTickRef.current;
+
+      if (last == null) {
+        lastDailyQuestDateTickRef.current = todayStr;
+        return;
+      }
+
+      if (last === todayStr) return;
+      const yesterdayStr = last;
+      lastDailyQuestDateTickRef.current = todayStr;
+
+      // 今日へ切り替え
+      setDailyQuestDateStr(todayStr);
+
+      if (!userId) {
+        // ローカル: 前日のスナップショットを作成
+        try {
+          const map = loadLocalDailyQuestTasksByDate();
+          const yesterdayTasks = Array.isArray(map?.[yesterdayStr]) ? map[yesterdayStr] : [];
+          const totalCount = yesterdayTasks.length;
+          const completedCount = yesterdayTasks.filter((t) => !!t?.completed).length;
+          const isCleared = totalCount > 0 && totalCount === completedCount;
+
+          const existing = loadLocalDailyQuestSnapshots();
+          const next = [
+            ...(Array.isArray(existing) ? existing.filter((row) => String(row?.date_str ?? '') !== yesterdayStr) : []),
+            {
+              date_str: yesterdayStr,
+              total_count: totalCount,
+              completed_count: completedCount,
+              is_cleared: isCleared,
+              created_at: new Date().toISOString(),
+            },
+          ].sort((a, b) => String(a?.date_str ?? '').localeCompare(String(b?.date_str ?? '')));
+
+          saveLocalDailyQuestSnapshots(next);
+          setCalendarDailyQuestSnapshots(next);
+        } catch (error) {
+          console.warn('[Local] daily quest snapshot skipped:', error);
+        }
+
+        try {
+          const map = loadLocalDailyQuestTasksByDate();
+          const todayTasks = map?.[todayStr];
+          setDailyQuestTasks(Array.isArray(todayTasks) ? todayTasks : []);
+        } catch {
+          setDailyQuestTasks([]);
+        }
+
+        return;
+      }
+
+      // Supabase: 前日のスナップショットをRPCで記録
+      try {
+        await recordDailyQuestSnapshot({ targetDateStr: yesterdayStr });
+      } catch (error) {
+        console.warn('[Supabase] record_daily_quest_snapshot skipped:', error);
+      }
+
+      requestSupabaseSync('daily_quest_day_change');
+    };
+
+    const id = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      tick().catch(() => {});
+    }, DAILY_QUEST_TICK_MS);
+
+    tick().catch(() => {});
+
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [loadLocalDailyQuestSnapshots, loadLocalDailyQuestTasksByDate, recordDailyQuestSnapshot, requestSupabaseSync, saveLocalDailyQuestSnapshots, userId]);
+
+  // Supabase Realtime: daily_quest_tasks 変更を検知して再同期
   useEffect(() => {
     if (!userId) return;
 
     let isDisposed = false;
     const channel = supabase
-      .channel(`quest_tasks:${userId}`)
+      .channel(`daily_quest_tasks:${userId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'quest_tasks',
+          table: 'daily_quest_tasks',
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
           if (isDisposed) return;
           const rowId = payload?.new?.id ?? payload?.old?.id ?? null;
-          if (rowId != null && shouldIgnoreRealtimeEvent('quest_tasks', rowId)) {
+          if (rowId != null && shouldIgnoreRealtimeEvent('daily_quest_tasks', rowId)) {
             return;
           }
-          console.info('[SupabaseRealtime] quest_tasks changed', JSON.stringify({
+          const todayStr = toDateStrLocal(new Date());
+          const dateStr = String(payload?.new?.date_str ?? payload?.old?.date_str ?? '');
+          if (dateStr && dateStr !== todayStr) {
+            // 今回のUIは基本「今日のタスク」だけを見るので、別日の更新はスキップ
+            return;
+          }
+          console.info('[SupabaseRealtime] daily_quest_tasks changed', JSON.stringify({
             eventType: payload?.eventType,
             table: payload?.table,
             timestamp: new Date().toISOString(),
           }));
-          requestSupabaseSync('realtime:quest_tasks');
+          requestSupabaseSync('realtime:daily_quest_tasks');
         }
       )
       .subscribe((status) => {
-        console.info('[SupabaseRealtime] quest_tasks subscription', JSON.stringify({ status }));
+        console.info('[SupabaseRealtime] daily_quest_tasks subscription', JSON.stringify({ status }));
+      });
+
+    return () => {
+      isDisposed = true;
+      try {
+        supabase.removeChannel(channel);
+      } catch {
+        // ignore
+      }
+    };
+  }, [requestSupabaseSync, shouldIgnoreRealtimeEvent, userId]);
+
+  // Supabase Realtime: daily_quest_snapshots 変更を検知してカレンダー表示を更新
+  useEffect(() => {
+    if (!userId) return;
+
+    let isDisposed = false;
+    const channel = supabase
+      .channel(`daily_quest_snapshots:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'daily_quest_snapshots',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (isDisposed) return;
+          const rowId = payload?.new?.id ?? payload?.old?.id ?? null;
+          if (rowId != null && shouldIgnoreRealtimeEvent('daily_quest_snapshots', rowId)) {
+            return;
+          }
+          console.info('[SupabaseRealtime] daily_quest_snapshots changed', JSON.stringify({
+            eventType: payload?.eventType,
+            table: payload?.table,
+            timestamp: new Date().toISOString(),
+          }));
+          requestSupabaseSync('realtime:daily_quest_snapshots');
+        }
+      )
+      .subscribe((status) => {
+        console.info('[SupabaseRealtime] daily_quest_snapshots subscription', JSON.stringify({ status }));
       });
 
     return () => {
@@ -1723,11 +1981,40 @@ function App() {
     }
   }, [loadLocalNotes, userId]);
 
+  const refreshCalendarDailyQuestSnapshots = useCallback(async () => {
+    const range = calendarVisibleRangeRef.current;
+    if (!range?.startDate || !range?.endDate) return;
+
+    if (!userId) {
+      const all = loadLocalDailyQuestSnapshots();
+      const list = (Array.isArray(all) ? all : []).filter((row) => {
+        const d = String(row?.date_str ?? '');
+        if (!d) return false;
+        return d >= range.startDate && d <= range.endDate;
+      });
+      setCalendarDailyQuestSnapshots(list);
+      return;
+    }
+
+    try {
+      const list = await fetchDailyQuestSnapshotsForUserInRange({
+        userId,
+        startDate: range.startDate,
+        endDate: range.endDate,
+      });
+      setCalendarDailyQuestSnapshots(Array.isArray(list) ? list : []);
+    } catch (error) {
+      console.warn('[Supabase] daily_quest_snapshots fetch skipped:', error);
+      setCalendarDailyQuestSnapshots([]);
+    }
+  }, [userId]);
+
   const handleCalendarVisibleRangeChange = useCallback((range) => {
     if (!range?.startDate || !range?.endDate) return;
     calendarVisibleRangeRef.current = { startDate: range.startDate, endDate: range.endDate };
     refreshCalendarNoteDates().catch(() => {});
-  }, [refreshCalendarNoteDates]);
+    refreshCalendarDailyQuestSnapshots().catch(() => {});
+  }, [refreshCalendarDailyQuestSnapshots, refreshCalendarNoteDates]);
 
   const handleAddNote = useCallback(async () => {
     if (!selectedDateStr) return;
@@ -3287,6 +3574,7 @@ function App() {
                 isMobile={isMobile}
                 onToggleTask={handleToggleTask}
                 noteDates={calendarNoteDates}
+                dailyQuestCrowns={calendarDailyQuestCrownsByDate}
                 onVisibleRangeChange={handleCalendarVisibleRangeChange}
               />
             </div>
@@ -3352,7 +3640,7 @@ function App() {
                           onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
                           onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
                           onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
-                          questTasks={questTasks}
+                          dailyQuestTasks={dailyQuestTasks}
                           onCreateQuestTask={handleCreateQuestTask}
                           onToggleQuestTask={handleToggleQuestTask}
                           onUpdateQuestTask={handleUpdateQuestTask}
@@ -3413,6 +3701,7 @@ function App() {
                 isMobile={isMobile}
                 onToggleTask={handleToggleTask}
                 noteDates={calendarNoteDates}
+                dailyQuestCrowns={calendarDailyQuestCrownsByDate}
                 onVisibleRangeChange={handleCalendarVisibleRangeChange}
               />
             </div>
@@ -3479,7 +3768,7 @@ function App() {
                     onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
                     onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
                     onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
-                    questTasks={questTasks}
+                    dailyQuestTasks={dailyQuestTasks}
                     onCreateQuestTask={handleCreateQuestTask}
                     onToggleQuestTask={handleToggleQuestTask}
                     onUpdateQuestTask={handleUpdateQuestTask}

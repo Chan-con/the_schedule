@@ -56,6 +56,7 @@ const normalizePeriod = (value) => {
 };
 
 export const fetchQuestTasksForUser = async (userId) => {
+  throw new Error('旧スキーマの quest_tasks は削除済みです。daily_quest_tasks / daily_quest_snapshots を使用してください。');
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   const startedAt = nowPerf();
   logQuest('fetchAll', 'request', { userId });
@@ -115,6 +116,7 @@ export const fetchQuestTasksForUser = async (userId) => {
 };
 
 export const createQuestTaskForUser = async ({ userId, period, title, sortOrder }) => {
+  throw new Error('旧スキーマの quest_tasks は削除済みです。daily_quest_tasks / daily_quest_snapshots を使用してください。');
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
 
   const safeTitle = String(title ?? '').trim();
@@ -178,6 +180,7 @@ export const createQuestTaskForUser = async ({ userId, period, title, sortOrder 
 };
 
 export const updateQuestTaskForUser = async ({ userId, id, patch }) => {
+  throw new Error('旧スキーマの quest_tasks は削除済みです。daily_quest_tasks / daily_quest_snapshots を使用してください。');
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   if (id == null) throw new Error('更新対象IDが指定されていません。');
 
@@ -258,6 +261,7 @@ export const updateQuestTaskForUser = async ({ userId, id, patch }) => {
 };
 
 export const deleteQuestTaskForUser = async ({ userId, id }) => {
+  throw new Error('旧スキーマの quest_tasks は削除済みです。daily_quest_tasks / daily_quest_snapshots を使用してください。');
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   if (id == null) throw new Error('削除対象IDが指定されていません。');
 

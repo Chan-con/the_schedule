@@ -1,34 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback, useImperativeHandle } from 'react';
-import { toDateStrLocal } from '../utils/date';
-
-const normalizePeriod = (value) => {
-  const v = String(value || '').trim();
-  if (v === 'daily' || v === 'weekly' || v === 'monthly') return v;
-  return 'daily';
-};
-
-const getCycleId = (period, nowMs) => {
-  const now = new Date(typeof nowMs === 'number' ? nowMs : Date.now());
-  const p = normalizePeriod(period);
-
-  if (p === 'daily') {
-    return toDateStrLocal(now);
-  }
-
-  if (p === 'weekly') {
-    const base = new Date(now);
-    base.setHours(0, 0, 0, 0);
-    const day = base.getDay(); // 0:Sun ... 6:Sat
-    const daysSinceMonday = (day + 6) % 7; // Mon->0, Tue->1, ... Sun->6
-    base.setDate(base.getDate() - daysSinceMonday);
-    return toDateStrLocal(base);
-  }
-
-  // monthly
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  monthStart.setHours(0, 0, 0, 0);
-  return toDateStrLocal(monthStart);
-};
 
 const IconTrophy = (props) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
@@ -56,9 +26,6 @@ const QuestArea = React.forwardRef(({
   onDeleteTask,
   onReorderTasks,
 }, ref) => {
-  const [period, setPeriod] = useState('daily');
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [modalMode, setModalMode] = useState('edit');
   const [editingTask, setEditingTask] = useState(null);
@@ -66,23 +33,13 @@ const QuestArea = React.forwardRef(({
   const [titleDirty, setTitleDirty] = useState(false);
   const editTitleRef = useRef(null);
 
-  // 0時跨ぎで cycle が切り替わるように定期更新
-  useEffect(() => {
-    const id = window.setInterval(() => setNowMs(Date.now()), 30_000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const cycleId = useMemo(() => getCycleId(period, nowMs), [nowMs, period]);
-
   const [draggedTaskId, setDraggedTaskId] = useState(null);
   const [dragOverTaskId, setDragOverTaskId] = useState(null);
 
   const safeTasks = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
-  const periodTasks = useMemo(() => {
-    const p = normalizePeriod(period);
+  const orderedTasks = useMemo(() => {
     return safeTasks
-      .filter((t) => normalizePeriod(t?.period) === p)
       .slice()
       .sort((a, b) => {
         const aOrder = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : null;
@@ -99,63 +56,38 @@ const QuestArea = React.forwardRef(({
         if (diff !== 0) return diff;
         return Number(a?.id ?? 0) - Number(b?.id ?? 0);
       });
-  }, [period, safeTasks]);
+  }, [safeTasks]);
 
-  const { incomplete, completed } = useMemo(() => {
-    const inc = [];
-    const comp = [];
-    for (const t of periodTasks) {
-      const done = String(t?.completed_cycle_id ?? '') === String(cycleId ?? '');
-      if (done) comp.push(t);
-      else inc.push(t);
-    }
-    return { incomplete: inc, completed: comp };
-  }, [cycleId, periodTasks]);
-
-  const allCleared = periodTasks.length > 0 && incomplete.length === 0;
-
-  const isTaskCompletedInCycle = useCallback((t) => {
-    return String(t?.completed_cycle_id ?? '') === String(cycleId ?? '');
-  }, [cycleId]);
+  const allCleared = useMemo(() => {
+    return orderedTasks.length > 0 && orderedTasks.every((t) => !!t?.completed);
+  }, [orderedTasks]);
 
   const applyReorder = useCallback((dragId, overId, dropToEnd = false) => {
     const dragKey = dragId ?? null;
     if (dragKey == null) return;
 
-    const draggedTask = periodTasks.find((t) => (t?.id ?? null) === dragKey) || null;
-    if (!draggedTask) return;
-
-    const draggedCompleted = isTaskCompletedInCycle(draggedTask);
-    const sectionList = draggedCompleted ? completed : incomplete;
-    const sectionIds = sectionList.map((t) => t?.id).filter((id) => id != null);
-    const fromIndex = sectionIds.findIndex((id) => id === dragKey);
+    const ids = orderedTasks.map((t) => t?.id).filter((id) => id != null);
+    const fromIndex = ids.findIndex((id) => id === dragKey);
     if (fromIndex === -1) return;
 
-    let toIndex = sectionIds.length - 1;
+    let toIndex = ids.length - 1;
     if (!dropToEnd && overId != null) {
-      const overTask = periodTasks.find((t) => (t?.id ?? null) === overId) || null;
-      if (overTask && isTaskCompletedInCycle(overTask) === draggedCompleted) {
-        const idx = sectionIds.findIndex((id) => id === overId);
-        if (idx !== -1) {
-          toIndex = idx;
-        }
+      const idx = ids.findIndex((id) => id === overId);
+      if (idx !== -1) {
+        toIndex = idx;
       }
     }
 
     if (toIndex === fromIndex) return;
 
-    const nextSectionIds = sectionIds.slice();
-    nextSectionIds.splice(fromIndex, 1);
-    nextSectionIds.splice(Math.min(toIndex, nextSectionIds.length), 0, dragKey);
+    const nextIds = ids.slice();
+    nextIds.splice(fromIndex, 1);
+    nextIds.splice(Math.min(toIndex, nextIds.length), 0, dragKey);
 
-    const incompleteIds = draggedCompleted ? incomplete.map((t) => t?.id).filter((id) => id != null) : nextSectionIds;
-    const completedIds = draggedCompleted ? nextSectionIds : completed.map((t) => t?.id).filter((id) => id != null);
-
-    const nextOrderIds = [...incompleteIds, ...completedIds];
     if (typeof onReorderTasks === 'function') {
-      onReorderTasks(period, nextOrderIds);
+      onReorderTasks('daily', nextIds);
     }
-  }, [completed, incomplete, isTaskCompletedInCycle, onReorderTasks, period, periodTasks]);
+  }, [onReorderTasks, orderedTasks]);
 
   const openCreateModal = useCallback(() => {
     setModalMode('create');
@@ -243,7 +175,7 @@ const QuestArea = React.forwardRef(({
   }, [draftTitle, editingTask?.id, isEditOpen, modalMode, safeTasks, titleDirty]);
 
   const renderTaskRow = (task) => {
-    const isCompleted = isTaskCompletedInCycle(task);
+    const isCompleted = !!task?.completed;
     const key = task?.id != null ? `quest-${task.id}` : `quest-${task?.title ?? 'unknown'}-${task?.created_at ?? ''}`;
     const taskId = task?.id ?? null;
     const isOver = taskId != null && dragOverTaskId === taskId;
@@ -315,7 +247,7 @@ const QuestArea = React.forwardRef(({
             onClick={(e) => {
               e.stopPropagation();
               if (typeof onToggleTask === 'function') {
-                onToggleTask(task, !isCompleted, cycleId);
+                onToggleTask(task, !isCompleted);
               }
             }}
             onDoubleClick={(e) => {
@@ -329,39 +261,10 @@ const QuestArea = React.forwardRef(({
     );
   };
 
-  const periodTabs = [
-    { key: 'daily', label: 'デイリー' },
-    { key: 'weekly', label: 'ウィークリー' },
-    { key: 'monthly', label: 'マンスリー' },
-  ];
-
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="border-b border-slate-200 bg-white px-4 py-3">
-        <div className="flex items-center gap-3">
-          <div className="flex w-full items-center gap-1 rounded-full bg-slate-100 p-1">
-            {periodTabs.map((tab) => {
-              const active = tab.key === period;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setPeriod(tab.key)}
-                  className={`flex h-8 flex-1 items-center justify-center rounded-full border border-transparent px-2 text-xs font-semibold transition-all duration-200 ${
-                    active ? 'bg-white text-indigo-600 shadow' : 'bg-transparent text-slate-500 hover:text-indigo-500'
-                  }`}
-                  aria-pressed={active}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
       <div className="custom-scrollbar flex-1 overflow-y-auto px-4 pb-3 pt-3">
-        {periodTasks.length === 0 ? (
+        {orderedTasks.length === 0 ? (
           <div className="flex min-h-full flex-col items-center justify-center gap-2 text-gray-400">
             <IconTrophy className="h-12 w-12 text-gray-300" />
             <p className="text-sm">クエストがありません</p>
@@ -370,45 +273,20 @@ const QuestArea = React.forwardRef(({
         ) : (
           <div className="card-stack">
             {allCleared && (
-              <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-700">
-                <IconCrown className="h-10 w-10" />
-                <div className="text-sm font-semibold">すべて達成！</div>
+              <div className="mb-2 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700">
+                <IconCrown className="h-5 w-5 flex-shrink-0 text-amber-500" />
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold">All quests cleared!</div>
+                  <div className="text-xs text-amber-600">Great job — keep it up.</div>
+                </div>
               </div>
             )}
 
-            {incomplete.map((t) => renderTaskRow(t))}
+            {orderedTasks.map((t) => renderTaskRow(t))}
 
-            {draggedTaskId != null && incomplete.length > 0 && (
+            {draggedTaskId != null && orderedTasks.length > 0 && (
               <div
                 className="rounded-lg border border-dashed border-slate-200 bg-white/70 p-3 text-center text-xs text-slate-400"
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  applyReorder(draggedTaskId, null, true);
-                  setDraggedTaskId(null);
-                  setDragOverTaskId(null);
-                }}
-              >
-                ここにドロップして末尾へ
-              </div>
-            )}
-
-            {completed.length > 0 && (
-              <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
-                <span className="flex-1 h-px bg-gray-200" />
-                <span className="tracking-wide">完了済み</span>
-                <span className="flex-1 h-px bg-gray-200" />
-              </div>
-            )}
-
-            {completed.map((t) => renderTaskRow(t))}
-
-            {draggedTaskId != null && completed.length > 0 && (
-              <div
-                className="mt-2 rounded-lg border border-dashed border-slate-200 bg-white/70 p-3 text-center text-xs text-slate-400"
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = 'move';
@@ -451,7 +329,7 @@ const QuestArea = React.forwardRef(({
                     if (!trimmed) return;
                     if (modalMode === 'create') {
                       if (typeof onCreateTask === 'function') {
-                        onCreateTask({ period, title: trimmed });
+                        onCreateTask({ title: trimmed });
                       }
                     } else if (typeof onUpdateTask === 'function') {
                       onUpdateTask(editingTask, trimmed);
@@ -507,7 +385,7 @@ const QuestArea = React.forwardRef(({
                     if (!trimmed) return;
                     if (modalMode === 'create') {
                       if (typeof onCreateTask === 'function') {
-                        onCreateTask({ period, title: trimmed });
+                        onCreateTask({ title: trimmed });
                       }
                     } else if (typeof onUpdateTask === 'function') {
                       onUpdateTask(editingTask, trimmed);
