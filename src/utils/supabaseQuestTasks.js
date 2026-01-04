@@ -2,7 +2,14 @@ import { supabase } from '../lib/supabaseClient';
 
 const TABLE_NAME = 'quest_tasks';
 
-let questSortOrderSupported = true;
+let questSortOrderSupport = 'unknown'; // 'unknown' | 'supported' | 'missing'
+let lastQuestSortOrderProbeAt = 0;
+const SORT_ORDER_PROBE_INTERVAL_MS = 5000;
+
+const shouldTrySortOrder = () => {
+  if (questSortOrderSupport !== 'missing') return true;
+  return Date.now() - lastQuestSortOrderProbeAt >= SORT_ORDER_PROBE_INTERVAL_MS;
+};
 
 const isMissingColumnError = (error, columnName) => {
   const msg = String(error?.message ?? '');
@@ -62,12 +69,17 @@ export const fetchQuestTasksForUser = async (userId) => {
 
   let data;
   let error;
-  if (questSortOrderSupported) {
+
+  const trySortOrder = shouldTrySortOrder();
+  if (trySortOrder) {
     ({ data, error } = await runQuery(true));
     if (error && isMissingColumnError(error, 'sort_order')) {
-      questSortOrderSupported = false;
+      questSortOrderSupport = 'missing';
+      lastQuestSortOrderProbeAt = Date.now();
       logQuest('fetchAll', 'info', { userId, message: 'sort_order column missing; fallback without ordering' });
       ({ data, error } = await runQuery(false));
+    } else if (!error) {
+      questSortOrderSupport = 'supported';
     }
   } else {
     ({ data, error } = await runQuery(false));
@@ -94,13 +106,14 @@ export const createQuestTaskForUser = async ({ userId, period, title, sortOrder 
   const safeTitle = String(title ?? '').trim();
   if (!safeTitle) throw new Error('タスク名が空です。');
 
+  const includeSortOrder = shouldTrySortOrder() && sortOrder != null;
   const payload = {
     user_id: userId,
     period: normalizePeriod(period),
     title: safeTitle,
     completed_cycle_id: null,
     updated_at: new Date().toISOString(),
-    ...(questSortOrderSupported && sortOrder != null ? { sort_order: sortOrder } : {}),
+    ...(includeSortOrder ? { sort_order: sortOrder } : {}),
   };
 
   const startedAt = nowPerf();
@@ -109,12 +122,13 @@ export const createQuestTaskForUser = async ({ userId, period, title, sortOrder 
   const { data, error } = await supabase
     .from(TABLE_NAME)
     .insert(payload)
-    .select(questSortOrderSupported ? 'id, user_id, period, title, completed_cycle_id, sort_order, created_at, updated_at' : 'id, user_id, period, title, completed_cycle_id, created_at, updated_at')
+    .select(includeSortOrder ? 'id, user_id, period, title, completed_cycle_id, sort_order, created_at, updated_at' : 'id, user_id, period, title, completed_cycle_id, created_at, updated_at')
     .single();
 
   if (error) {
-    if (questSortOrderSupported && isMissingColumnError(error, 'sort_order')) {
-      questSortOrderSupported = false;
+    if (includeSortOrder && isMissingColumnError(error, 'sort_order')) {
+      questSortOrderSupport = 'missing';
+      lastQuestSortOrderProbeAt = Date.now();
       logQuest('create', 'info', { userId, message: 'sort_order column missing; retry without sort_order' });
       const retryPayload = { ...payload };
       delete retryPayload.sort_order;
@@ -138,6 +152,9 @@ export const createQuestTaskForUser = async ({ userId, period, title, sortOrder 
     throw new Error(`クエストの作成に失敗しました: ${error.message}`);
   }
 
+  if (includeSortOrder) {
+    questSortOrderSupport = 'supported';
+  }
   logQuest('create', 'success', { userId, durationMs: buildDuration(startedAt), id: data?.id ?? null });
   return {
     ...data,
@@ -151,8 +168,10 @@ export const updateQuestTaskForUser = async ({ userId, id, patch }) => {
   if (id == null) throw new Error('更新対象IDが指定されていません。');
 
   const safePatch = patch && typeof patch === 'object' ? patch : {};
+  const wantsSortOrder = Object.prototype.hasOwnProperty.call(safePatch, 'sort_order');
+  const includeSortOrder = wantsSortOrder && shouldTrySortOrder();
   const safePatchNormalized = { ...safePatch };
-  if (!questSortOrderSupported && Object.prototype.hasOwnProperty.call(safePatchNormalized, 'sort_order')) {
+  if (wantsSortOrder && !includeSortOrder) {
     delete safePatchNormalized.sort_order;
   }
   const payload = {
@@ -163,23 +182,37 @@ export const updateQuestTaskForUser = async ({ userId, id, patch }) => {
   const startedAt = nowPerf();
   logQuest('update', 'request', { userId, id, keys: Object.keys(safePatch) });
 
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .update(payload)
-    .eq('id', id)
-    .eq('user_id', userId)
-    .select(questSortOrderSupported ? 'id, user_id, period, title, completed_cycle_id, sort_order, created_at, updated_at' : 'id, user_id, period, title, completed_cycle_id, created_at, updated_at')
-    .single();
+  const runUpdate = async (withSortOrder) => {
+    const selectFields = withSortOrder
+      ? 'id, user_id, period, title, completed_cycle_id, sort_order, created_at, updated_at'
+      : 'id, user_id, period, title, completed_cycle_id, created_at, updated_at';
+    return supabase
+      .from(TABLE_NAME)
+      .update(payload)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select(selectFields)
+      .single();
+  };
+
+  let data;
+  let error;
+  if (includeSortOrder) {
+    ({ data, error } = await runUpdate(true));
+  } else {
+    ({ data, error } = await runUpdate(false));
+  }
 
   if (error) {
-    if (questSortOrderSupported && isMissingColumnError(error, 'sort_order')) {
-      questSortOrderSupported = false;
+    if (includeSortOrder && isMissingColumnError(error, 'sort_order')) {
+      questSortOrderSupport = 'missing';
+      lastQuestSortOrderProbeAt = Date.now();
       logQuest('update', 'info', { userId, id, message: 'sort_order column missing; retry without sort_order' });
-      const retryPatch = { ...payload };
-      delete retryPatch.sort_order;
+      const retryPayload = { ...payload };
+      delete retryPayload.sort_order;
       const { data: retryData, error: retryError } = await supabase
         .from(TABLE_NAME)
-        .update(retryPatch)
+        .update(retryPayload)
         .eq('id', id)
         .eq('user_id', userId)
         .select('id, user_id, period, title, completed_cycle_id, created_at, updated_at')
@@ -199,6 +232,9 @@ export const updateQuestTaskForUser = async ({ userId, id, patch }) => {
     throw new Error(`クエストの更新に失敗しました: ${error.message}`);
   }
 
+  if (includeSortOrder) {
+    questSortOrderSupport = 'supported';
+  }
   logQuest('update', 'success', { userId, id, durationMs: buildDuration(startedAt) });
   return {
     ...data,
