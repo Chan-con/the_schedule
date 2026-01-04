@@ -4,6 +4,7 @@ import TaskArea from './TaskArea';
 import NoteArea from './NoteArea';
 import LoopTimelineArea from './LoopTimelineArea';
 import QuestArea from './QuestArea';
+import { toDateStrLocal } from '../utils/date';
 
 const ALL_DAY_MIN_HEIGHT = 120;
 const TIMELINE_MIN_HEIGHT = 120;
@@ -58,6 +59,35 @@ const getScheduleKey = (schedule, index, prefix) => {
 	return `${prefix}${index}-${schedule?.name ?? 'schedule'}`;
 };
 
+const normalizeQuestPeriod = (value) => {
+	const v = String(value || '').trim();
+	if (v === 'daily' || v === 'weekly' || v === 'monthly') return v;
+	return 'daily';
+};
+
+const getQuestCycleId = (period, nowMs) => {
+	const now = new Date(typeof nowMs === 'number' ? nowMs : Date.now());
+	const p = normalizeQuestPeriod(period);
+
+	if (p === 'daily') {
+		return toDateStrLocal(now);
+	}
+
+	if (p === 'weekly') {
+		const base = new Date(now);
+		base.setHours(0, 0, 0, 0);
+		const day = base.getDay(); // 0:Sun ... 6:Sat
+		const daysSinceMonday = (day + 6) % 7; // Mon->0, Tue->1, ... Sun->6
+		base.setDate(base.getDate() - daysSinceMonday);
+		return toDateStrLocal(base);
+	}
+
+	// monthly
+	const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+	monthStart.setHours(0, 0, 0, 0);
+	return toDateStrLocal(monthStart);
+};
+
 const Timeline = ({
 	schedules = [],
 	selectedDate,
@@ -105,6 +135,7 @@ const Timeline = ({
 	const [resizeStartHeight, setResizeStartHeight] = useState(0);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
 	const [isAltPressed, setIsAltPressed] = useState(false);
+	const [questNowMs, setQuestNowMs] = useState(() => Date.now());
 	const loopTimelineAreaRef = useRef(null);
 	const questAreaRef = useRef(null);
 	const cardRef = useRef(null);
@@ -141,6 +172,11 @@ const Timeline = ({
 		};
 	}, []);
 
+	useEffect(() => {
+		const id = window.setInterval(() => setQuestNowMs(Date.now()), 30_000);
+		return () => window.clearInterval(id);
+	}, []);
+
 	const computeAllDayMaxHeight = useCallback((fallback = 600) => {
 		const minHeight = ALL_DAY_MIN_HEIGHT;
 		const headerHeight = headerRef.current?.offsetHeight ?? 0;
@@ -163,7 +199,26 @@ const Timeline = ({
 	const showQuest = currentTab === 'quest';
 	const availableTasks = Array.isArray(tasks) ? tasks : [];
 	const availableNotes = Array.isArray(notes) ? notes : [];
-	const availableQuestTasks = Array.isArray(questTasks) ? questTasks : [];
+	const availableQuestTasks = useMemo(() => (Array.isArray(questTasks) ? questTasks : []), [questTasks]);
+
+	const questCycleIds = useMemo(() => {
+		return {
+			daily: getQuestCycleId('daily', questNowMs),
+			weekly: getQuestCycleId('weekly', questNowMs),
+			monthly: getQuestCycleId('monthly', questNowMs),
+		};
+	}, [questNowMs]);
+
+	const questIncompleteTotal = useMemo(() => {
+		let count = 0;
+		for (const task of availableQuestTasks) {
+			const period = normalizeQuestPeriod(task?.period);
+			const cycleId = questCycleIds[period];
+			const done = String(task?.completed_cycle_id ?? '') === String(cycleId ?? '');
+			if (!done) count += 1;
+		}
+		return count;
+	}, [availableQuestTasks, questCycleIds]);
 
 	// NOTE: カードの最大縦幅をJSで固定すると、親のレイアウト次第で余白が発生しやすいので
 	// ここでは height/maxHeight を強制せず、親コンテナ（flex + overflow）に任せる。
@@ -927,6 +982,7 @@ const Timeline = ({
 					<div className="inline-flex items-center rounded-full bg-slate-100 p-1">
 						{tabs.map((tab) => {
 							const isActive = currentTab === tab.key;
+							const showQuestBadge = tab.key === 'quest' && questIncompleteTotal > 0;
 							return (
 								<button
 									key={tab.key}
@@ -941,7 +997,14 @@ const Timeline = ({
 									aria-label={tab.label}
 									title={tab.label}
 								>
-									<span aria-hidden="true">{tab.icon}</span>
+									<span className="relative inline-flex" aria-hidden="true">
+										{tab.icon}
+										{showQuestBadge && (
+											<span className="absolute -right-2 -top-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold leading-none text-white ring-2 ring-white">
+												{questIncompleteTotal > 99 ? '99+' : questIncompleteTotal}
+											</span>
+										)}
+									</span>
 									<span className="sr-only">{tab.label}</span>
 								</button>
 							);
