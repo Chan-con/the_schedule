@@ -105,6 +105,7 @@ const Timeline = ({
 	const [resizeStartHeight, setResizeStartHeight] = useState(0);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
 	const [isAltPressed, setIsAltPressed] = useState(false);
+	const loopTimelineAreaRef = useRef(null);
 	const questAreaRef = useRef(null);
 	const cardRef = useRef(null);
 	const timelineRef = useRef(null);
@@ -557,9 +558,22 @@ const Timeline = ({
 			),
 		},
 	];
-	const isAddDisabled = showLoopTimeline ? true : showTasks ? !onAddTask : showNotes ? !onAddNote : showQuest ? false : !onAdd;
+	const isAddDisabled = showLoopTimeline
+		? !(canShareLoopTimeline && typeof onLoopTimelineAddMarker === 'function')
+		: showTasks
+			? !onAddTask
+			: showNotes
+				? !onAddNote
+				: showQuest
+					? false
+					: !onAdd;
 
 	const handleAddClick = () => {
+		if (showLoopTimeline) {
+			loopTimelineAreaRef.current?.openCreate?.();
+			return;
+		}
+
 		if (showTasks) {
 			if (onAddTask) {
 				onAddTask();
@@ -942,7 +956,7 @@ const Timeline = ({
 						}`}
 						onClick={handleAddClick}
 						disabled={isAddDisabled}
-						title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : showLoopTimeline ? 'ループタイムラインでは「追加」ボタンを使用' : showQuest ? 'クエストを追加' : '予定を追加'}
+						title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : showLoopTimeline ? '追加項目を追加' : showQuest ? 'クエストを追加' : '予定を追加'}
 					>
 						<span className="text-lg font-semibold leading-none">＋</span>
 					</button>
@@ -995,6 +1009,7 @@ const Timeline = ({
 					/>
 				) : showLoopTimeline ? (
 					<LoopTimelineArea
+						ref={loopTimelineAreaRef}
 						canShare={canShareLoopTimeline}
 						state={loopTimelineState}
 						markers={loopTimelineMarkers}

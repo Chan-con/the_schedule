@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useImperativeHandle } from 'react';
 
 const clampInt = (value, { min, max, fallback }) => {
   const n = Number.parseInt(String(value), 10);
@@ -103,14 +103,7 @@ const IconStop = (props) => (
   </svg>
 );
 
-const IconPlus = (props) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
-    <path d="M12 5v14" />
-    <path d="M5 12h14" />
-  </svg>
-);
-
-const LoopTimelineArea = ({
+const LoopTimelineArea = React.forwardRef(({
   canShare = false,
   state,
   markers,
@@ -118,7 +111,7 @@ const LoopTimelineArea = ({
   onAddMarker,
   onUpdateMarker,
   onDeleteMarker,
-}) => {
+}, ref) => {
   const cardRef = useRef(null);
   const scrollAreaRef = useRef(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -493,6 +486,10 @@ const LoopTimelineArea = ({
     setIsMarkerModalOpen(true);
   }, []);
 
+  useImperativeHandle(ref, () => ({
+    openCreate: openCreateMarkerModal,
+  }), [openCreateMarkerModal]);
+
   const openEditMarkerModal = useCallback((marker) => {
     if (!marker) return;
     setMarkerModalMode('edit');
@@ -606,15 +603,6 @@ const LoopTimelineArea = ({
                 <IconStop className="h-5 w-5" />
               </button>
 
-              <button
-                type="button"
-                className="inline-flex h-9 w-9 items-center justify-center !rounded-full !bg-slate-900 !p-0 !text-white transition-colors hover:!bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={openCreateMarkerModal}
-                disabled={!canShare || typeof onAddMarker !== 'function'}
-                aria-label="追加"
-              >
-                <IconPlus className="h-5 w-5" />
-              </button>
             </div>
           </div>
 
@@ -799,6 +787,6 @@ const LoopTimelineArea = ({
       </div>
     </div>
   );
-};
+});
 
 export default LoopTimelineArea;
