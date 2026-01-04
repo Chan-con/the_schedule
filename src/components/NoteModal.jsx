@@ -423,7 +423,10 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
       <div className="note-modal-content flex h-[calc(100svh-2rem)] w-full max-w-[980px] flex-col overflow-hidden rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between gap-3 border-b border-gray-200 p-4">
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-gray-800 truncate">
+            <div
+              className="text-sm font-semibold text-gray-800 truncate"
+              title={title.trim() ? title : '無題のノート'}
+            >
               {title.trim() ? title : '無題のノート'}
             </div>
             {updatedLabel && (

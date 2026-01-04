@@ -633,6 +633,7 @@ const Timeline = ({
 								className={`font-medium ${
 									isTaskItem && isCompleted ? 'text-slate-500 line-through' : isPast ? 'text-slate-500' : 'text-slate-900'
 								}`}
+								title={schedule?.name ? String(schedule.name) : isTaskItem ? '名称未設定のタスク' : '名称未設定の予定'}
 							>
 								{schedule?.name || '名称未設定の予定'}
 							</span>
@@ -746,6 +747,7 @@ const Timeline = ({
 									className={`truncate font-medium ${
 										isTaskSchedule && isCompleted ? 'line-through text-slate-500' : 'text-slate-900'
 									}`}
+									title={schedule?.name ? String(schedule.name) : isTaskSchedule ? '名称未設定のタスク' : '名称未設定の予定'}
 								>
 									{schedule?.name || '名称未設定の予定'}
 								</span>

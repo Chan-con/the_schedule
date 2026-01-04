@@ -163,7 +163,10 @@ const NoteArea = ({
                 {isAltPressed && (
                   <span className="mr-1 text-xs" aria-hidden="true">⚡</span>
                 )}
-                <span className={`font-medium truncate ${isArchived ? 'text-gray-500' : 'text-gray-900'}`}>
+                <span
+                  className={`font-medium truncate ${isArchived ? 'text-gray-500' : 'text-gray-900'}`}
+                  title={title.trim() ? title : '無題のノート'}
+                >
                   {title.trim() ? title : '無題のノート'}
                 </span>
               </div>

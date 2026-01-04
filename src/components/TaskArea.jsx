@@ -122,7 +122,10 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onTaskDelete, isAltPressed
               {isAltPressed && (
                 <span className="mr-1 text-xs" aria-hidden="true">⚡</span>
               )}
-              <span className={`font-medium ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+              <span
+                className={`font-medium ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}
+                title={task?.name ? String(task.name) : '名称未設定のタスク'}
+              >
                 {task?.name || '名称未設定のタスク'}
               </span>
               {task?.allDay && task?.date && (
@@ -173,7 +176,7 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onTaskDelete, isAltPressed
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="custom-scrollbar flex-1 overflow-y-auto pr-2 pt-2 pb-3">
+      <div className="custom-scrollbar flex-1 overflow-y-auto pl-2 pr-2 pt-2 pb-3">
         {taskList.length === 0 ? (
           <div className="flex min-h-full flex-col items-center justify-center gap-2 text-gray-400">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
