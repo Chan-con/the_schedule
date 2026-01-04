@@ -77,8 +77,13 @@ export const createDailyQuestTaskForUser = async ({ userId, dateStr, title, sort
     .single();
 
   if (error) {
-    logDailyQuest('create', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });
-    throw new Error(`デイリークエストの作成に失敗しました: ${error.message}`);
+    logDailyQuest('create', 'error', { userId, durationMs: buildDuration(startedAt), code: error.code, message: error.message });
+    const err = new Error(`デイリークエストの作成に失敗しました: ${error.message}`);
+    err.code = error.code;
+    err.details = error.details;
+    err.hint = error.hint;
+    err.original = error;
+    throw err;
   }
 
   logDailyQuest('create', 'success', { userId, durationMs: buildDuration(startedAt), id: data?.id ?? null });
@@ -112,8 +117,13 @@ export const updateDailyQuestTaskForUser = async ({ userId, id, patch }) => {
     .single();
 
   if (error) {
-    logDailyQuest('update', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });
-    throw new Error(`デイリークエストの更新に失敗しました: ${error.message}`);
+    logDailyQuest('update', 'error', { userId, durationMs: buildDuration(startedAt), code: error.code, message: error.message });
+    const err = new Error(`デイリークエストの更新に失敗しました: ${error.message}`);
+    err.code = error.code;
+    err.details = error.details;
+    err.hint = error.hint;
+    err.original = error;
+    throw err;
   }
 
   logDailyQuest('update', 'success', { userId, durationMs: buildDuration(startedAt), id: data?.id ?? null });

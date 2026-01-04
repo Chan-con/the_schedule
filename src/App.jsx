@@ -648,6 +648,18 @@ function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    const normalizeTitleKey = (value) => {
+      const trimmed = String(value ?? '').trim();
+      if (!trimmed) return '';
+      let normalized = trimmed;
+      try {
+        normalized = normalized.normalize('NFKC');
+      } catch {
+        // ignore
+      }
+      return normalized.toLowerCase();
+    };
+
     const parseDateStrFromSearch = () => {
       try {
         const params = new URLSearchParams(window.location.search || '');
@@ -1047,9 +1059,37 @@ function App() {
     [refreshFromSupabase, userId]
   );
 
+  const normalizeQuestTitleForCompare = useCallback((value) => {
+    const trimmed = String(value ?? '').trim();
+    if (!trimmed) return '';
+    let normalized = trimmed;
+    try {
+      normalized = normalized.normalize('NFKC');
+    } catch {
+      // ignore
+    }
+    return normalized.toLowerCase();
+  }, []);
+
+  const isQuestTitleDuplicateForCurrentDay = useCallback((candidateTitle, { ignoreId } = {}) => {
+    const key = normalizeQuestTitleForCompare(candidateTitle);
+    if (!key) return false;
+    const list = Array.isArray(dailyQuestTasksRef.current) ? dailyQuestTasksRef.current : [];
+    return list.some((t) => {
+      const id = t?.id ?? null;
+      if (ignoreId != null && id === ignoreId) return false;
+      return normalizeQuestTitleForCompare(t?.title) === key;
+    });
+  }, [normalizeQuestTitleForCompare]);
+
   const handleCreateQuestTask = useCallback(async ({ title }) => {
     const safeTitle = String(title ?? '').trim();
     if (!safeTitle) return;
+
+    if (isQuestTitleDuplicateForCurrentDay(safeTitle)) {
+      window.alert('同名のクエストは登録できません。');
+      return;
+    }
 
     const dateStr = String(dailyQuestDateStr ?? '').trim() || toDateStrLocal(new Date());
     const nowIso = new Date().toISOString();
@@ -1138,11 +1178,16 @@ function App() {
       setSupabaseError(null);
     } catch (error) {
       console.error('[Supabase] Failed to create daily quest task:', error);
-      setSupabaseError(error.message || 'デイリータスクの作成に失敗しました。');
+      const code = error?.code ?? null;
+      if (code === '23505' || /duplicate key value|unique constraint/i.test(String(error?.message ?? ''))) {
+        setSupabaseError('同名のクエストは登録できません。');
+      } else {
+        setSupabaseError(error.message || 'デイリータスクの作成に失敗しました。');
+      }
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, dailyQuestDateStr, loadLocalDailyQuestTasksByDate, saveLocalDailyQuestTasksByDate, endSupabaseJob, markRealtimeSelfWrite, userId]);
+  }, [beginSupabaseJob, createDailyQuestTaskForUser, dailyQuestDateStr, endSupabaseJob, isQuestTitleDuplicateForCurrentDay, loadLocalDailyQuestTasksByDate, markRealtimeSelfWrite, saveLocalDailyQuestTasksByDate, userId]);
 
   const handleReorderQuestTasks = useCallback(async (_period, orderedIds) => {
     const dateStr = String(dailyQuestDateStr ?? '').trim() || toDateStrLocal(new Date());
@@ -1266,6 +1311,11 @@ function App() {
     const trimmed = String(nextTitle ?? '').trim();
     if (!trimmed) return;
 
+    if (isQuestTitleDuplicateForCurrentDay(trimmed, { ignoreId: id })) {
+      window.alert('同名のクエストは登録できません。');
+      return;
+    }
+
     const optimisticPatch = {
       title: trimmed,
       updated_at: new Date().toISOString(),
@@ -1306,12 +1356,17 @@ function App() {
       setSupabaseError(null);
     } catch (error) {
       console.error('[Supabase] Failed to update daily quest task title:', error);
-      setSupabaseError(error.message || 'デイリータスク名の更新に失敗しました。');
+      const code = error?.code ?? null;
+      if (code === '23505' || /duplicate key value|unique constraint/i.test(String(error?.message ?? ''))) {
+        setSupabaseError('同名のクエストは登録できません。');
+      } else {
+        setSupabaseError(error.message || 'デイリータスク名の更新に失敗しました。');
+      }
       requestSupabaseSync('daily_quest_update_error');
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, dailyQuestDateStr, endSupabaseJob, loadLocalDailyQuestTasksByDate, markRealtimeSelfWrite, requestSupabaseSync, saveLocalDailyQuestTasksByDate, userId]);
+  }, [beginSupabaseJob, dailyQuestDateStr, endSupabaseJob, isQuestTitleDuplicateForCurrentDay, loadLocalDailyQuestTasksByDate, markRealtimeSelfWrite, requestSupabaseSync, saveLocalDailyQuestTasksByDate, updateDailyQuestTaskForUser, userId]);
 
   const handleDeleteQuestTask = useCallback(async (task) => {
     const id = task?.id ?? null;
@@ -1644,20 +1699,45 @@ function App() {
 
     const buildCarryOverTitles = (tasks) => {
       const list = Array.isArray(tasks) ? tasks : [];
-      return list
-        .map((t) => String(t?.title ?? '').trim())
-        .filter(Boolean);
-    };
-
-    const buildTitleCounts = (tasks) => {
-      const counts = new Map();
-      const list = Array.isArray(tasks) ? tasks : [];
+      const map = new Map();
       for (const t of list) {
         const title = String(t?.title ?? '').trim();
-        if (!title) continue;
-        counts.set(title, (counts.get(title) ?? 0) + 1);
+        const key = normalizeTitleKey(title);
+        if (!key) continue;
+        if (!map.has(key)) {
+          map.set(key, title);
+        }
       }
-      return counts;
+      return Array.from(map.values());
+    };
+
+    const buildTitleKeySet = (tasks) => {
+      const set = new Set();
+      const list = Array.isArray(tasks) ? tasks : [];
+      for (const t of list) {
+        const key = normalizeTitleKey(t?.title);
+        if (key) set.add(key);
+      }
+      return set;
+    };
+
+    const computeCarryOverInsertTitles = (fromTasks, toTasks) => {
+      const sortedFrom = sortDailyQuestTasks(fromTasks);
+      const sortedTo = sortDailyQuestTasks(toTasks);
+      const fromMap = new Map();
+      for (const t of sortedFrom) {
+        const title = String(t?.title ?? '').trim();
+        const key = normalizeTitleKey(title);
+        if (!key) continue;
+        if (!fromMap.has(key)) fromMap.set(key, title);
+      }
+      const toKeys = buildTitleKeySet(sortedTo);
+      const insertTitles = [];
+      for (const [key, title] of fromMap.entries()) {
+        if (toKeys.has(key)) continue;
+        insertTitles.push(title);
+      }
+      return insertTitles;
     };
 
     const shouldAutoAdvanceSelectedDate = (yesterdayStr) => {
@@ -1719,7 +1799,7 @@ function App() {
         try {
           const map = loadLocalDailyQuestTasksByDate();
           const todayTasks = Array.isArray(map?.[todayStr]) ? map[todayStr] : [];
-          const existingCounts = buildTitleCounts(todayTasks);
+          const existingKeys = buildTitleKeySet(todayTasks);
           const baseSort = Math.max(-1,
             ...todayTasks
               .map((t) => Number(t?.sort_order))
@@ -1730,11 +1810,11 @@ function App() {
 
           const carryOver = carryOverTitles
             .map((title) => {
-              const remaining = existingCounts.get(title) ?? 0;
-              if (remaining > 0) {
-                existingCounts.set(title, remaining - 1);
+              const key = normalizeTitleKey(title);
+              if (key && existingKeys.has(key)) {
                 return null;
               }
+              if (key) existingKeys.add(key);
               const created = {
                 id: createTempId(),
                 user_id: null,
@@ -1775,7 +1855,7 @@ function App() {
       if (carryOverTitles.length > 0) {
         try {
           const existingToday = await fetchDailyQuestTasksForUserByDate({ userId, dateStr: todayStr }).catch(() => []);
-          const existingCounts = buildTitleCounts(existingToday);
+          const existingKeys = buildTitleKeySet(existingToday);
           const baseSort = Math.max(-1,
             ...(Array.isArray(existingToday) ? existingToday : [])
               .map((t) => Number(t?.sort_order))
@@ -1785,11 +1865,9 @@ function App() {
 
           for (const title of carryOverTitles) {
             if (!title) continue;
-            const remaining = existingCounts.get(title) ?? 0;
-            if (remaining > 0) {
-              existingCounts.set(title, remaining - 1);
-              continue;
-            }
+            const key = normalizeTitleKey(title);
+            if (key && existingKeys.has(key)) continue;
+            if (key) existingKeys.add(key);
 
             const created = await createDailyQuestTaskForUser({
               userId,
@@ -1807,6 +1885,153 @@ function App() {
 
       requestSupabaseSync('daily_quest_day_change');
     };
+
+    // Debug helpers: 0時を待たずに carry-over を検証できるようにする
+    // - 既定: 開発モードのみ
+    // - 例外: 明示 opt-in（URLクエリ or localStorage）
+    const isDebugCarryOverEnabled = (() => {
+      if (typeof window === 'undefined') return false;
+      if (import.meta?.env?.DEV) return true;
+      try {
+        if (String(window.location?.search ?? '').includes('debugDailyQuest=1')) return true;
+      } catch {
+        // ignore
+      }
+      try {
+        if (window.localStorage?.getItem('debugDailyQuest') === '1') return true;
+      } catch {
+        // ignore
+      }
+      return false;
+    })();
+
+    if (typeof window !== 'undefined' && isDebugCarryOverEnabled) {
+      const ensureDebugRoot = () => {
+        if (!window.__theScheduleDebug) window.__theScheduleDebug = {};
+        return window.__theScheduleDebug;
+      };
+
+      const previewDailyQuestCarryOver = async ({ fromDateStr, toDateStr } = {}) => {
+        const safeFrom = String(fromDateStr ?? '').trim();
+        const safeTo = String(toDateStr ?? '').trim();
+        if (!safeFrom || !safeTo) {
+          throw new Error('previewDailyQuestCarryOver には { fromDateStr, toDateStr } が必要です');
+        }
+
+        if (!userId) {
+          const map = loadLocalDailyQuestTasksByDate();
+          const fromTasks = Array.isArray(map?.[safeFrom]) ? map[safeFrom] : [];
+          const toTasks = Array.isArray(map?.[safeTo]) ? map[safeTo] : [];
+          const insertTitles = computeCarryOverInsertTitles(fromTasks, toTasks);
+          return {
+            mode: 'local',
+            fromDateStr: safeFrom,
+            toDateStr: safeTo,
+            fromTotal: fromTasks.length,
+            toTotal: toTasks.length,
+            willInsert: insertTitles.length,
+            titles: insertTitles,
+          };
+        }
+
+        const [fromTasks, toTasks] = await Promise.all([
+          fetchDailyQuestTasksForUserByDate({ userId, dateStr: safeFrom }).catch(() => []),
+          fetchDailyQuestTasksForUserByDate({ userId, dateStr: safeTo }).catch(() => []),
+        ]);
+        const insertTitles = computeCarryOverInsertTitles(fromTasks, toTasks);
+        return {
+          mode: 'supabase',
+          fromDateStr: safeFrom,
+          toDateStr: safeTo,
+          fromTotal: Array.isArray(fromTasks) ? fromTasks.length : 0,
+          toTotal: Array.isArray(toTasks) ? toTasks.length : 0,
+          willInsert: insertTitles.length,
+          titles: insertTitles,
+        };
+      };
+
+      const runDailyQuestCarryOver = async ({ fromDateStr, toDateStr, confirm } = {}) => {
+        if (confirm !== true) {
+          throw new Error('runDailyQuestCarryOver を実行するには { confirm: true } が必要です');
+        }
+        const safeFrom = String(fromDateStr ?? '').trim();
+        const safeTo = String(toDateStr ?? '').trim();
+        if (!safeFrom || !safeTo) {
+          throw new Error('runDailyQuestCarryOver には { fromDateStr, toDateStr } が必要です');
+        }
+
+        if (!userId) {
+          const map = loadLocalDailyQuestTasksByDate();
+          const fromTasks = Array.isArray(map?.[safeFrom]) ? map[safeFrom] : [];
+          const toTasks = Array.isArray(map?.[safeTo]) ? map[safeTo] : [];
+          const insertTitles = computeCarryOverInsertTitles(fromTasks, toTasks);
+
+          const baseSort = Math.max(-1,
+            ...toTasks
+              .map((t) => Number(t?.sort_order))
+              .filter((v) => Number.isFinite(v))
+          );
+          let nextOrder = Number.isFinite(baseSort) ? baseSort + 1 : toTasks.length;
+          const nowIso = new Date().toISOString();
+
+          const createdTasks = insertTitles.map((title) => {
+            const created = {
+              id: createTempId(),
+              user_id: null,
+              date_str: safeTo,
+              title,
+              completed: false,
+              sort_order: nextOrder,
+              created_at: nowIso,
+              updated_at: nowIso,
+            };
+            nextOrder += 1;
+            return created;
+          });
+
+          const nextToTasks = sortDailyQuestTasks([...toTasks, ...createdTasks]);
+          map[safeTo] = nextToTasks;
+          saveLocalDailyQuestTasksByDate(map);
+          if (safeTo === toDateStrLocal(new Date())) {
+            setDailyQuestTasks(nextToTasks);
+          }
+          return { inserted: createdTasks.length };
+        }
+
+        const [fromTasks, toTasks] = await Promise.all([
+          fetchDailyQuestTasksForUserByDate({ userId, dateStr: safeFrom }).catch(() => []),
+          fetchDailyQuestTasksForUserByDate({ userId, dateStr: safeTo }).catch(() => []),
+        ]);
+        const insertTitles = computeCarryOverInsertTitles(fromTasks, toTasks);
+        if (insertTitles.length === 0) return { inserted: 0 };
+
+        const baseSort = Math.max(-1,
+          ...(Array.isArray(toTasks) ? toTasks : [])
+            .map((t) => Number(t?.sort_order))
+            .filter((v) => Number.isFinite(v))
+        );
+        let sortOrder = Number.isFinite(baseSort) ? baseSort + 1 : 0;
+        let inserted = 0;
+        for (const title of insertTitles) {
+          const created = await createDailyQuestTaskForUser({
+            userId,
+            dateStr: safeTo,
+            title,
+            sortOrder,
+          });
+          sortOrder += 1;
+          inserted += 1;
+          markRealtimeSelfWrite('daily_quest_tasks', created?.id ?? null);
+        }
+        requestSupabaseSync('debug:carry_over');
+        return { inserted };
+      };
+
+      const debugRoot = ensureDebugRoot();
+      debugRoot.previewDailyQuestCarryOver = previewDailyQuestCarryOver;
+      debugRoot.runDailyQuestCarryOver = runDailyQuestCarryOver;
+      debugRoot.forceDailyQuestTick = () => tick();
+    }
 
     let disposed = false;
     let midnightTimerId = null;

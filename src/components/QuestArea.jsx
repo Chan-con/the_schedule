@@ -38,6 +38,28 @@ const QuestArea = React.forwardRef(({
 
   const safeTasks = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
+  const normalizeTitleKey = useCallback((value) => {
+    const trimmed = String(value ?? '').trim();
+    if (!trimmed) return '';
+    let normalized = trimmed;
+    try {
+      normalized = normalized.normalize('NFKC');
+    } catch {
+      // ignore
+    }
+    return normalized.toLowerCase();
+  }, []);
+
+  const isDuplicateTitle = useCallback((candidate, { ignoreId } = {}) => {
+    const key = normalizeTitleKey(candidate);
+    if (!key) return false;
+    return safeTasks.some((t) => {
+      const id = t?.id ?? null;
+      if (ignoreId != null && id === ignoreId) return false;
+      return normalizeTitleKey(t?.title) === key;
+    });
+  }, [normalizeTitleKey, safeTasks]);
+
   const orderedTasks = useMemo(() => {
     return safeTasks
       .slice()
@@ -328,6 +350,18 @@ const QuestArea = React.forwardRef(({
                     const trimmed = String(draftTitle ?? '').trim();
                     if (!trimmed) return;
                     if (modalMode === 'create') {
+                      if (isDuplicateTitle(trimmed)) {
+                        window.alert('同名のクエストは登録できません。');
+                        return;
+                      }
+                    } else {
+                      const ignoreId = editingTask?.id ?? null;
+                      if (isDuplicateTitle(trimmed, { ignoreId })) {
+                        window.alert('同名のクエストは登録できません。');
+                        return;
+                      }
+                    }
+                    if (modalMode === 'create') {
                       if (typeof onCreateTask === 'function') {
                         onCreateTask({ title: trimmed });
                       }
@@ -383,6 +417,18 @@ const QuestArea = React.forwardRef(({
                   onClick={() => {
                     const trimmed = String(draftTitle ?? '').trim();
                     if (!trimmed) return;
+                    if (modalMode === 'create') {
+                      if (isDuplicateTitle(trimmed)) {
+                        window.alert('同名のクエストは登録できません。');
+                        return;
+                      }
+                    } else {
+                      const ignoreId = editingTask?.id ?? null;
+                      if (isDuplicateTitle(trimmed, { ignoreId })) {
+                        window.alert('同名のクエストは登録できません。');
+                        return;
+                      }
+                    }
                     if (modalMode === 'create') {
                       if (typeof onCreateTask === 'function') {
                         onCreateTask({ title: trimmed });
