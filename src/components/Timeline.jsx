@@ -143,6 +143,14 @@ const Timeline = ({
 	const availableNotes = Array.isArray(notes) ? notes : [];
 	const availableQuestTasks = useMemo(() => (Array.isArray(dailyQuestTasks) ? dailyQuestTasks : []), [dailyQuestTasks]);
 
+	const taskIncompleteTotal = useMemo(() => {
+		return availableTasks.filter((t) => !t?.completed).length;
+	}, [availableTasks]);
+
+	const timelineIncompleteTaskTotal = useMemo(() => {
+		return (Array.isArray(schedules) ? schedules : []).filter((item) => item?.isTask && !item?.completed).length;
+	}, [schedules]);
+
 	const questIncompleteTotal = useMemo(() => {
 		return availableQuestTasks.filter((t) => !t?.completed).length;
 	}, [availableQuestTasks]);
@@ -423,6 +431,29 @@ const Timeline = ({
 			),
 		},
 		{
+			key: 'quest',
+			label: 'クエスト',
+			icon: (
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					className="h-5 w-5"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="2"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M8 21h8" />
+					<path d="M12 17v4" />
+					<path d="M7 4h10v4a5 5 0 0 1-10 0V4z" />
+					<path d="M5 4H3v2a4 4 0 0 0 4 4" />
+					<path d="M19 4h2v2a4 4 0 0 1-4 4" />
+				</svg>
+			),
+		},
+		{
 			key: 'notes',
 			label: 'ノート',
 			icon: (
@@ -463,29 +494,6 @@ const Timeline = ({
 					<path d="M10 2h4" />
 					<path d="M12 14l3-3" />
 					<circle cx="12" cy="14" r="8" />
-				</svg>
-			),
-		},
-		{
-			key: 'quest',
-			label: 'クエスト',
-			icon: (
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					className="h-5 w-5"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					strokeWidth="2"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-					aria-hidden="true"
-				>
-					<path d="M8 21h8" />
-					<path d="M12 17v4" />
-					<path d="M7 4h10v4a5 5 0 0 1-10 0V4z" />
-					<path d="M5 4H3v2a4 4 0 0 0 4 4" />
-					<path d="M19 4h2v2a4 4 0 0 1-4 4" />
 				</svg>
 			),
 		},
@@ -849,6 +857,16 @@ const Timeline = ({
 						{tabs.map((tab) => {
 							const isActive = currentTab === tab.key;
 							const showQuestBadge = tab.key === 'quest' && questIncompleteTotal > 0;
+							const showTaskBadge = tab.key === 'tasks' && taskIncompleteTotal > 0;
+							const showTimelineBadge = tab.key === 'timeline' && timelineIncompleteTaskTotal > 0;
+							const badgeCount = showQuestBadge
+								? questIncompleteTotal
+								: showTaskBadge
+									? taskIncompleteTotal
+									: showTimelineBadge
+										? timelineIncompleteTaskTotal
+										: 0;
+							const showBadge = showQuestBadge || showTaskBadge || showTimelineBadge;
 							return (
 								<button
 									key={tab.key}
@@ -865,9 +883,9 @@ const Timeline = ({
 								>
 									<span className="relative inline-flex" aria-hidden="true">
 										{tab.icon}
-										{showQuestBadge && (
+										{showBadge && (
 											<span className="absolute -right-2 -top-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold leading-none text-white ring-2 ring-white">
-												{questIncompleteTotal > 99 ? '99+' : questIncompleteTotal}
+												{badgeCount > 99 ? '99+' : badgeCount}
 											</span>
 										)}
 									</span>
