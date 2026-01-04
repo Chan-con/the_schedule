@@ -51,6 +51,41 @@ export const fetchDailyQuestTasksForUserByDate = async ({ userId, dateStr }) => 
   }));
 };
 
+export const fetchDailyQuestTasksForUserInRange = async ({ userId, startDate, endDate }) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+  const safeStart = String(startDate ?? '').trim();
+  const safeEnd = String(endDate ?? '').trim();
+  if (!safeStart || !safeEnd) return [];
+
+  const startedAt = nowPerf();
+  logDailyQuest('fetchRange', 'request', { userId, startDate: safeStart, endDate: safeEnd });
+
+  const { data, error } = await supabase
+    .from(TABLE_NAME)
+    .select('id, user_id, date_str, title, completed, completed_at, sort_order, created_at, updated_at')
+    .eq('user_id', userId)
+    .gte('date_str', safeStart)
+    .lte('date_str', safeEnd)
+    .order('date_str', { ascending: true })
+    .order('sort_order', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true });
+
+  if (error) {
+    logDailyQuest('fetchRange', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });
+    throw new Error(`デイリークエストの取得に失敗しました: ${error.message}`);
+  }
+
+  const list = Array.isArray(data) ? data : [];
+  logDailyQuest('fetchRange', 'success', { userId, durationMs: buildDuration(startedAt), count: list.length });
+  return list.map((row) => ({
+    ...row,
+    date_str: String(row?.date_str ?? ''),
+    title: String(row?.title ?? ''),
+    completed: !!row?.completed,
+  }));
+};
+
 export const createDailyQuestTaskForUser = async ({ userId, dateStr, title, sortOrder }) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   const safeDate = String(dateStr ?? '').trim();

@@ -64,7 +64,9 @@ const Calendar = ({
   onToggleTask,
   onScheduleUpdate,
   noteDates = [],
+  noteTitlesByDate = null,
   dailyQuestCrowns = {},
+  dailyQuestTaskTitlesByDate = null,
   onVisibleRangeChange,
 }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -122,12 +124,26 @@ const Calendar = ({
     return new Set(list.filter(Boolean));
   }, [noteDates]);
 
+  const noteTitlesByDateSafe = useMemo(() => {
+    if (noteTitlesByDate && typeof noteTitlesByDate === 'object' && !Array.isArray(noteTitlesByDate)) {
+      return noteTitlesByDate;
+    }
+    return null;
+  }, [noteTitlesByDate]);
+
   const dailyQuestCrownByDate = useMemo(() => {
     if (dailyQuestCrowns && typeof dailyQuestCrowns === 'object' && !Array.isArray(dailyQuestCrowns)) {
       return dailyQuestCrowns;
     }
     return {};
   }, [dailyQuestCrowns]);
+
+  const dailyQuestTaskTitlesByDateSafe = useMemo(() => {
+    if (dailyQuestTaskTitlesByDate && typeof dailyQuestTaskTitlesByDate === 'object' && !Array.isArray(dailyQuestTaskTitlesByDate)) {
+      return dailyQuestTaskTitlesByDate;
+    }
+    return null;
+  }, [dailyQuestTaskTitlesByDate]);
 
   const toDateStr = useCallback((date) => {
     if (!date) return '';
@@ -1037,14 +1053,27 @@ const Calendar = ({
                   const isConfirmed = status === 'confirmed';
                   if (!isProvisional && !isConfirmed) return null;
 
-                  const title = isConfirmed
+                  const baseTitle = isConfirmed
                     ? (totalCount != null ? `デイリー達成（総数: ${totalCount}）` : 'デイリー達成')
                     : 'デイリー達成（暫定）';
+
+                  const taskTitlesRaw = dailyQuestTaskTitlesByDateSafe?.[dateStr];
+                  const taskTitles = Array.isArray(taskTitlesRaw)
+                    ? taskTitlesRaw.map((t) => String(t ?? '').trim()).filter(Boolean)
+                    : [];
+
+                  const title = taskTitles.length > 0
+                    ? `${baseTitle}\n${taskTitles.join('\n')}`
+                    : baseTitle;
+
+                  const ariaLabel = taskTitles.length > 0
+                    ? `${baseTitle}: ${taskTitles.join('、')}`
+                    : baseTitle;
 
                   return (
                     <span
                       className={isProvisional ? 'inline-flex opacity-60' : 'inline-flex'}
-                      aria-label={title}
+                      aria-label={ariaLabel}
                       title={title}
                     >
                       <IconCrown className={`h-2.5 w-2.5 ${isProvisional ? 'text-amber-400' : 'text-amber-500'}`} />
@@ -1052,15 +1081,35 @@ const Calendar = ({
                   );
                 })()}
 
-                {noteDateSet.has(dateStr) && (
-                  <span
-                    className="inline-flex"
-                    aria-label="ノートあり"
-                    title="ノートあり"
-                  >
-                    <IconNote className="h-[9px] w-[9px] text-blue-500" />
-                  </span>
-                )}
+                {(() => {
+                  const titlesRaw = noteTitlesByDateSafe?.[dateStr];
+                  const titles = Array.isArray(titlesRaw)
+                    ? titlesRaw.map((t) => String(t ?? '').trim()).filter(Boolean)
+                    : [];
+
+                  const shouldShow = noteTitlesByDateSafe
+                    ? titles.length > 0
+                    : noteDateSet.has(dateStr);
+                  if (!shouldShow) return null;
+
+                  const title = titles.length > 0
+                    ? `ノート: ${titles.length}件\n${titles.join('\n')}`
+                    : 'ノートあり';
+
+                  const ariaLabel = titles.length > 0
+                    ? `ノート: ${titles.length}件: ${titles.join('、')}`
+                    : 'ノートあり';
+
+                  return (
+                    <span
+                      className="inline-flex"
+                      aria-label={ariaLabel}
+                      title={title}
+                    >
+                      <IconNote className="h-[9px] w-[9px] text-blue-500" />
+                    </span>
+                  );
+                })()}
               </div>
               
               {/* 予定部分 - 残りのスペースを使用（表示中の全日付で予定を表示） */}

@@ -14,6 +14,7 @@ import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQui
 import { supabase } from './lib/supabaseClient';
 import {
   fetchDailyQuestTasksForUserByDate,
+  fetchDailyQuestTasksForUserInRange,
   createDailyQuestTaskForUser,
   updateDailyQuestTaskForUser,
   deleteDailyQuestTaskForUser,
@@ -796,6 +797,8 @@ function App() {
     };
   }, [authLogin, isAuthLoading, isAuthProcessing, openSharedNote, sharedNoteId, userId]);
   const [calendarNoteDates, setCalendarNoteDates] = useState([]);
+  const [calendarVisibleRange, setCalendarVisibleRange] = useState(null);
+  const [calendarDailyQuestTasksInRange, setCalendarDailyQuestTasksInRange] = useState(() => []);
   const [loopTimelineState, setLoopTimelineState] = useState(null);
   const [loopTimelineMarkers, setLoopTimelineMarkers] = useState([]);
   const calendarVisibleRangeRef = useRef(null);
@@ -878,7 +881,7 @@ function App() {
 
         const todayStr = toDateStrLocal(new Date());
 
-        const [remoteSchedules, remoteQuickMemo, remoteNotes, remoteNoteDates, remoteLoopState, remoteLoopMarkers, remoteDailyQuestTasks, remoteDailyQuestSnapshots] = await Promise.all([
+        const [remoteSchedules, remoteQuickMemo, remoteNotes, remoteNoteDates, remoteLoopState, remoteLoopMarkers, remoteDailyQuestTasks, remoteDailyQuestSnapshots, remoteDailyQuestTasksInRange] = await Promise.all([
           fetchSchedulesForUser(userId),
           fetchQuickMemoForUser(userId),
           fetchNotesForUser(userId),
@@ -908,6 +911,16 @@ function App() {
                 endDate: visibleRange.endDate,
               }).catch((error) => {
                 console.warn('[Supabase] daily_quest_snapshots fetch skipped:', error);
+                return [];
+              })
+            : Promise.resolve([]),
+          hasVisibleRange
+            ? fetchDailyQuestTasksForUserInRange({
+                userId,
+                startDate: visibleRange.startDate,
+                endDate: visibleRange.endDate,
+              }).catch((error) => {
+                console.warn('[Supabase] daily_quest_tasks range fetch skipped:', error);
                 return [];
               })
             : Promise.resolve([]),
@@ -957,6 +970,10 @@ function App() {
 
         if (Array.isArray(remoteDailyQuestSnapshots)) {
           setCalendarDailyQuestSnapshots(remoteDailyQuestSnapshots);
+        }
+
+        if (Array.isArray(remoteDailyQuestTasksInRange)) {
+          setCalendarDailyQuestTasksInRange(remoteDailyQuestTasksInRange);
         }
 
         setLoopTimelineState(remoteLoopState);
@@ -2502,12 +2519,114 @@ function App() {
     }
   }, [userId]);
 
+  const refreshCalendarDailyQuestTasks = useCallback(async () => {
+    const range = calendarVisibleRangeRef.current;
+    if (!range?.startDate || !range?.endDate) return;
+
+    if (!userId) {
+      const map = loadLocalDailyQuestTasksByDate();
+      const list = [];
+      const entries = map && typeof map === 'object' ? Object.entries(map) : [];
+      for (const [dateStr, tasks] of entries) {
+        if (!dateStr) continue;
+        if (dateStr < range.startDate || dateStr > range.endDate) continue;
+        const rows = Array.isArray(tasks) ? tasks : [];
+        rows.forEach((row) => {
+          list.push({
+            ...row,
+            date_str: String(dateStr),
+            title: String(row?.title ?? ''),
+            completed: !!row?.completed,
+          });
+        });
+      }
+      setCalendarDailyQuestTasksInRange(list);
+      return;
+    }
+
+    try {
+      const list = await fetchDailyQuestTasksForUserInRange({
+        userId,
+        startDate: range.startDate,
+        endDate: range.endDate,
+      });
+      setCalendarDailyQuestTasksInRange(Array.isArray(list) ? list : []);
+    } catch (error) {
+      console.error('[Supabase] Failed to fetch daily quest tasks in range:', error);
+      setCalendarDailyQuestTasksInRange([]);
+    }
+  }, [loadLocalDailyQuestTasksByDate, userId]);
+
+  const calendarDailyQuestTaskTitlesByDate = useMemo(() => {
+    const map = {};
+    const list = Array.isArray(calendarDailyQuestTasksInRange) ? calendarDailyQuestTasksInRange : [];
+    for (const row of list) {
+      const dateStr = String(row?.date_str ?? '').trim();
+      if (!dateStr) continue;
+      if (!row?.completed) continue;
+      const title = String(row?.title ?? '').trim();
+      if (!title) continue;
+      if (!map[dateStr]) map[dateStr] = [];
+      map[dateStr].push(title);
+    }
+
+    // 今日の表示はローカルstateを優先（range取得が遅延/未反映でも即反映）
+    const todayStr = String(dailyQuestDateStr ?? '').trim();
+    if (todayStr) {
+      const tasks = Array.isArray(dailyQuestTasks) ? dailyQuestTasks : [];
+      const titles = tasks
+        .filter((t) => !!t?.completed)
+        .map((t) => String(t?.title ?? '').trim())
+        .filter(Boolean);
+      if (titles.length > 0) {
+        map[todayStr] = titles;
+      }
+    }
+
+    Object.keys(map).forEach((key) => {
+      map[key] = Array.from(new Set(map[key]));
+    });
+
+    return map;
+  }, [calendarDailyQuestTasksInRange, dailyQuestDateStr, dailyQuestTasks]);
+
+  const calendarNoteTitlesByDate = useMemo(() => {
+    const range = calendarVisibleRange && typeof calendarVisibleRange === 'object' ? calendarVisibleRange : null;
+    const startDate = typeof range?.startDate === 'string' ? range.startDate : null;
+    const endDate = typeof range?.endDate === 'string' ? range.endDate : null;
+    const list = Array.isArray(notes) ? notes : [];
+    const map = {};
+
+    for (const note of list) {
+      const createdAt = note?.created_at;
+      if (!createdAt) continue;
+      const dateStr = toDateStrLocal(new Date(createdAt));
+      if (!dateStr) continue;
+      if (startDate && dateStr < startDate) continue;
+      if (endDate && dateStr > endDate) continue;
+
+      const rawTitle = String(note?.title ?? '').trim();
+      const title = rawTitle ? rawTitle : '無題のノート';
+      if (!map[dateStr]) map[dateStr] = [];
+      map[dateStr].push(title);
+    }
+
+    // 重複を削って安定化
+    Object.keys(map).forEach((key) => {
+      map[key] = Array.from(new Set(map[key]));
+    });
+
+    return map;
+  }, [calendarVisibleRange, notes]);
+
   const handleCalendarVisibleRangeChange = useCallback((range) => {
     if (!range?.startDate || !range?.endDate) return;
     calendarVisibleRangeRef.current = { startDate: range.startDate, endDate: range.endDate };
+    setCalendarVisibleRange({ startDate: range.startDate, endDate: range.endDate });
     refreshCalendarNoteDates().catch(() => {});
     refreshCalendarDailyQuestSnapshots().catch(() => {});
-  }, [refreshCalendarDailyQuestSnapshots, refreshCalendarNoteDates]);
+    refreshCalendarDailyQuestTasks().catch(() => {});
+  }, [refreshCalendarDailyQuestSnapshots, refreshCalendarDailyQuestTasks, refreshCalendarNoteDates]);
 
   const handleAddNote = useCallback(async () => {
     if (!selectedDateStr) return;
@@ -4067,7 +4186,9 @@ function App() {
                 isMobile={isMobile}
                 onToggleTask={handleToggleTask}
                 noteDates={calendarNoteDates}
+                noteTitlesByDate={calendarNoteTitlesByDate}
                 dailyQuestCrowns={calendarDailyQuestCrownsByDate}
+                dailyQuestTaskTitlesByDate={calendarDailyQuestTaskTitlesByDate}
                 onVisibleRangeChange={handleCalendarVisibleRangeChange}
               />
             </div>
@@ -4194,7 +4315,9 @@ function App() {
                 isMobile={isMobile}
                 onToggleTask={handleToggleTask}
                 noteDates={calendarNoteDates}
+                noteTitlesByDate={calendarNoteTitlesByDate}
                 dailyQuestCrowns={calendarDailyQuestCrownsByDate}
+                dailyQuestTaskTitlesByDate={calendarDailyQuestTaskTitlesByDate}
                 onVisibleRangeChange={handleCalendarVisibleRangeChange}
               />
             </div>
