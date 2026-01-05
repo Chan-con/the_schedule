@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import MemoWithLinks from './MemoWithLinks';
 
 const MEMO_TABS_VERSION = 1;
 
@@ -72,6 +73,8 @@ const serializeMemoTabsState = (state) => {
 const QuickMemoPad = ({ value, onChange, className = '', textareaClassName = '' }) => {
   const [memoState, setMemoState] = useState(() => normalizeMemoTabsState(value));
   const lastEmittedRef = useRef(null);
+  const [isEditing, setIsEditing] = useState(true);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
     const lastEmitted = lastEmittedRef.current;
@@ -123,6 +126,7 @@ const QuickMemoPad = ({ value, onChange, className = '', textareaClassName = '' 
       if (!prev.tabs.some((t) => t.id === tabId)) return prev;
       return { ...prev, activeTabId: tabId };
     });
+    setIsEditing(true);
   }, [commitState]);
 
   const handleAddTab = useCallback(() => {
@@ -134,6 +138,7 @@ const QuickMemoPad = ({ value, onChange, className = '', textareaClassName = '' 
         activeTabId: newTab.id,
       };
     });
+    setIsEditing(true);
   }, [commitState]);
 
   const handleChange = useCallback((event) => {
@@ -169,7 +174,13 @@ const QuickMemoPad = ({ value, onChange, className = '', textareaClassName = '' 
         activeTabId: nextActive?.id || remainingTabs[0]?.id,
       };
     });
+    setIsEditing(false);
   }, [commitState]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    textareaRef.current?.focus();
+  }, [isEditing, memoState.activeTabId]);
 
   return (
     <section
@@ -220,13 +231,37 @@ const QuickMemoPad = ({ value, onChange, className = '', textareaClassName = '' 
         </div>
 
         <div className="flex-1 min-h-0 rounded-md border border-indigo-900/20 bg-white/90">
-          <textarea
-            value={activeValue}
-            onChange={handleChange}
-            onBlur={handleTextareaBlur}
-            placeholder="思いついたことを書き留めておけます"
-            className={`custom-scrollbar h-full w-full resize-none overflow-auto rounded-md bg-transparent px-2 py-2 text-sm text-gray-900 outline-none min-h-0 ${textareaClassName}`}
-          />
+          {isEditing ? (
+            <textarea
+              ref={textareaRef}
+              value={activeValue}
+              onChange={handleChange}
+              onFocus={() => setIsEditing(true)}
+              onBlur={handleTextareaBlur}
+              placeholder="思いついたことを書き留めておけます"
+              className={`custom-scrollbar h-full w-full resize-none overflow-auto rounded-md bg-transparent px-2 py-2 text-sm text-gray-900 outline-none min-h-0 ${textareaClassName}`}
+            />
+          ) : (
+            <div
+              className={`custom-scrollbar h-full w-full overflow-auto rounded-md bg-transparent px-2 py-2 outline-none min-h-0 cursor-text whitespace-pre-wrap ${textareaClassName}`}
+              role="textbox"
+              tabIndex={0}
+              onClick={(event) => {
+                const anchor = event?.target?.closest?.('a');
+                if (anchor) return;
+                setIsEditing(true);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                setIsEditing(true);
+              }}
+            >
+              {activeValue.trim()
+                ? <MemoWithLinks memo={activeValue} className="text-sm text-gray-900" />
+                : <span className="text-sm text-gray-500">思いついたことを書き留めておけます</span>}
+            </div>
+          )}
         </div>
       </div>
     </section>

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import MemoWithLinks from './MemoWithLinks';
 
 const MEMO_TABS_VERSION = 1;
 
@@ -150,8 +151,9 @@ const toTime = (value) => {
   return Number.isNaN(t) ? 0 : t;
 };
 
-const AutoGrowTextarea = ({ value, onChange, onBlur, onDoubleClick, placeholder, className }) => {
-  const ref = useRef(null);
+const AutoGrowTextarea = ({ value, onChange, onBlur, onDoubleClick, placeholder, className, inputRef }) => {
+  const innerRef = useRef(null);
+  const ref = inputRef || innerRef;
 
   const syncHeight = useCallback(() => {
     const el = ref.current;
@@ -175,6 +177,75 @@ const AutoGrowTextarea = ({ value, onChange, onBlur, onDoubleClick, placeholder,
       rows={1}
       className={className}
     />
+  );
+};
+
+const QuickMemoContent = ({
+  value,
+  onChange,
+  onBlur,
+  onDoubleClick,
+  placeholder,
+  className,
+  previewClassName = '',
+}) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    const id = globalThis.requestAnimationFrame
+      ? globalThis.requestAnimationFrame(() => textareaRef.current?.focus())
+      : setTimeout(() => textareaRef.current?.focus(), 0);
+    return () => {
+      if (globalThis.cancelAnimationFrame && typeof id === 'number') {
+        globalThis.cancelAnimationFrame(id);
+      } else {
+        clearTimeout(id);
+      }
+    };
+  }, [isEditing]);
+
+  const safeValue = typeof value === 'string' ? value : '';
+  const hasContent = safeValue.trim() !== '';
+
+  if (isEditing) {
+    return (
+      <AutoGrowTextarea
+        inputRef={textareaRef}
+        value={safeValue}
+        onChange={onChange}
+        onBlur={(event) => {
+          setIsEditing(false);
+          if (onBlur) onBlur(event);
+        }}
+        onDoubleClick={onDoubleClick}
+        placeholder={placeholder}
+        className={className}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`${className} ${previewClassName}`}
+      role="textbox"
+      tabIndex={0}
+      onClick={(event) => {
+        const anchor = event?.target?.closest?.('a');
+        if (anchor) return;
+        setIsEditing(true);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        setIsEditing(true);
+      }}
+    >
+      {hasContent
+        ? <MemoWithLinks memo={safeValue} className="text-sm leading-relaxed text-slate-900" />
+        : <span className="text-sm leading-relaxed text-slate-500">{placeholder}</span>}
+    </div>
   );
 };
 
@@ -386,7 +457,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
                     <span className="sr-only">ピン留め中</span>
                   </div>
                 )}
-                <AutoGrowTextarea
+                <QuickMemoContent
                   value={content}
                   onChange={(event) => handleChangeMemo(tabId, event?.target?.value ?? '')}
                   onBlur={() => {
@@ -399,6 +470,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
                   }}
                   placeholder="思いついたことを書き留めておけます"
                   className="w-full resize-none overflow-hidden bg-transparent text-sm leading-relaxed text-slate-900 outline-none"
+                  previewClassName="min-h-[1.25rem] cursor-text whitespace-pre-wrap"
                 />
               </div>
             );
