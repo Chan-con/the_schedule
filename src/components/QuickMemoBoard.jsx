@@ -182,6 +182,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
   const [memoState, setMemoState] = useState(() => normalizeMemoTabsState(value));
   const [query, setQuery] = useState('');
   const lastEmittedRef = useRef(null);
+  const dirtyMemoIdsRef = useRef(new Set());
 
   useEffect(() => {
     const lastEmitted = lastEmittedRef.current;
@@ -231,11 +232,15 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
   useImperativeHandle(ref, () => ({ addMemo }), [addMemo]);
 
   const handleChangeMemo = useCallback((tabId, nextContent) => {
-    const now = nowIso();
     commitState((prev) => {
+      const current = prev.tabs.find((t) => t.id === tabId);
+      const currentContent = normalizeText(current?.content);
+      if (currentContent !== nextContent) {
+        dirtyMemoIdsRef.current.add(String(tabId));
+      }
       const nextTabs = prev.tabs.map((tab) =>
         tab.id === tabId
-          ? { ...tab, content: nextContent, updatedAt: now, createdAt: tab.createdAt || now }
+          ? { ...tab, content: nextContent, createdAt: tab.createdAt || nowIso(), updatedAt: tab.updatedAt || tab.createdAt || '' }
           : tab
       );
       return { ...prev, tabs: nextTabs, activeTabId: tabId };
@@ -247,6 +252,8 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
       const target = prev.tabs.find((t) => t.id === tabId);
       const content = normalizeText(target?.content);
       if (content.trim() !== '') return prev;
+
+      dirtyMemoIdsRef.current.delete(String(tabId));
 
       // 空欄は削除。ただし0個にはしない。
       if (prev.tabs.length <= 1) {
@@ -263,6 +270,25 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
         tabs: remainingTabs,
         activeTabId: nextActive?.id || remainingTabs[0]?.id,
       };
+    });
+  }, [commitState]);
+
+  const commitUpdatedAtOnBlur = useCallback((tabId) => {
+    const key = String(tabId);
+    if (!dirtyMemoIdsRef.current.has(key)) return;
+    const now = nowIso();
+    dirtyMemoIdsRef.current.delete(key);
+    commitState((prev) => {
+      const target = prev.tabs.find((t) => t.id === tabId);
+      const content = normalizeText(target?.content);
+      if (content.trim() === '') return prev;
+
+      const nextTabs = prev.tabs.map((tab) =>
+        tab.id === tabId
+          ? { ...tab, updatedAt: now, createdAt: tab.createdAt || now }
+          : tab
+      );
+      return { ...prev, tabs: nextTabs };
     });
   }, [commitState]);
 
@@ -363,7 +389,10 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
                 <AutoGrowTextarea
                   value={content}
                   onChange={(event) => handleChangeMemo(tabId, event?.target?.value ?? '')}
-                  onBlur={() => handleBlurMemo(tabId)}
+                  onBlur={() => {
+                    handleBlurMemo(tabId);
+                    commitUpdatedAtOnBlur(tabId);
+                  }}
                   onDoubleClick={(event) => {
                     // textareaのダブルクリックは「単語選択」を優先
                     event.stopPropagation();
