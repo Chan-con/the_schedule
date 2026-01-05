@@ -541,6 +541,7 @@ function App() {
   const [mouseEnd, setMouseEnd] = useState(null);
   const [isMouseDown, setIsMouseDown] = useState(false);
   const [quickMemo, setQuickMemo] = useState('');
+  const quickMemoRef = useRef('');
   const [isQuickMemoLoaded, setIsQuickMemoLoaded] = useState(false);
 
   const [notes, setNotes] = useState([]);
@@ -577,6 +578,10 @@ function App() {
   useEffect(() => {
     calendarDailyQuestSnapshotsRef.current = Array.isArray(calendarDailyQuestSnapshots) ? calendarDailyQuestSnapshots : [];
   }, [calendarDailyQuestSnapshots]);
+
+  useEffect(() => {
+    quickMemoRef.current = typeof quickMemo === 'string' ? quickMemo : '';
+  }, [quickMemo]);
 
   const openSharedNote = useCallback(
     (noteId) => {
@@ -917,7 +922,26 @@ function App() {
         replaceAppState(remoteSchedules, actionType, {
           mode: actionType === 'supabase_initial_sync' ? 'replace' : 'overwrite',
         });
-        applyQuickMemoValue(remoteQuickMemo);
+
+        // ローカルに未保存の変更がある場合、再同期で上書きしない。
+        // (追加直後のデバウンス保存前に resync が走ると、追加が消えることがある)
+        {
+          const remoteValue = typeof remoteQuickMemo === 'string' ? remoteQuickMemo : '';
+          const localValue = quickMemoRef.current;
+          const lastSavedValue = quickMemoLastSavedRef.current;
+          const hasLocalDirty = localValue !== lastSavedValue;
+
+          if (!hasLocalDirty || remoteValue === localValue) {
+            applyQuickMemoValue(remoteValue);
+          } else {
+            console.info('[SupabaseSync] skip quickMemo overwrite (local dirty)', JSON.stringify({
+              actionType,
+              timestamp: new Date().toISOString(),
+              localLength: localValue.length,
+              remoteLength: remoteValue.length,
+            }));
+          }
+        }
 
         // ノート同期: pending patch（未送信の編集）と下書きを保持して上書き事故を防ぐ
         {

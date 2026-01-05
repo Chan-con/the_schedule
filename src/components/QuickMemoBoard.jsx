@@ -145,7 +145,17 @@ const QuickMemoContent = ({ value, placeholder, className, previewClassName = ''
   );
 };
 
-const QuickMemoEditModal = ({ isOpen, title, value, onChange, onClose, onSave, isSaveDisabled }) => {
+const QuickMemoEditModal = ({
+  isOpen,
+  title,
+  value,
+  onChange,
+  onClose,
+  onSave,
+  onDelete,
+  isSaveDisabled,
+  isDeleteMode,
+}) => {
   const textareaRef = useRef(null);
 
   useEffect(() => {
@@ -218,13 +228,15 @@ const QuickMemoEditModal = ({ isOpen, title, value, onChange, onClose, onSave, i
           </button>
           <button
             type="button"
-            onClick={onSave}
-            disabled={isSaveDisabled}
+            onClick={isDeleteMode ? onDelete : onSave}
+            disabled={isDeleteMode ? false : isSaveDisabled}
             className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition ${
-              isSaveDisabled ? 'cursor-not-allowed bg-indigo-300' : 'bg-indigo-600 hover:bg-indigo-700'
+              isDeleteMode
+                ? 'bg-rose-600 hover:bg-rose-700'
+                : (isSaveDisabled ? 'cursor-not-allowed bg-indigo-300' : 'bg-indigo-600 hover:bg-indigo-700')
             }`}
           >
-            保存
+            {isDeleteMode ? '削除' : '保存'}
           </button>
         </div>
       </div>
@@ -360,6 +372,39 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     });
   }, [commitState]);
 
+  const deleteMemoById = useCallback((tabId) => {
+    if (!tabId) return;
+    const now = nowIso();
+
+    commitState((prev) => {
+      const exists = prev.tabs.some((t) => t.id === tabId);
+      if (!exists) return prev;
+
+      dirtyMemoIdsRef.current.delete(String(tabId));
+
+      // 0個にはしない（最後の1つは空欄にする）
+      if (prev.tabs.length <= 1) {
+        const only = prev.tabs[0] || { id: createMemoId(), title: '', content: '' };
+        const normalizedOnly = {
+          ...only,
+          content: '',
+          createdAt: only.createdAt || now,
+          updatedAt: now,
+          pinnedAt: only.pinnedAt || '',
+        };
+        return { ...prev, tabs: [normalizedOnly], activeTabId: normalizedOnly.id };
+      }
+
+      const remainingTabs = prev.tabs.filter((t) => t.id !== tabId);
+      const nextActive = remainingTabs[0] || remainingTabs[Math.max(0, remainingTabs.length - 1)];
+      return {
+        ...prev,
+        tabs: remainingTabs,
+        activeTabId: nextActive?.id || remainingTabs[0]?.id,
+      };
+    });
+  }, [commitState]);
+
   const saveModal = useCallback(() => {
     const text = normalizeText(modalDraft);
     const trimmed = text.trim();
@@ -392,7 +437,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
 
     if (!trimmed) {
       // 空欄は削除（ただし0個にはしない）
-      handleBlurMemo(tabId);
+      deleteMemoById(tabId);
       closeModal();
       return;
     }
@@ -410,7 +455,17 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     });
 
     closeModal();
-  }, [closeModal, commitState, handleBlurMemo, modalDraft, modalMode, modalTabId]);
+  }, [closeModal, commitState, deleteMemoById, modalDraft, modalMode, modalTabId]);
+
+  const deleteModal = useCallback(() => {
+    const tabId = modalTabId;
+    if (!tabId) {
+      closeModal();
+      return;
+    }
+    deleteMemoById(tabId);
+    closeModal();
+  }, [closeModal, deleteMemoById, modalTabId]);
 
   // 互換: 既存の + ボタンは addMemo() を呼んでいるので、モーダルを開く動作に置き換える
   const addMemo = useCallback(() => {
@@ -604,6 +659,8 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
         onChange={setModalDraft}
         onClose={closeModal}
         onSave={saveModal}
+        onDelete={deleteModal}
+        isDeleteMode={modalMode === 'edit' && modalDraft.trim() === ''}
         isSaveDisabled={modalMode === 'new' ? modalDraft.trim() === '' : false}
       />
 
