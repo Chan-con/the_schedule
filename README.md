@@ -74,6 +74,41 @@ VITE_VAPID_PUBLIC_KEY=...
 
 	 - 「更新日時」を自動で管理したい場合はトリガーで `updated_at` を更新するなど調整してください。
 
+	 - **クイックメモ（付箋ボード）**
+		- 1ユーザーにつき1行で、`content` にメモ一覧（JSON文字列）を保存します。
+		- 現在の実装は `quick_memos.content` を丸ごと同期する方式です（検索/並べ替えはフロント側）。
+
+		```sql
+		create table public.quick_memos (
+		  user_id uuid primary key references auth.users(id) on delete cascade,
+		  content text not null default '',
+		  updated_at timestamptz not null default now()
+		);
+
+		alter table public.quick_memos enable row level security;
+
+		create policy "Read own quick memos"
+		  on public.quick_memos for select
+		  using (auth.uid() = user_id);
+
+		create policy "Insert own quick memos"
+		  on public.quick_memos for insert
+		  with check (auth.uid() = user_id);
+
+		create policy "Update own quick memos"
+		  on public.quick_memos for update
+		  using (auth.uid() = user_id)
+		  with check (auth.uid() = user_id);
+		```
+
+		- Supabase Realtime は `quick_memos` の変更を購読して、他端末/他ウィンドウに反映します。
+		- ⚠️ Supabase 側で **Realtime を有効化**していないと購読イベントが飛びません。
+			- Dashboard: Database → Replication → Realtime（テーブルごとにON / publicationへ追加）
+			- SQLで追加する場合（環境により publication 名が異なることがあります）:
+				```sql
+				alter publication supabase_realtime add table public.quick_memos;
+				```
+
 	 - **ループタイムライン（新機能）**
 	 	- 1ユーザーにつき状態を1行で持つ `loop_timeline_state` と、追加項目を持つ `loop_timeline_markers` を作成します（推奨スキーマ例）。
 	 	- `start_delay_minutes` は実装上は「開始する時刻の分（0〜59、空欄なら即時開始）」として扱います（列名は互換のため維持）。

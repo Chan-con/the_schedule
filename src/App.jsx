@@ -8,7 +8,6 @@ import CurrentDateTimeBar from './components/CurrentDateTimeBar';
 import ScheduleForm from './components/ScheduleForm';
 import TitleBar from './components/TitleBar';
 import SettingsModal from './components/SettingsModal';
-import QuickMemoPad from './components/QuickMemoPad';
 import CornerFloatingMenu from './components/CornerFloatingMenu';
 import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQuickMemo';
 import { supabase } from './lib/supabaseClient';
@@ -80,10 +79,6 @@ const DAILY_QUEST_SNAPSHOTS_STORAGE_KEY = 'dailyQuestSnapshotsV1';
 const DAILY_QUEST_TICK_MS = 30_000;
 const NOTE_ARCHIVE_FLAGS_STORAGE_KEY = 'noteArchiveFlagsV1';
 const NOTE_IMPORTANT_FLAGS_STORAGE_KEY = 'noteImportantFlagsV1';
-const MEMO_SPLIT_STORAGE_KEY = 'memoSplitRatio';
-const DEFAULT_MEMO_SPLIT_RATIO = 70;
-const MEMO_TIMELINE_MIN = 35;
-const MEMO_TIMELINE_MAX = 90;
 
 const buildNoteArchiveUserKey = (userId) => (userId ? `u:${userId}` : 'local');
 
@@ -125,13 +120,6 @@ const applyArchiveFlagsToNotes = (notes, flags) => {
     const archived = typeof explicit === 'boolean' ? explicit : !!safeFlags[String(id)];
     return { ...note, archived };
   });
-};
-
-const clampMemoSplitRatio = (value) => {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    return DEFAULT_MEMO_SPLIT_RATIO;
-  }
-  return Math.min(Math.max(value, MEMO_TIMELINE_MIN), MEMO_TIMELINE_MAX);
 };
 
 const rebalanceAllDayOrdersForDates = (schedules, dates) => {
@@ -553,8 +541,6 @@ function App() {
   const [mouseStart, setMouseStart] = useState(null);
   const [mouseEnd, setMouseEnd] = useState(null);
   const [isMouseDown, setIsMouseDown] = useState(false);
-  const [memoSplitRatio, setMemoSplitRatio] = useState(DEFAULT_MEMO_SPLIT_RATIO);
-  const [isMemoResizing, setIsMemoResizing] = useState(false);
   const [quickMemo, setQuickMemo] = useState('');
   const [isQuickMemoLoaded, setIsQuickMemoLoaded] = useState(false);
 
@@ -648,18 +634,6 @@ function App() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    const normalizeTitleKey = (value) => {
-      const trimmed = String(value ?? '').trim();
-      if (!trimmed) return '';
-      let normalized = trimmed;
-      try {
-        normalized = normalized.normalize('NFKC');
-      } catch {
-        // ignore
-      }
-      return normalized.toLowerCase();
-    };
 
     const parseDateStrFromSearch = () => {
       try {
@@ -818,35 +792,11 @@ function App() {
   }, []);
   const timelineRef = useRef(null);
   const mobileTimelineRef = useRef(null);
-  const memoResizeContextRef = useRef(null);
   
   // ハンバーガーメニューの開閉状態
   
   // 通知システム
   const { cancelScheduleNotifications, sendTestNotification } = useNotifications(notificationEntries);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const stored = window.localStorage.getItem(MEMO_SPLIT_STORAGE_KEY);
-      if (!stored) return;
-      const parsed = parseFloat(stored);
-      if (!Number.isNaN(parsed)) {
-        setMemoSplitRatio(clampMemoSplitRatio(parsed));
-      }
-    } catch (error) {
-      console.warn('⚠️ Failed to load memo split ratio:', error);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      window.localStorage.setItem(MEMO_SPLIT_STORAGE_KEY, String(memoSplitRatio));
-    } catch (error) {
-      console.warn('⚠️ Failed to persist memo split ratio:', error);
-    }
-  }, [memoSplitRatio]);
 
   const refreshFromSupabase = useCallback(
     async (actionType = 'supabase_resync', options = {}) => {
@@ -3399,38 +3349,6 @@ function App() {
     setQuickMemo(value);
   }, [setQuickMemo]);
 
-  const updateMemoSplitFromClientY = useCallback((clientY) => {
-    const context = memoResizeContextRef.current;
-    if (!context || !context.rect || typeof clientY !== 'number') return;
-    const { top, height } = context.rect;
-    if (!height) return;
-    const relative = ((clientY - top) / height) * 100;
-    setMemoSplitRatio((prev) => {
-      const next = clampMemoSplitRatio(relative);
-      return prev === next ? prev : next;
-    });
-  }, []);
-
-  const handleMemoResizeStart = useCallback((event, containerRef) => {
-    if (!containerRef?.current) return;
-    if ('button' in event && event.button !== 0) {
-      return;
-    }
-
-    const rect = containerRef.current.getBoundingClientRect();
-    if (!rect || !rect.height) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    memoResizeContextRef.current = { rect };
-    setIsMemoResizing(true);
-
-    const clientY = 'touches' in event ? event.touches?.[0]?.clientY : event.clientY;
-    if (typeof clientY === 'number') {
-      updateMemoSplitFromClientY(clientY);
-    }
-  }, [updateMemoSplitFromClientY]);
-
   // スワイプジェスチャーのハンドラー
   const handleTouchStart = (e) => {
     if (!e?.targetTouches || e.targetTouches.length === 0) return;
@@ -3520,42 +3438,6 @@ function App() {
       document.removeEventListener('touchend', onTouchEnd);
     };
   }, [handleMouseMove, handleMouseUp, handleTouchMoveResize, handleTouchEndResize, isDragging]);
-
-  useEffect(() => {
-    if (!isMemoResizing) return undefined;
-
-    const handleMove = (event) => {
-      const clientY = event.touches ? event.touches[0]?.clientY : event.clientY;
-      if (typeof clientY === 'number') {
-        if (event.cancelable) {
-          event.preventDefault();
-        }
-        updateMemoSplitFromClientY(clientY);
-      }
-    };
-
-    const stopResizing = () => {
-      setIsMemoResizing(false);
-      memoResizeContextRef.current = null;
-      document.body.style.userSelect = '';
-    };
-
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', stopResizing);
-    document.addEventListener('touchmove', handleMove, { passive: false });
-    document.addEventListener('touchend', stopResizing);
-    document.addEventListener('touchcancel', stopResizing);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', stopResizing);
-      document.removeEventListener('touchmove', handleMove);
-      document.removeEventListener('touchend', stopResizing);
-      document.removeEventListener('touchcancel', stopResizing);
-      document.body.style.userSelect = '';
-    };
-  }, [isMemoResizing, updateMemoSplitFromClientY]);
 
   // 日付クリック時の処理
   const handleDateClick = (date) => {
@@ -4217,75 +4099,47 @@ function App() {
                   onMouseLeave={handleMouseUpOnTimeline}
                 >
                   <div className="flex h-full flex-col gap-1 overflow-hidden" ref={mobileTimelineRef}>
-                    <div
-                      className="flex flex-col min-h-0 gap-2 overflow-hidden"
-                      style={{ flexGrow: memoSplitRatio, flexShrink: 1, flexBasis: 0 }}
-                    >
-                      <div className="flex-1 overflow-hidden">
-                        <Timeline 
-                          schedules={filteredSchedules} 
-                          selectedDate={selectedDate} 
-                          selectedDateStr={selectedDateStr}
-                          onEdit={handleEdit}
-                          onAdd={handleAdd}
-                          onAddTask={handleAddTask}
-                          onAddNote={handleAddNote}
-                          onUpdateNote={handleUpdateNote}
-                          onDeleteNote={handleDeleteNote}
-                          onToggleArchiveNote={handleToggleArchiveNote}
-                          onToggleImportantNote={handleToggleImportantNote}
-                          onCommitDraftNote={handleCommitDraftNote}
-                          canShareNotes={isAuthenticated}
-                          activeNoteId={activeNoteId}
-                          onActiveNoteIdChange={setActiveNoteId}
-                          onRequestCloseNote={handleRequestCloseNote}
-                          onScheduleUpdate={handleScheduleUpdate}
-                          onToggleTask={handleToggleTask}
-                          onScheduleDelete={handleScheduleDelete}
-                          activeTab={timelineActiveTab}
-                          onTabChange={setTimelineActiveTab}
-                          onClosePanel={closeTimeline}
-                          tasks={taskSchedules}
-                          notes={notes}
-                          canShareLoopTimeline={isAuthenticated}
-                          loopTimelineState={loopTimelineState}
-                          loopTimelineMarkers={loopTimelineMarkers}
-                          onLoopTimelineSaveState={handleLoopTimelineSaveState}
-                          onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
-                          onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
-                          onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
-                          dailyQuestTasks={dailyQuestTasks}
-                          onCreateQuestTask={handleCreateQuestTask}
-                          onToggleQuestTask={handleToggleQuestTask}
-                          onUpdateQuestTask={handleUpdateQuestTask}
-                          onDeleteQuestTask={handleDeleteQuestTask}
-                          onReorderQuestTasks={handleReorderQuestTasks}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-shrink-0 items-center justify-center">
-                      <div className="flex h-3 w-full max-w-[96px] items-center justify-center">
-                        <div
-                          className={`h-1 w-11 rounded-full transition-colors duration-200 ${
-                            isMemoResizing ? 'bg-indigo-500' : 'bg-gray-400 hover:bg-indigo-400'
-                          }`}
-                          role="separator"
-                          aria-label="タイムラインとメモの表示比率を変更"
-                          onMouseDown={(event) => handleMemoResizeStart(event, mobileTimelineRef)}
-                          onTouchStart={(event) => handleMemoResizeStart(event, mobileTimelineRef)}
-                          data-memo-handle
-                        />
-                      </div>
-                    </div>
-                    <div
-                      className="flex flex-col min-h-0 pb-2"
-                      style={{ flexGrow: Math.max(1, 100 - memoSplitRatio), flexShrink: 1, flexBasis: 0 }}
-                    >
-                      <QuickMemoPad
-                        value={quickMemo}
-                        onChange={handleQuickMemoChange}
-                        className="flex h-full flex-col"
-                        textareaClassName="flex-1"
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                      <Timeline 
+                        schedules={filteredSchedules} 
+                        selectedDate={selectedDate} 
+                        selectedDateStr={selectedDateStr}
+                        onEdit={handleEdit}
+                        onAdd={handleAdd}
+                        onAddTask={handleAddTask}
+                        onAddNote={handleAddNote}
+                        quickMemo={quickMemo}
+                        onQuickMemoChange={handleQuickMemoChange}
+                        onUpdateNote={handleUpdateNote}
+                        onDeleteNote={handleDeleteNote}
+                        onToggleArchiveNote={handleToggleArchiveNote}
+                        onToggleImportantNote={handleToggleImportantNote}
+                        onCommitDraftNote={handleCommitDraftNote}
+                        canShareNotes={isAuthenticated}
+                        activeNoteId={activeNoteId}
+                        onActiveNoteIdChange={setActiveNoteId}
+                        onRequestCloseNote={handleRequestCloseNote}
+                        onScheduleUpdate={handleScheduleUpdate}
+                        onToggleTask={handleToggleTask}
+                        onScheduleDelete={handleScheduleDelete}
+                        activeTab={timelineActiveTab}
+                        onTabChange={setTimelineActiveTab}
+                        onClosePanel={closeTimeline}
+                        tasks={taskSchedules}
+                        notes={notes}
+                        canShareLoopTimeline={isAuthenticated}
+                        loopTimelineState={loopTimelineState}
+                        loopTimelineMarkers={loopTimelineMarkers}
+                        onLoopTimelineSaveState={handleLoopTimelineSaveState}
+                        onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
+                        onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
+                        onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
+                        dailyQuestTasks={dailyQuestTasks}
+                        onCreateQuestTask={handleCreateQuestTask}
+                        onToggleQuestTask={handleToggleQuestTask}
+                        onUpdateQuestTask={handleUpdateQuestTask}
+                        onDeleteQuestTask={handleDeleteQuestTask}
+                        onReorderQuestTasks={handleReorderQuestTasks}
                       />
                     </div>
                   </div>
@@ -4347,75 +4201,47 @@ function App() {
               style={{ width: `${100 - splitRatio}%` }}
               ref={timelineRef}
             >
-              <div
-                className="flex flex-col min-h-0 gap-2 overflow-hidden"
-                style={{ flexGrow: memoSplitRatio, flexShrink: 1, flexBasis: 0 }}
-              >
-                <CurrentDateTimeBar />
-                <div className="flex-1 overflow-hidden">
-                  <Timeline 
-                    schedules={filteredSchedules} 
-                    selectedDate={selectedDate} 
-                    selectedDateStr={selectedDateStr}
-                    onEdit={handleEdit}
-                    onAdd={handleAdd}
-                    onAddTask={handleAddTask}
-                    onAddNote={handleAddNote}
-                    onUpdateNote={handleUpdateNote}
-                    onDeleteNote={handleDeleteNote}
-                    onToggleArchiveNote={handleToggleArchiveNote}
-                    onToggleImportantNote={handleToggleImportantNote}
-                    onCommitDraftNote={handleCommitDraftNote}
-                    canShareNotes={isAuthenticated}
-                    activeNoteId={activeNoteId}
-                    onActiveNoteIdChange={setActiveNoteId}
-                    onRequestCloseNote={handleRequestCloseNote}
-                    onScheduleUpdate={handleScheduleUpdate}
-                    onToggleTask={handleToggleTask}
-                    onScheduleDelete={handleScheduleDelete}
-                    activeTab={timelineActiveTab}
-                    onTabChange={setTimelineActiveTab}
-                    tasks={taskSchedules}
-                    notes={notes}
-                    canShareLoopTimeline={isAuthenticated}
-                    loopTimelineState={loopTimelineState}
-                    loopTimelineMarkers={loopTimelineMarkers}
-                    onLoopTimelineSaveState={handleLoopTimelineSaveState}
-                    onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
-                    onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
-                    onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
-                    dailyQuestTasks={dailyQuestTasks}
-                    onCreateQuestTask={handleCreateQuestTask}
-                    onToggleQuestTask={handleToggleQuestTask}
-                    onUpdateQuestTask={handleUpdateQuestTask}
-                    onDeleteQuestTask={handleDeleteQuestTask}
-                    onReorderQuestTasks={handleReorderQuestTasks}
-                  />
-                </div>
-              </div>
-              <div className="flex flex-shrink-0 items-center justify-center">
-                <div className="flex h-3 w-full max-w-[100px] items-center justify-center">
-                  <div
-                    className={`h-1 w-11 rounded-full transition-colors duration-200 ${
-                      isMemoResizing ? 'bg-indigo-500' : 'bg-gray-400 hover:bg-indigo-400'
-                    }`}
-                    role="separator"
-                    aria-label="タイムラインとメモの表示比率を変更"
-                    onMouseDown={(event) => handleMemoResizeStart(event, timelineRef)}
-                    onTouchStart={(event) => handleMemoResizeStart(event, timelineRef)}
-                    data-memo-handle
-                  />
-                </div>
-              </div>
-              <div
-                className="flex flex-col min-h-0"
-                style={{ flexGrow: Math.max(1, 100 - memoSplitRatio), flexShrink: 1, flexBasis: 0 }}
-              >
-                <QuickMemoPad
-                  value={quickMemo}
-                  onChange={handleQuickMemoChange}
-                  className="flex h-full flex-col"
-                  textareaClassName="flex-1"
+              <CurrentDateTimeBar />
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <Timeline 
+                  schedules={filteredSchedules} 
+                  selectedDate={selectedDate} 
+                  selectedDateStr={selectedDateStr}
+                  onEdit={handleEdit}
+                  onAdd={handleAdd}
+                  onAddTask={handleAddTask}
+                  onAddNote={handleAddNote}
+                  quickMemo={quickMemo}
+                  onQuickMemoChange={handleQuickMemoChange}
+                  onUpdateNote={handleUpdateNote}
+                  onDeleteNote={handleDeleteNote}
+                  onToggleArchiveNote={handleToggleArchiveNote}
+                  onToggleImportantNote={handleToggleImportantNote}
+                  onCommitDraftNote={handleCommitDraftNote}
+                  canShareNotes={isAuthenticated}
+                  activeNoteId={activeNoteId}
+                  onActiveNoteIdChange={setActiveNoteId}
+                  onRequestCloseNote={handleRequestCloseNote}
+                  onScheduleUpdate={handleScheduleUpdate}
+                  onToggleTask={handleToggleTask}
+                  onScheduleDelete={handleScheduleDelete}
+                  activeTab={timelineActiveTab}
+                  onTabChange={setTimelineActiveTab}
+                  tasks={taskSchedules}
+                  notes={notes}
+                  canShareLoopTimeline={isAuthenticated}
+                  loopTimelineState={loopTimelineState}
+                  loopTimelineMarkers={loopTimelineMarkers}
+                  onLoopTimelineSaveState={handleLoopTimelineSaveState}
+                  onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
+                  onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
+                  onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
+                  dailyQuestTasks={dailyQuestTasks}
+                  onCreateQuestTask={handleCreateQuestTask}
+                  onToggleQuestTask={handleToggleQuestTask}
+                  onUpdateQuestTask={handleUpdateQuestTask}
+                  onDeleteQuestTask={handleDeleteQuestTask}
+                  onReorderQuestTasks={handleReorderQuestTasks}
                 />
               </div>
             </div>

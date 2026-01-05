@@ -4,6 +4,7 @@ import TaskArea from './TaskArea';
 import NoteArea from './NoteArea';
 import LoopTimelineArea from './LoopTimelineArea';
 import QuestArea from './QuestArea';
+import QuickMemoBoard from './QuickMemoBoard';
 
 const isSchedulePast = (schedule, selectedDate) => {
 	if (!selectedDate) return false;
@@ -63,6 +64,8 @@ const Timeline = ({
 	onAdd,
 	onAddTask,
 	onAddNote,
+	quickMemo,
+	onQuickMemoChange,
 	onClosePanel,
 	onUpdateNote,
 	onDeleteNote,
@@ -102,6 +105,7 @@ const Timeline = ({
 	const [isAltPressed, setIsAltPressed] = useState(false);
 	const loopTimelineAreaRef = useRef(null);
 	const questAreaRef = useRef(null);
+	const quickMemoBoardRef = useRef(null);
 	const cardRef = useRef(null);
 	const timelineRef = useRef(null);
 	const headerRef = useRef(null);
@@ -134,9 +138,10 @@ const Timeline = ({
 		};
 	}, []);
 
-	const currentTab = ['timeline', 'tasks', 'notes', 'loop', 'quest'].includes(activeTab) ? activeTab : 'timeline';
+	const currentTab = ['timeline', 'tasks', 'notes', 'quickMemo', 'loop', 'quest'].includes(activeTab) ? activeTab : 'timeline';
 	const showTasks = currentTab === 'tasks';
 	const showNotes = currentTab === 'notes';
+	const showQuickMemo = currentTab === 'quickMemo';
 	const showLoopTimeline = currentTab === 'loop';
 	const showQuest = currentTab === 'quest';
 	const availableTasks = Array.isArray(tasks) ? tasks : [];
@@ -477,6 +482,29 @@ const Timeline = ({
 			),
 		},
 		{
+			key: 'quickMemo',
+			label: 'クイックメモ',
+			icon: (
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					className="h-5 w-5"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="2"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M4 4h12a2 2 0 0 1 2 2v12H6a2 2 0 0 1-2-2V4z" />
+					<path d="M18 8h2a2 2 0 0 1 2 2v10H8a2 2 0 0 1-2-2v-2" />
+					<path d="M7 7h8" />
+					<path d="M7 11h6" />
+					<path d="M7 15h5" />
+				</svg>
+			),
+		},
+		{
 			key: 'loop',
 			label: 'ループ',
 			icon: (
@@ -500,6 +528,8 @@ const Timeline = ({
 	];
 	const isAddDisabled = showLoopTimeline
 		? !(canShareLoopTimeline && typeof onLoopTimelineAddMarker === 'function')
+		: showQuickMemo
+			? !(typeof onQuickMemoChange === 'function')
 		: showTasks
 			? !onAddTask
 			: showNotes
@@ -511,6 +541,11 @@ const Timeline = ({
 	const handleAddClick = () => {
 		if (showLoopTimeline) {
 			loopTimelineAreaRef.current?.openCreate?.();
+			return;
+		}
+
+		if (showQuickMemo) {
+			quickMemoBoardRef.current?.addMemo?.();
 			return;
 		}
 
@@ -903,7 +938,7 @@ const Timeline = ({
 						}`}
 						onClick={handleAddClick}
 						disabled={isAddDisabled}
-						title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : showLoopTimeline ? '追加項目を追加' : showQuest ? 'クエストを追加' : '予定を追加'}
+						title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : showQuickMemo ? 'クイックメモを追加' : showLoopTimeline ? '追加項目を追加' : showQuest ? 'クエストを追加' : '予定を追加'}
 					>
 						<span className="text-lg font-semibold leading-none">＋</span>
 					</button>
@@ -944,6 +979,12 @@ const Timeline = ({
 						activeNoteId={activeNoteId}
 						onActiveNoteIdChange={onActiveNoteIdChange}
 						onRequestClose={onRequestCloseNote}
+					/>
+				) : showQuickMemo ? (
+					<QuickMemoBoard
+						ref={quickMemoBoardRef}
+						value={quickMemo}
+						onChange={onQuickMemoChange}
 					/>
 				) : showQuest ? (
 					<QuestArea
