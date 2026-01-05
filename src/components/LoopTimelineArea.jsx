@@ -30,63 +30,9 @@ const parseStartAtMs = (value) => {
   return Number.isNaN(t) ? null : t;
 };
 
-const requestLoopNotificationPermission = async () => {
-  if (typeof window === 'undefined') return false;
-  if (!('Notification' in window)) return false;
-  if (Notification.permission === 'granted') return true;
-  if (Notification.permission === 'denied') return false;
-  try {
-    const permission = await Notification.requestPermission();
-    return permission === 'granted';
-  } catch {
-    return false;
-  }
-};
-
-const showLoopAlert = (title) => {
-  const t = String(title || '').trim();
-  if (!t) return;
-
-  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-    try {
-      const notification = new Notification(t, {
-        icon: './icon.png',
-        badge: './icon.png',
-        requireInteraction: false,
-        tag: `loop-marker-${t}`,
-      });
-
-      notification.onclick = () => {
-        try {
-          window.focus();
-        } catch {
-          // ignore
-        }
-        try {
-          notification.close();
-        } catch {
-          // ignore
-        }
-      };
-      window.setTimeout(() => {
-        try {
-          notification.close();
-        } catch {
-          // ignore
-        }
-      }, 10000);
-      return;
-    } catch {
-      // fallthrough to alert
-    }
-  }
-
-  try {
-    window.alert(t);
-  } catch {
-    // ignore
-  }
-};
+// 通知は workers（push）に一本化するため、ループ画面からのローカル通知は送らない。
+// ループ通知（マーカー到達）は workers のcronが送信するpushに委ねる。
+const showLoopAlert = () => {};
 
 const DEFAULT_DURATION_MINUTES = 60;
 const DEFAULT_START_MINUTE = 0;
@@ -432,10 +378,6 @@ const LoopTimelineArea = React.forwardRef(({
 
   const handleStart = useCallback(async ({ forceImmediate = false } = {}) => {
     if (!canWrite) return;
-
-    // ループ通知（マーカー到達時）を出したいので、開始時に権限だけ確認しておく。
-    // 権限が無い場合でもタイマー自体は動かせる。
-    requestLoopNotificationPermission().catch(() => {});
 
     // paused の場合は、保存されている経過msから復帰（開始分は無視して即時）
     if (paused) {
