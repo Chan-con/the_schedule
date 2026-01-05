@@ -101,51 +101,13 @@ const normalizeForSearch = (value) => {
   return normalized.toLowerCase().replace(/\s+/g, ' ').trim();
 };
 
-const buildBigrams = (text) => {
-  const s = normalizeForSearch(text);
-  if (!s) return [];
-  const grams = [];
-  for (let i = 0; i < s.length - 1; i += 1) {
-    grams.push(s.slice(i, i + 2));
-  }
-  return grams;
-};
-
-const scoreFuzzy = (content, query) => {
+const matchesQuery = (content, query) => {
   const q = normalizeForSearch(query);
-  if (!q) return 0;
-
+  if (!q) return true;
   const c = normalizeForSearch(content);
-  if (!c) return 0;
-
-  const idx = c.indexOf(q);
-  if (idx >= 0) {
-    // 先頭に近いほど高得点
-    return 2000 - Math.min(1500, idx);
-  }
-
+  if (!c) return false;
   const tokens = q.split(' ').filter(Boolean);
-  let tokenScore = 0;
-  tokens.forEach((t) => {
-    if (!t) return;
-    if (c.includes(t)) tokenScore += 120;
-  });
-
-  const qGrams = buildBigrams(q);
-  const cGrams = buildBigrams(c);
-  if (qGrams.length === 0 || cGrams.length === 0) return tokenScore;
-
-  const qSet = new Set(qGrams);
-  const cSet = new Set(cGrams);
-  let overlap = 0;
-  qSet.forEach((g) => {
-    if (cSet.has(g)) overlap += 1;
-  });
-
-  const denom = Math.max(1, Math.min(qSet.size, cSet.size));
-  const bigramScore = Math.round((overlap / denom) * 800);
-
-  return tokenScore + bigramScore;
+  return tokens.every((t) => c.includes(t));
 };
 
 const toTime = (value) => {
@@ -457,7 +419,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
 
   useImperativeHandle(ref, () => ({ addMemo, openCreate, openEdit }), [addMemo, openCreate, openEdit]);
 
-  const handleChangeMemo = useCallback((tabId, nextContent) => {
+  const _handleChangeMemo = useCallback((tabId, nextContent) => {
     commitState((prev) => {
       const current = prev.tabs.find((t) => t.id === tabId);
       const currentContent = normalizeText(current?.content);
@@ -473,7 +435,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     });
   }, [commitState]);
 
-  const commitUpdatedAtOnBlur = useCallback((tabId) => {
+  const _commitUpdatedAtOnBlur = useCallback((tabId) => {
     const key = String(tabId);
     if (!dirtyMemoIdsRef.current.has(key)) return;
     const now = nowIso();
@@ -521,40 +483,57 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     });
   }, [onChange, onImmediatePersist]);
 
+  const searchQuery = useMemo(() => normalizeForSearch(query), [query]);
+  const isSearching = !!searchQuery;
+
   const sortedTabs = useMemo(() => {
     const tabs = Array.isArray(memoState.tabs) ? [...memoState.tabs] : [];
-    const q = normalizeForSearch(query);
-    const isSearching = !!q;
+    const q = searchQuery;
+    const localIsSearching = !!q;
 
-    const withScore = tabs.map((tab) => {
-      const score = q ? scoreFuzzy(tab?.content ?? '', q) : 0;
-      return { tab, score };
-    });
+    const filtered = localIsSearching
+      ? tabs.filter((tab) => matchesQuery(tab?.content ?? '', q))
+      : tabs;
 
-    withScore.sort((a, b) => {
-      if (!isSearching) {
-        const aPinned = !!normalizeIsoString(a.tab?.pinnedAt);
-        const bPinned = !!normalizeIsoString(b.tab?.pinnedAt);
+    filtered.sort((a, b) => {
+      // 検索中は「ピン留めを無視」して更新順で表示
+      if (!localIsSearching) {
+        const aPinned = !!normalizeIsoString(a?.pinnedAt);
+        const bPinned = !!normalizeIsoString(b?.pinnedAt);
         if (aPinned !== bPinned) return aPinned ? -1 : 1;
 
-        const pinnedDiff = toTime(b.tab?.pinnedAt) - toTime(a.tab?.pinnedAt);
+        const pinnedDiff = toTime(b?.pinnedAt) - toTime(a?.pinnedAt);
         if (pinnedDiff !== 0) return pinnedDiff;
-      } else {
-        const scoreDiff = (b.score || 0) - (a.score || 0);
-        if (scoreDiff !== 0) return scoreDiff;
       }
 
-      const updatedDiff = toTime(b.tab?.updatedAt) - toTime(a.tab?.updatedAt);
+      const updatedDiff = toTime(b?.updatedAt) - toTime(a?.updatedAt);
       if (updatedDiff !== 0) return updatedDiff;
-      const createdDiff = toTime(b.tab?.createdAt) - toTime(a.tab?.createdAt);
+      const createdDiff = toTime(b?.createdAt) - toTime(a?.createdAt);
       if (createdDiff !== 0) return createdDiff;
-      return String(b.tab?.id ?? '').localeCompare(String(a.tab?.id ?? ''));
+      return String(b?.id ?? '').localeCompare(String(a?.id ?? ''));
     });
 
-    return withScore.map((row) => row.tab);
-  }, [memoState.tabs, query]);
+    return filtered;
+  }, [memoState.tabs, searchQuery]);
 
-  const masonryColumns = useMemo(() => {
+  const { pinnedTabs, normalTabs } = useMemo(() => {
+    if (isSearching) {
+      return { pinnedTabs: [], normalTabs: sortedTabs };
+    }
+    const pinned = [];
+    const normal = [];
+    (Array.isArray(sortedTabs) ? sortedTabs : []).forEach((tab) => {
+      const pinnedAt = normalizeIsoString(tab?.pinnedAt);
+      if (pinnedAt) {
+        pinned.push(tab);
+      } else {
+        normal.push(tab);
+      }
+    });
+    return { pinnedTabs: pinned, normalTabs: normal };
+  }, [isSearching, sortedTabs]);
+
+  const buildMasonryColumns = useCallback((tabs, { lookahead = QUICK_MEMO_LOOKAHEAD } = {}) => {
     const count = Math.max(1, columnCount);
     const cols = Array.from({ length: count }, () => []);
     const heights = Array.from({ length: count }, () => 0);
@@ -566,7 +545,8 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
       return typeof measured === 'number' ? measured : estimateCardHeight(tab?.content, columnWidth);
     };
 
-    const queue = Array.isArray(sortedTabs) ? [...sortedTabs] : [];
+    const queue = Array.isArray(tabs) ? [...tabs] : [];
+    const safeLookahead = Math.max(1, Number.isFinite(lookahead) ? Math.floor(lookahead) : QUICK_MEMO_LOOKAHEAD);
 
     while (queue.length > 0) {
       // 一番短い列を探す
@@ -580,10 +560,10 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
       }
 
       // 直近の順序を大きく崩さない範囲で「背の高いカード」を優先
-      const lookahead = Math.min(queue.length, QUICK_MEMO_LOOKAHEAD);
+      const lookaheadCount = Math.min(queue.length, safeLookahead);
       let bestIdxInQueue = 0;
       let bestHeightOfItem = getHeight(queue[0]);
-      for (let i = 1; i < lookahead; i += 1) {
+      for (let i = 1; i < lookaheadCount; i += 1) {
         const h = getHeight(queue[i]);
         if (h > bestHeightOfItem) {
           bestHeightOfItem = h;
@@ -597,7 +577,23 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     }
 
     return cols;
-  }, [columnCount, columnWidth, heightVersion, sortedTabs]);
+  }, [columnCount, columnWidth]);
+
+  const masonryColumnsPinned = useMemo(
+    () => {
+      void heightVersion;
+      return buildMasonryColumns(pinnedTabs, { lookahead: 1 });
+    },
+    [buildMasonryColumns, pinnedTabs, heightVersion]
+  );
+
+  const masonryColumnsNormal = useMemo(
+    () => {
+      void heightVersion;
+      return buildMasonryColumns(normalTabs);
+    },
+    [buildMasonryColumns, normalTabs, heightVersion]
+  );
 
   return (
     <section className={`flex h-full min-h-0 flex-col overflow-hidden bg-white ${className}`}>
@@ -623,70 +619,155 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
 
       <div className="custom-scrollbar flex-1 overflow-y-auto px-4 pb-4 bg-white">
         <div ref={boardRef}>
-          <div className="flex items-start justify-start" style={{ gap: `${QUICK_MEMO_COLUMN_GAP}px` }}>
-            {masonryColumns.map((col, colIndex) => (
-              <div
-                key={`col-${colIndex}`}
-                className="flex flex-col"
-                style={{ width: `${columnWidth}px`, gap: `${QUICK_MEMO_COLUMN_GAP}px` }}
-              >
-                {col.map((tab) => {
-                  const tabId = tab?.id ?? null;
-                  if (!tabId) return null;
-                  const content = normalizeText(tab?.content);
-                  const isPinned = !!normalizeIsoString(tab?.pinnedAt);
-
-                  return (
-                    <div
-                      key={tabId}
-                      ref={(el) => registerCardEl(tabId, el)}
-                      className="relative break-inside-avoid rounded-lg border border-amber-200 bg-amber-50/70 p-3 shadow-sm"
-                      onDoubleClick={() => openEdit(tabId)}
-                    >
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          togglePinMemo(tabId);
-                        }}
-                        style={{ padding: 0 }}
-                        className={`absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border bg-white/80 text-amber-700 transition hover:bg-white ${
-                          isPinned ? 'border-amber-300' : 'border-transparent opacity-60 hover:opacity-100'
-                        }`}
-                        aria-label={isPinned ? 'ピン留めを解除' : 'ピン留め'}
-                        title={isPinned ? 'ピン留め中（クリックで解除）' : 'クリックでピン留め'}
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-3 w-3"
-                        >
-                          <path d="M12 17v5" />
-                          <path d="M5 9l14 0" />
-                          <path d="M9 9V3h6v6" />
-                          <path d="M9 9l-2 4h10l-2-4" />
-                        </svg>
-                        <span className="sr-only">{isPinned ? 'ピン留め中' : '未ピン留め'}</span>
-                      </button>
-
-                      <QuickMemoContent
-                        value={content}
-                        placeholder="思いついたことを書き留めておけます"
-                        className="w-full overflow-hidden bg-transparent"
-                        previewClassName="min-h-[1.25rem] cursor-text whitespace-pre-wrap"
-                      />
-                    </div>
-                  );
-                })}
+          {!isSearching && pinnedTabs.length > 0 && (
+            <div className="mb-4">
+              <div className="mb-2 flex items-center gap-2 text-xs text-amber-600">
+                <span className="flex-1 h-px bg-amber-100" />
+                <span className="tracking-wide">ピン留め</span>
+                <span className="flex-1 h-px bg-amber-100" />
               </div>
-            ))}
-          </div>
+
+              <div className="flex items-start justify-start" style={{ gap: `${QUICK_MEMO_COLUMN_GAP}px` }}>
+                {masonryColumnsPinned.map((col, colIndex) => (
+                  <div
+                    key={`pinned-col-${colIndex}`}
+                    className="flex flex-col"
+                    style={{ width: `${columnWidth}px`, gap: `${QUICK_MEMO_COLUMN_GAP}px` }}
+                  >
+                    {col.map((tab) => {
+                      const tabId = tab?.id ?? null;
+                      if (!tabId) return null;
+                      const content = normalizeText(tab?.content);
+                      const isPinned = !!normalizeIsoString(tab?.pinnedAt);
+
+                      return (
+                        <div
+                          key={tabId}
+                          ref={(el) => registerCardEl(tabId, el)}
+                          className="relative break-inside-avoid rounded-lg border border-amber-200 bg-amber-50/70 p-3 shadow-sm"
+                          onDoubleClick={() => openEdit(tabId)}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              togglePinMemo(tabId);
+                            }}
+                            style={{ padding: 0 }}
+                            className={`absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border bg-white/80 text-amber-700 transition hover:bg-white ${
+                              isPinned ? 'border-amber-300' : 'border-transparent opacity-60 hover:opacity-100'
+                            }`}
+                            aria-label={isPinned ? 'ピン留めを解除' : 'ピン留め'}
+                            title={isPinned ? 'ピン留め中（クリックで解除）' : 'クリックでピン留め'}
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-3 w-3"
+                            >
+                              <path d="M12 17v5" />
+                              <path d="M5 9l14 0" />
+                              <path d="M9 9V3h6v6" />
+                              <path d="M9 9l-2 4h10l-2-4" />
+                            </svg>
+                            <span className="sr-only">{isPinned ? 'ピン留め中' : '未ピン留め'}</span>
+                          </button>
+
+                          <QuickMemoContent
+                            value={content}
+                            placeholder="思いついたことを書き留めておけます"
+                            className="w-full overflow-hidden bg-transparent"
+                            previewClassName="min-h-[1.25rem] cursor-text whitespace-pre-wrap"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+
+              {normalTabs.length > 0 && (
+                <div className="mt-4 flex items-center gap-2 text-xs text-gray-300">
+                  <span className="flex-1 h-px bg-gray-100" />
+                  <span className="tracking-wide">すべて</span>
+                  <span className="flex-1 h-px bg-gray-100" />
+                </div>
+              )}
+            </div>
+          )}
+
+          {(isSearching || pinnedTabs.length === 0 || normalTabs.length > 0) && (
+            <div className="flex items-start justify-start" style={{ gap: `${QUICK_MEMO_COLUMN_GAP}px` }}>
+              {masonryColumnsNormal.map((col, colIndex) => (
+                <div
+                  key={`col-${colIndex}`}
+                  className="flex flex-col"
+                  style={{ width: `${columnWidth}px`, gap: `${QUICK_MEMO_COLUMN_GAP}px` }}
+                >
+                  {col.map((tab) => {
+                    const tabId = tab?.id ?? null;
+                    if (!tabId) return null;
+                    const content = normalizeText(tab?.content);
+                    const isPinned = !!normalizeIsoString(tab?.pinnedAt);
+
+                    return (
+                      <div
+                        key={tabId}
+                        ref={(el) => registerCardEl(tabId, el)}
+                        className="relative break-inside-avoid rounded-lg border border-amber-200 bg-amber-50/70 p-3 shadow-sm"
+                        onDoubleClick={() => openEdit(tabId)}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            togglePinMemo(tabId);
+                          }}
+                          style={{ padding: 0 }}
+                          className={`absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border bg-white/80 text-amber-700 transition hover:bg-white ${
+                            isPinned ? 'border-amber-300' : 'border-transparent opacity-60 hover:opacity-100'
+                          }`}
+                          aria-label={isPinned ? 'ピン留めを解除' : 'ピン留め'}
+                          title={isPinned ? 'ピン留め中（クリックで解除）' : 'クリックでピン留め'}
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-3 w-3"
+                          >
+                            <path d="M12 17v5" />
+                            <path d="M5 9l14 0" />
+                            <path d="M9 9V3h6v6" />
+                            <path d="M9 9l-2 4h10l-2-4" />
+                          </svg>
+                          <span className="sr-only">{isPinned ? 'ピン留め中' : '未ピン留め'}</span>
+                        </button>
+
+                        <QuickMemoContent
+                          value={content}
+                          placeholder="思いついたことを書き留めておけます"
+                          className="w-full overflow-hidden bg-transparent"
+                          previewClassName="min-h-[1.25rem] cursor-text whitespace-pre-wrap"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </section>
