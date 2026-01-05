@@ -344,6 +344,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
     >
       <div 
         className="settings-modal-content bg-white rounded-lg shadow-xl w-96 max-w-[90vw]"
+        style={{ colorScheme: 'light' }}
         onWheel={handleModalWheel}
       >
         {/* ヘッダー */}
@@ -430,6 +431,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
                   type="radio"
                   name="voltModifierKey"
                   value="ctrlOrCmd"
+                  className="accent-indigo-600"
                   checked={voltModifierKey === 'ctrlOrCmd'}
                   onChange={() => setVoltModifierKey('ctrlOrCmd')}
                 />
@@ -440,6 +442,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
                   type="radio"
                   name="voltModifierKey"
                   value="alt"
+                  className="accent-indigo-600"
                   checked={voltModifierKey === 'alt'}
                   onChange={() => setVoltModifierKey('alt')}
                 />
