@@ -82,6 +82,7 @@ const Timeline = ({
 	onTabChange,
 	tasks = [],
 	notes = [],
+	onTabNote,
 	onCommitDraftNote,
 	loopTimelineState,
 	loopTimelineMarkers,
@@ -979,6 +980,7 @@ const Timeline = ({
 						activeNoteId={activeNoteId}
 						onActiveNoteIdChange={onActiveNoteIdChange}
 						onRequestClose={onRequestCloseNote}
+						onTabNote={onTabNote}
 					/>
 				) : showQuickMemo ? (
 					<QuickMemoBoard

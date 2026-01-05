@@ -550,6 +550,7 @@ function App() {
   const [calendarDailyQuestSnapshots, setCalendarDailyQuestSnapshots] = useState(() => []);
   const [activeNoteId, setActiveNoteId] = useState(null);
   const [sharedNoteId, setSharedNoteId] = useState(null);
+  const [tabbedNoteIds, setTabbedNoteIds] = useState(() => []);
   const noteLinkReturnStateRef = useRef(null);
   const noteLinkBackStackRef = useRef([]);
   const noteLinkNavIsBackRef = useRef(false);
@@ -593,6 +594,44 @@ function App() {
     },
     [isMobile]
   );
+
+    useEffect(() => {
+      // タブ化したノートが削除された等で一覧から消えた場合は、タブも掃除する
+      setTabbedNoteIds((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        if (list.length === 0) return list;
+        const existingIds = new Set((Array.isArray(notesRef.current) ? notesRef.current : []).map((n) => n?.id ?? null).filter((v) => v != null));
+        const next = list.filter((id) => existingIds.has(id));
+        return next.length === list.length ? list : next;
+      });
+    }, [notes]);
+
+    const tabbedNotes = useMemo(() => {
+      const ids = Array.isArray(tabbedNoteIds) ? tabbedNoteIds : [];
+      if (ids.length === 0) return [];
+      const list = Array.isArray(notes) ? notes : [];
+      const map = new Map(list.map((n) => [n?.id ?? null, n]));
+      return ids.map((id) => map.get(id) || { id, title: 'ノート' }).filter(Boolean);
+    }, [notes, tabbedNoteIds]);
+
+    const handleTabNote = useCallback((note) => {
+      const noteId = note?.id ?? null;
+      if (noteId == null) return;
+      setTabbedNoteIds((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        if (list.includes(noteId)) return list;
+        return [...list, noteId];
+      });
+    }, []);
+
+    const handleRestoreTabbedNote = useCallback(
+      (noteId) => {
+        if (noteId == null) return;
+        setTabbedNoteIds((prev) => (Array.isArray(prev) ? prev.filter((id) => id !== noteId) : []));
+        openSharedNote(noteId);
+      },
+      [openSharedNote]
+    );
 
   const calendarDailyQuestCrownsByDate = useMemo(() => {
     const map = {};
@@ -4127,6 +4166,7 @@ function App() {
                         onClosePanel={closeTimeline}
                         tasks={taskSchedules}
                         notes={notes}
+                        onTabNote={handleTabNote}
                         canShareLoopTimeline={isAuthenticated}
                         loopTimelineState={loopTimelineState}
                         loopTimelineMarkers={loopTimelineMarkers}
@@ -4229,6 +4269,7 @@ function App() {
                   onTabChange={setTimelineActiveTab}
                   tasks={taskSchedules}
                   notes={notes}
+                  onTabNote={handleTabNote}
                   canShareLoopTimeline={isAuthenticated}
                   loopTimelineState={loopTimelineState}
                   loopTimelineMarkers={loopTimelineMarkers}
@@ -4248,6 +4289,30 @@ function App() {
           </>
         )}
       </main>
+
+      {tabbedNotes.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-[60] flex items-end justify-start gap-px px-3 pl-16 pr-16">
+          {tabbedNotes.map((note) => {
+            const noteId = note?.id ?? null;
+            if (noteId == null) return null;
+            const rawTitle = typeof note?.title === 'string' ? note.title : '';
+            const title = rawTitle.trim() || '無題のノート';
+            const tabTitle = title.length > 6 ? `${title.slice(0, 6)}…` : title;
+            return (
+              <button
+                key={String(noteId)}
+                type="button"
+                onClick={() => handleRestoreTabbedNote(noteId)}
+                className="inline-flex max-w-[160px] items-center gap-2 rounded-t-lg rounded-b-none border border-b-0 border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm hover:bg-indigo-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                title={title}
+                aria-label={`タブ: ${title}`}
+              >
+                <span className="truncate">{tabTitle}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <CornerFloatingMenu
         enabled={isMobile && !showSettings && !showForm}
