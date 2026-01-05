@@ -395,6 +395,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
   const sortedTabs = useMemo(() => {
     const tabs = Array.isArray(memoState.tabs) ? [...memoState.tabs] : [];
     const q = normalizeForSearch(query);
+    const isSearching = !!q;
 
     const withScore = tabs.map((tab) => {
       const score = q ? scoreFuzzy(tab?.content ?? '', q) : 0;
@@ -402,14 +403,14 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     });
 
     withScore.sort((a, b) => {
-      const aPinned = !!normalizeIsoString(a.tab?.pinnedAt);
-      const bPinned = !!normalizeIsoString(b.tab?.pinnedAt);
-      if (aPinned !== bPinned) return aPinned ? -1 : 1;
+      if (!isSearching) {
+        const aPinned = !!normalizeIsoString(a.tab?.pinnedAt);
+        const bPinned = !!normalizeIsoString(b.tab?.pinnedAt);
+        if (aPinned !== bPinned) return aPinned ? -1 : 1;
 
-      const pinnedDiff = toTime(b.tab?.pinnedAt) - toTime(a.tab?.pinnedAt);
-      if (pinnedDiff !== 0) return pinnedDiff;
-
-      if (q) {
+        const pinnedDiff = toTime(b.tab?.pinnedAt) - toTime(a.tab?.pinnedAt);
+        if (pinnedDiff !== 0) return pinnedDiff;
+      } else {
         const scoreDiff = (b.score || 0) - (a.score || 0);
         if (scoreDiff !== 0) return scoreDiff;
       }
