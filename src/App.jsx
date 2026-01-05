@@ -3386,6 +3386,11 @@ function App() {
     setQuickMemo(value);
   }, [setQuickMemo]);
 
+  const handleQuickMemoImmediatePersist = useCallback((value) => {
+    if (!userId) return;
+    persistQuickMemoToSupabase(value).catch(() => {});
+  }, [persistQuickMemoToSupabase, userId]);
+
   // スワイプジェスチャーのハンドラー
   const handleTouchStart = (e) => {
     if (!e?.targetTouches || e.targetTouches.length === 0) return;
@@ -4145,6 +4150,7 @@ function App() {
                         onAddNote={handleAddNote}
                         quickMemo={quickMemo}
                         onQuickMemoChange={handleQuickMemoChange}
+                        onQuickMemoImmediatePersist={handleQuickMemoImmediatePersist}
                         onUpdateNote={handleUpdateNote}
                         onDeleteNote={handleDeleteNote}
                         onToggleArchiveNote={handleToggleArchiveNote}
@@ -4249,6 +4255,7 @@ function App() {
                   onAddNote={handleAddNote}
                   quickMemo={quickMemo}
                   onQuickMemoChange={handleQuickMemoChange}
+                  onQuickMemoImmediatePersist={handleQuickMemoImmediatePersist}
                   onUpdateNote={handleUpdateNote}
                   onDeleteNote={handleDeleteNote}
                   onToggleArchiveNote={handleToggleArchiveNote}

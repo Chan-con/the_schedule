@@ -66,6 +66,7 @@ const Timeline = ({
 	onAddNote,
 	quickMemo,
 	onQuickMemoChange,
+	onQuickMemoImmediatePersist,
 	onClosePanel,
 	onUpdateNote,
 	onDeleteNote,
@@ -987,6 +988,7 @@ const Timeline = ({
 						ref={quickMemoBoardRef}
 						value={quickMemo}
 						onChange={onQuickMemoChange}
+						onImmediatePersist={onQuickMemoImmediatePersist}
 					/>
 				) : showQuest ? (
 					<QuestArea

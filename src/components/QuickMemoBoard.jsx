@@ -249,7 +249,7 @@ const QuickMemoContent = ({
   );
 };
 
-const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, ref) => {
+const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, className = '' }, ref) => {
   const [memoState, setMemoState] = useState(() => normalizeMemoTabsState(value));
   const [query, setQuery] = useState('');
   const lastEmittedRef = useRef(null);
@@ -365,9 +365,10 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
 
   const togglePinMemo = useCallback((tabId) => {
     const now = nowIso();
-    commitState((prev) => {
+    setMemoState((prev) => {
       const exists = prev.tabs.some((t) => t.id === tabId);
       if (!exists) return prev;
+
       const nextTabs = prev.tabs.map((tab) => {
         if (tab.id !== tabId) return tab;
         const pinnedAt = normalizeIsoString(tab.pinnedAt);
@@ -375,9 +376,21 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
         // ピン留めは並び順のためのメタ情報なので、updatedAtは更新しない
         return { ...tab, pinnedAt: nextPinnedAt };
       });
-      return { ...prev, tabs: nextTabs, activeTabId: tabId };
+
+      const nextState = { ...prev, tabs: nextTabs, activeTabId: tabId };
+
+      if (onChange) {
+        const serialized = serializeMemoTabsState(nextState);
+        lastEmittedRef.current = serialized;
+        onChange(serialized);
+        if (typeof onImmediatePersist === 'function') {
+          onImmediatePersist(serialized);
+        }
+      }
+
+      return nextState;
     });
-  }, [commitState]);
+  }, [onChange, onImmediatePersist]);
 
   const sortedTabs = useMemo(() => {
     const tabs = Array.isArray(memoState.tabs) ? [...memoState.tabs] : [];
