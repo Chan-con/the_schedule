@@ -98,8 +98,8 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
 
   const renderLine = (line, lineIndex) => {
     if (!line) {
-      // 空行の場合
-      return <br key={`br-${lineIndex}`} />;
+      // 空行の場合：ここでは <br> を出さない（外側の行区切り <br> に任せて二重改行を防ぐ）
+      return <span key={`empty-${lineIndex}`} />;
     }
 
     // URLを含むかチェック

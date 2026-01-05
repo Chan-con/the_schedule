@@ -151,97 +151,12 @@ const toTime = (value) => {
   return Number.isNaN(t) ? 0 : t;
 };
 
-const AutoGrowTextarea = ({ value, onChange, onBlur, onDoubleClick, placeholder, className, inputRef }) => {
-  const innerRef = useRef(null);
-  const ref = inputRef || innerRef;
-
-  const syncHeight = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = '0px';
-    el.style.height = `${Math.max(0, el.scrollHeight)}px`;
-  }, []);
-
-  useEffect(() => {
-    syncHeight();
-  }, [syncHeight, value]);
-
-  return (
-    <textarea
-      ref={ref}
-      value={value}
-      onChange={onChange}
-      onBlur={onBlur}
-      onDoubleClick={onDoubleClick}
-      placeholder={placeholder}
-      rows={1}
-      className={className}
-    />
-  );
-};
-
-const QuickMemoContent = ({
-  value,
-  onChange,
-  onBlur,
-  onDoubleClick,
-  placeholder,
-  className,
-  previewClassName = '',
-}) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const textareaRef = useRef(null);
-
-  useEffect(() => {
-    if (!isEditing) return;
-    const id = globalThis.requestAnimationFrame
-      ? globalThis.requestAnimationFrame(() => textareaRef.current?.focus())
-      : setTimeout(() => textareaRef.current?.focus(), 0);
-    return () => {
-      if (globalThis.cancelAnimationFrame && typeof id === 'number') {
-        globalThis.cancelAnimationFrame(id);
-      } else {
-        clearTimeout(id);
-      }
-    };
-  }, [isEditing]);
-
+const QuickMemoContent = ({ value, placeholder, className, previewClassName = '' }) => {
   const safeValue = typeof value === 'string' ? value : '';
   const hasContent = safeValue.trim() !== '';
 
-  if (isEditing) {
-    return (
-      <AutoGrowTextarea
-        inputRef={textareaRef}
-        value={safeValue}
-        onChange={onChange}
-        onBlur={(event) => {
-          setIsEditing(false);
-          if (onBlur) onBlur(event);
-        }}
-        onDoubleClick={onDoubleClick}
-        placeholder={placeholder}
-        className={className}
-      />
-    );
-  }
-
   return (
-    <div
-      className={`${className} ${previewClassName}`}
-      role="textbox"
-      tabIndex={0}
-      onClick={(event) => {
-        const anchor = event?.target?.closest?.('a');
-        if (anchor) return;
-        setIsEditing(true);
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        setIsEditing(true);
-      }}
-    >
+    <div className={`${className} ${previewClassName}`}>
       {hasContent
         ? <MemoWithLinks memo={safeValue} className="text-sm leading-relaxed text-slate-900" />
         : <span className="text-sm leading-relaxed text-slate-500">{placeholder}</span>}
@@ -249,9 +164,100 @@ const QuickMemoContent = ({
   );
 };
 
+const QuickMemoEditModal = ({ isOpen, title, value, onChange, onClose, onSave, isSaveDisabled }) => {
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleEsc = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+
+    document.body.classList.add('modal-open');
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleEsc);
+
+    const id = globalThis.requestAnimationFrame
+      ? globalThis.requestAnimationFrame(() => textareaRef.current?.focus())
+      : setTimeout(() => textareaRef.current?.focus(), 0);
+
+    return () => {
+      window.removeEventListener('keydown', handleEsc);
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+      if (globalThis.cancelAnimationFrame && typeof id === 'number') {
+        globalThis.cancelAnimationFrame(id);
+      } else {
+        clearTimeout(id);
+      }
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+      <div className="flex w-full max-w-xl max-h-[90svh] flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3">
+          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ padding: 0 }}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50"
+            aria-label="閉じる"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
+          <textarea
+            ref={textareaRef}
+            value={typeof value === 'string' ? value : ''}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="思いついたことを書き留めておけます"
+            className="w-full min-h-[40svh] resize-none rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/40"
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-gray-200 bg-white px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+          >
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={isSaveDisabled}
+            className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition ${
+              isSaveDisabled ? 'cursor-not-allowed bg-indigo-300' : 'bg-indigo-600 hover:bg-indigo-700'
+            }`}
+          >
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, className = '' }, ref) => {
   const [memoState, setMemoState] = useState(() => normalizeMemoTabsState(value));
   const [query, setQuery] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState('edit');
+  const [modalTabId, setModalTabId] = useState(null);
+  const [modalDraft, setModalDraft] = useState('');
   const lastEmittedRef = useRef(null);
   const dirtyMemoIdsRef = useRef(new Set());
 
@@ -288,35 +294,24 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     });
   }, [onChange]);
 
-  const addMemo = useCallback(() => {
-    const now = nowIso();
-    commitState((prev) => {
-      const newTab = { id: createMemoId(), title: '', content: '', createdAt: now, updatedAt: now, pinnedAt: '' };
-      return {
-        ...prev,
-        tabs: [newTab, ...prev.tabs],
-        activeTabId: newTab.id,
-      };
-    });
-  }, [commitState]);
+  const openCreate = useCallback(() => {
+    setModalMode('new');
+    setModalTabId(null);
+    setModalDraft('');
+    setIsModalOpen(true);
+  }, []);
 
-  useImperativeHandle(ref, () => ({ addMemo }), [addMemo]);
+  const openEdit = useCallback((tabId) => {
+    const target = memoState.tabs.find((t) => t.id === tabId);
+    setModalMode('edit');
+    setModalTabId(tabId);
+    setModalDraft(normalizeText(target?.content));
+    setIsModalOpen(true);
+  }, [memoState.tabs]);
 
-  const handleChangeMemo = useCallback((tabId, nextContent) => {
-    commitState((prev) => {
-      const current = prev.tabs.find((t) => t.id === tabId);
-      const currentContent = normalizeText(current?.content);
-      if (currentContent !== nextContent) {
-        dirtyMemoIdsRef.current.add(String(tabId));
-      }
-      const nextTabs = prev.tabs.map((tab) =>
-        tab.id === tabId
-          ? { ...tab, content: nextContent, createdAt: tab.createdAt || nowIso(), updatedAt: tab.updatedAt || tab.createdAt || '' }
-          : tab
-      );
-      return { ...prev, tabs: nextTabs, activeTabId: tabId };
-    });
-  }, [commitState]);
+  const closeModal = useCallback(() => {
+    setIsModalOpen(false);
+  }, []);
 
   const handleBlurMemo = useCallback((tabId) => {
     commitState((prev) => {
@@ -341,6 +336,81 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
         tabs: remainingTabs,
         activeTabId: nextActive?.id || remainingTabs[0]?.id,
       };
+    });
+  }, [commitState]);
+
+  const saveModal = useCallback(() => {
+    const text = normalizeText(modalDraft);
+    const trimmed = text.trim();
+
+    if (modalMode === 'new') {
+      if (!trimmed) {
+        closeModal();
+        return;
+      }
+
+      const now = nowIso();
+      commitState((prev) => {
+        const newTab = { id: createMemoId(), title: '', content: text, createdAt: now, updatedAt: now, pinnedAt: '' };
+        return {
+          ...prev,
+          tabs: [newTab, ...prev.tabs],
+          activeTabId: newTab.id,
+        };
+      });
+
+      closeModal();
+      return;
+    }
+
+    const tabId = modalTabId;
+    if (!tabId) {
+      closeModal();
+      return;
+    }
+
+    if (!trimmed) {
+      // 空欄は削除（ただし0個にはしない）
+      handleBlurMemo(tabId);
+      closeModal();
+      return;
+    }
+
+    const now = nowIso();
+    commitState((prev) => {
+      const exists = prev.tabs.some((t) => t.id === tabId);
+      if (!exists) return prev;
+      const nextTabs = prev.tabs.map((tab) =>
+        tab.id === tabId
+          ? { ...tab, content: text, createdAt: tab.createdAt || now, updatedAt: now }
+          : tab
+      );
+      return { ...prev, tabs: nextTabs, activeTabId: tabId };
+    });
+
+    closeModal();
+  }, [closeModal, commitState, handleBlurMemo, modalDraft, modalMode, modalTabId]);
+
+  // 互換: 既存の + ボタンは addMemo() を呼んでいるので、モーダルを開く動作に置き換える
+  const addMemo = useCallback(() => {
+    openCreate();
+  }, [openCreate]);
+
+  useImperativeHandle(ref, () => ({ addMemo, openCreate, openEdit }), [addMemo, openCreate, openEdit]);
+
+  const handleChangeMemo = useCallback((tabId, nextContent) => {
+    commitState((prev) => {
+      const current = prev.tabs.find((t) => t.id === tabId);
+      const currentContent = normalizeText(current?.content);
+      if (currentContent !== nextContent) {
+        dirtyMemoIdsRef.current.add(String(tabId));
+      }
+      const nextTabs = prev.tabs.map((tab) =>
+        tab.id === tabId
+          ? { ...tab, content: nextContent, createdAt: tab.createdAt || nowIso(), updatedAt: tab.updatedAt || tab.createdAt || '' }
+          : tab
+      );
+      return { ...prev, tabs: nextTabs, activeTabId: tabId };
     });
   }, [commitState]);
 
@@ -427,6 +497,16 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
 
   return (
     <section className={`flex h-full min-h-0 flex-col overflow-hidden bg-white ${className}`}>
+      <QuickMemoEditModal
+        isOpen={isModalOpen}
+        title={modalMode === 'new' ? 'クイックメモを追加' : 'クイックメモを編集'}
+        value={modalDraft}
+        onChange={setModalDraft}
+        onClose={closeModal}
+        onSave={saveModal}
+        isSaveDisabled={modalMode === 'new' ? modalDraft.trim() === '' : false}
+      />
+
       <div className="px-4 pt-3 pb-2 bg-white">
         <input
           type="text"
@@ -449,41 +529,44 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
               <div
                 key={tabId}
                 className="relative mb-3 break-inside-avoid rounded-lg border border-amber-200 bg-amber-50/70 p-3 shadow-sm"
-                onDoubleClick={() => togglePinMemo(tabId)}
+                onDoubleClick={() => openEdit(tabId)}
               >
-                {isPinned && (
-                  <div className="pointer-events-none absolute right-2 top-2 text-amber-700" aria-hidden="true" title="ピン留め中">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-4 w-4"
-                    >
-                      <path d="M12 17v5" />
-                      <path d="M5 9l14 0" />
-                      <path d="M9 9V3h6v6" />
-                      <path d="M9 9l-2 4h10l-2-4" />
-                    </svg>
-                    <span className="sr-only">ピン留め中</span>
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    togglePinMemo(tabId);
+                  }}
+                  style={{ padding: 0 }}
+                  className={`absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border bg-white/80 text-amber-700 transition hover:bg-white ${
+                    isPinned ? 'border-amber-300' : 'border-transparent opacity-60 hover:opacity-100'
+                  }`}
+                  aria-label={isPinned ? 'ピン留めを解除' : 'ピン留め'}
+                  title={isPinned ? 'ピン留め中（クリックで解除）' : 'クリックでピン留め'}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-3 w-3"
+                  >
+                    <path d="M12 17v5" />
+                    <path d="M5 9l14 0" />
+                    <path d="M9 9V3h6v6" />
+                    <path d="M9 9l-2 4h10l-2-4" />
+                  </svg>
+                  <span className="sr-only">{isPinned ? 'ピン留め中' : '未ピン留め'}</span>
+                </button>
+
                 <QuickMemoContent
                   value={content}
-                  onChange={(event) => handleChangeMemo(tabId, event?.target?.value ?? '')}
-                  onBlur={() => {
-                    handleBlurMemo(tabId);
-                    commitUpdatedAtOnBlur(tabId);
-                  }}
-                  onDoubleClick={(event) => {
-                    // textareaのダブルクリックは「単語選択」を優先
-                    event.stopPropagation();
-                  }}
                   placeholder="思いついたことを書き留めておけます"
-                  className="w-full resize-none overflow-hidden bg-transparent text-sm leading-relaxed text-slate-900 outline-none"
+                  className="w-full overflow-hidden bg-transparent"
                   previewClassName="min-h-[1.25rem] cursor-text whitespace-pre-wrap"
                 />
               </div>

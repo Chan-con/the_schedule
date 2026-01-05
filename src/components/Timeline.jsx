@@ -547,7 +547,7 @@ const Timeline = ({
 		}
 
 		if (showQuickMemo) {
-			quickMemoBoardRef.current?.addMemo?.();
+			quickMemoBoardRef.current?.openCreate?.();
 			return;
 		}
 
