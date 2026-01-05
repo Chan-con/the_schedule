@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, us
 import MemoWithLinks from './MemoWithLinks';
 
 const MEMO_TABS_VERSION = 1;
-const QUICK_MEMO_COLUMN_WIDTH = 220;
+const QUICK_MEMO_COLUMN_PREFERRED_WIDTH = 220;
 const QUICK_MEMO_COLUMN_GAP = 12;
 const QUICK_MEMO_LOOKAHEAD = 8;
 
@@ -154,13 +154,18 @@ const toTime = (value) => {
   return Number.isNaN(t) ? 0 : t;
 };
 
-const estimateCardHeight = (content) => {
+const estimateCardHeight = (content, columnWidth) => {
   const text = typeof content === 'string' ? content : '';
   if (!text) return 80;
+  const w = typeof columnWidth === 'number' && Number.isFinite(columnWidth) ? columnWidth : QUICK_MEMO_COLUMN_PREFERRED_WIDTH;
+  // padding(左右)ざっくり + スクロールバー等の余白を差し引いた幅
+  const usablePx = Math.max(120, w - 32);
+  // 1文字あたりの平均幅をざっくり7pxとして折返し行数を推定
+  const charsPerLine = Math.max(18, Math.floor(usablePx / 7));
   const lines = text.split('\n');
   const lineCount = Math.max(1, lines.length);
   const roughChars = text.length;
-  const wrappedLines = Math.ceil(roughChars / 34);
+  const wrappedLines = Math.ceil(roughChars / Math.max(1, charsPerLine));
   const effectiveLines = Math.max(lineCount, wrappedLines);
   return 56 + effectiveLines * 18;
 };
@@ -274,6 +279,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
   const [modalDraft, setModalDraft] = useState('');
   const boardRef = useRef(null);
   const [columnCount, setColumnCount] = useState(1);
+  const [columnWidth, setColumnWidth] = useState(QUICK_MEMO_COLUMN_PREFERRED_WIDTH);
   const itemHeightsRef = useRef(new Map());
   const [heightVersion, setHeightVersion] = useState(0);
   const lastEmittedRef = useRef(null);
@@ -287,9 +293,13 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
       const width = el.clientWidth || 0;
       const count = Math.max(
         1,
-        Math.floor((width + QUICK_MEMO_COLUMN_GAP) / (QUICK_MEMO_COLUMN_WIDTH + QUICK_MEMO_COLUMN_GAP))
+        Math.floor((width + QUICK_MEMO_COLUMN_GAP) / (QUICK_MEMO_COLUMN_PREFERRED_WIDTH + QUICK_MEMO_COLUMN_GAP))
       );
       setColumnCount((prev) => (prev === count ? prev : count));
+
+      const available = Math.max(0, width - QUICK_MEMO_COLUMN_GAP * Math.max(0, count - 1));
+      const nextColWidth = Math.max(160, Math.floor(available / count));
+      setColumnWidth((prev) => (prev === nextColWidth ? prev : nextColWidth));
     };
 
     update();
@@ -553,7 +563,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
       const id = String(tab?.id ?? '');
       if (!id) return estimateCardHeight(tab?.content);
       const measured = itemHeightsRef.current.get(id);
-      return typeof measured === 'number' ? measured : estimateCardHeight(tab?.content);
+      return typeof measured === 'number' ? measured : estimateCardHeight(tab?.content, columnWidth);
     };
 
     const queue = Array.isArray(sortedTabs) ? [...sortedTabs] : [];
@@ -587,7 +597,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     }
 
     return cols;
-  }, [columnCount, heightVersion, sortedTabs]);
+  }, [columnCount, columnWidth, heightVersion, sortedTabs]);
 
   return (
     <section className={`flex h-full min-h-0 flex-col overflow-hidden bg-white ${className}`}>
@@ -618,7 +628,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
               <div
                 key={`col-${colIndex}`}
                 className="flex flex-col"
-                style={{ width: `${QUICK_MEMO_COLUMN_WIDTH}px`, gap: `${QUICK_MEMO_COLUMN_GAP}px` }}
+                style={{ width: `${columnWidth}px`, gap: `${QUICK_MEMO_COLUMN_GAP}px` }}
               >
                 {col.map((tab) => {
                   const tabId = tab?.id ?? null;
