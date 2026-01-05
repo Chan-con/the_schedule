@@ -1585,7 +1585,7 @@ const Calendar = ({
 
       {/* Alt中のフロートメニュー（邪魔になりにくい: 右上固定） */}
       {isAltPressed && (
-        <div className="fixed right-3 top-3 z-[90] select-none">
+        <div className="fixed left-3 top-3 z-[90] select-none">
           <div className="rounded-xl border border-gray-200 bg-white/95 p-2 shadow-sm backdrop-blur">
             <div className="flex items-center gap-2">
               <div className="text-[11px] font-semibold text-gray-700">タスク操作</div>
