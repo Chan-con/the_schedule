@@ -339,14 +339,6 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
                 key={tabId}
                 className="relative mb-3 break-inside-avoid rounded-lg border border-amber-200 bg-amber-50/70 p-3 shadow-sm"
                 onDoubleClick={() => togglePinMemo(tabId)}
-                role="button"
-                tabIndex={0}
-                aria-label="クイックメモ"
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                  event.preventDefault();
-                  togglePinMemo(tabId);
-                }}
               >
                 {isPinned && (
                   <div className="pointer-events-none absolute right-2 top-2 text-amber-700" aria-hidden="true" title="ピン留め中">
