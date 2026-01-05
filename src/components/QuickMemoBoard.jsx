@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, us
 import MemoWithLinks from './MemoWithLinks';
 
 const MEMO_TABS_VERSION = 1;
+const QUICK_MEMO_COLUMN_WIDTH = 220;
+const QUICK_MEMO_COLUMN_GAP = 12;
+const QUICK_MEMO_LOOKAHEAD = 8;
 
 const createMemoId = () => {
   if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
@@ -151,6 +154,17 @@ const toTime = (value) => {
   return Number.isNaN(t) ? 0 : t;
 };
 
+const estimateCardHeight = (content) => {
+  const text = typeof content === 'string' ? content : '';
+  if (!text) return 80;
+  const lines = text.split('\n');
+  const lineCount = Math.max(1, lines.length);
+  const roughChars = text.length;
+  const wrappedLines = Math.ceil(roughChars / 34);
+  const effectiveLines = Math.max(lineCount, wrappedLines);
+  return 56 + effectiveLines * 18;
+};
+
 const QuickMemoContent = ({ value, placeholder, className, previewClassName = '' }) => {
   const safeValue = typeof value === 'string' ? value : '';
   const hasContent = safeValue.trim() !== '';
@@ -258,8 +272,43 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
   const [modalMode, setModalMode] = useState('edit');
   const [modalTabId, setModalTabId] = useState(null);
   const [modalDraft, setModalDraft] = useState('');
+  const boardRef = useRef(null);
+  const [columnCount, setColumnCount] = useState(1);
+  const itemHeightsRef = useRef(new Map());
+  const [heightVersion, setHeightVersion] = useState(0);
   const lastEmittedRef = useRef(null);
   const dirtyMemoIdsRef = useRef(new Set());
+
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+
+    const update = () => {
+      const width = el.clientWidth || 0;
+      const count = Math.max(
+        1,
+        Math.floor((width + QUICK_MEMO_COLUMN_GAP) / (QUICK_MEMO_COLUMN_WIDTH + QUICK_MEMO_COLUMN_GAP))
+      );
+      setColumnCount((prev) => (prev === count ? prev : count));
+    };
+
+    update();
+    const ro = new ResizeObserver(() => update());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const registerCardEl = useCallback((tabId, el) => {
+    if (!tabId || !el) return;
+    const rect = el.getBoundingClientRect?.();
+    const next = rect?.height;
+    if (typeof next !== 'number' || !Number.isFinite(next)) return;
+    const rounded = Math.max(0, Math.round(next));
+    const prev = itemHeightsRef.current.get(String(tabId));
+    if (typeof prev === 'number' && Math.abs(prev - rounded) <= 1) return;
+    itemHeightsRef.current.set(String(tabId), rounded);
+    setHeightVersion((v) => v + 1);
+  }, []);
 
   useEffect(() => {
     const lastEmitted = lastEmittedRef.current;
@@ -495,6 +544,51 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     return withScore.map((row) => row.tab);
   }, [memoState.tabs, query]);
 
+  const masonryColumns = useMemo(() => {
+    const count = Math.max(1, columnCount);
+    const cols = Array.from({ length: count }, () => []);
+    const heights = Array.from({ length: count }, () => 0);
+
+    const getHeight = (tab) => {
+      const id = String(tab?.id ?? '');
+      if (!id) return estimateCardHeight(tab?.content);
+      const measured = itemHeightsRef.current.get(id);
+      return typeof measured === 'number' ? measured : estimateCardHeight(tab?.content);
+    };
+
+    const queue = Array.isArray(sortedTabs) ? [...sortedTabs] : [];
+
+    while (queue.length > 0) {
+      // 一番短い列を探す
+      let targetCol = 0;
+      let minHeight = heights[0] ?? 0;
+      for (let i = 1; i < heights.length; i += 1) {
+        if (heights[i] < minHeight) {
+          minHeight = heights[i];
+          targetCol = i;
+        }
+      }
+
+      // 直近の順序を大きく崩さない範囲で「背の高いカード」を優先
+      const lookahead = Math.min(queue.length, QUICK_MEMO_LOOKAHEAD);
+      let bestIdxInQueue = 0;
+      let bestHeightOfItem = getHeight(queue[0]);
+      for (let i = 1; i < lookahead; i += 1) {
+        const h = getHeight(queue[i]);
+        if (h > bestHeightOfItem) {
+          bestHeightOfItem = h;
+          bestIdxInQueue = i;
+        }
+      }
+
+      const tab = queue.splice(bestIdxInQueue, 1)[0];
+      cols[targetCol].push(tab);
+      heights[targetCol] += Math.max(0, bestHeightOfItem);
+    }
+
+    return cols;
+  }, [columnCount, heightVersion, sortedTabs]);
+
   return (
     <section className={`flex h-full min-h-0 flex-col overflow-hidden bg-white ${className}`}>
       <QuickMemoEditModal
@@ -518,60 +612,71 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
       </div>
 
       <div className="custom-scrollbar flex-1 overflow-y-auto px-4 pb-4 bg-white">
-        <div className="[column-width:220px] [column-gap:12px]">
-          {sortedTabs.map((tab) => {
-            const tabId = tab?.id ?? null;
-            if (!tabId) return null;
-            const content = normalizeText(tab?.content);
-            const isPinned = !!normalizeIsoString(tab?.pinnedAt);
-
-            return (
+        <div ref={boardRef}>
+          <div className="flex items-start justify-start" style={{ gap: `${QUICK_MEMO_COLUMN_GAP}px` }}>
+            {masonryColumns.map((col, colIndex) => (
               <div
-                key={tabId}
-                className="relative mb-3 break-inside-avoid rounded-lg border border-amber-200 bg-amber-50/70 p-3 shadow-sm"
-                onDoubleClick={() => openEdit(tabId)}
+                key={`col-${colIndex}`}
+                className="flex flex-col"
+                style={{ width: `${QUICK_MEMO_COLUMN_WIDTH}px`, gap: `${QUICK_MEMO_COLUMN_GAP}px` }}
               >
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    togglePinMemo(tabId);
-                  }}
-                  style={{ padding: 0 }}
-                  className={`absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border bg-white/80 text-amber-700 transition hover:bg-white ${
-                    isPinned ? 'border-amber-300' : 'border-transparent opacity-60 hover:opacity-100'
-                  }`}
-                  aria-label={isPinned ? 'ピン留めを解除' : 'ピン留め'}
-                  title={isPinned ? 'ピン留め中（クリックで解除）' : 'クリックでピン留め'}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-3 w-3"
-                  >
-                    <path d="M12 17v5" />
-                    <path d="M5 9l14 0" />
-                    <path d="M9 9V3h6v6" />
-                    <path d="M9 9l-2 4h10l-2-4" />
-                  </svg>
-                  <span className="sr-only">{isPinned ? 'ピン留め中' : '未ピン留め'}</span>
-                </button>
+                {col.map((tab) => {
+                  const tabId = tab?.id ?? null;
+                  if (!tabId) return null;
+                  const content = normalizeText(tab?.content);
+                  const isPinned = !!normalizeIsoString(tab?.pinnedAt);
 
-                <QuickMemoContent
-                  value={content}
-                  placeholder="思いついたことを書き留めておけます"
-                  className="w-full overflow-hidden bg-transparent"
-                  previewClassName="min-h-[1.25rem] cursor-text whitespace-pre-wrap"
-                />
+                  return (
+                    <div
+                      key={tabId}
+                      ref={(el) => registerCardEl(tabId, el)}
+                      className="relative break-inside-avoid rounded-lg border border-amber-200 bg-amber-50/70 p-3 shadow-sm"
+                      onDoubleClick={() => openEdit(tabId)}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          togglePinMemo(tabId);
+                        }}
+                        style={{ padding: 0 }}
+                        className={`absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border bg-white/80 text-amber-700 transition hover:bg-white ${
+                          isPinned ? 'border-amber-300' : 'border-transparent opacity-60 hover:opacity-100'
+                        }`}
+                        aria-label={isPinned ? 'ピン留めを解除' : 'ピン留め'}
+                        title={isPinned ? 'ピン留め中（クリックで解除）' : 'クリックでピン留め'}
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-3 w-3"
+                        >
+                          <path d="M12 17v5" />
+                          <path d="M5 9l14 0" />
+                          <path d="M9 9V3h6v6" />
+                          <path d="M9 9l-2 4h10l-2-4" />
+                        </svg>
+                        <span className="sr-only">{isPinned ? 'ピン留め中' : '未ピン留め'}</span>
+                      </button>
+
+                      <QuickMemoContent
+                        value={content}
+                        placeholder="思いついたことを書き留めておけます"
+                        className="w-full overflow-hidden bg-transparent"
+                        previewClassName="min-h-[1.25rem] cursor-text whitespace-pre-wrap"
+                      />
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       </div>
     </section>
