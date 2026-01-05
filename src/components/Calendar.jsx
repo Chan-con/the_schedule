@@ -1128,7 +1128,7 @@ const Calendar = ({
       onMouseDown={handleMiddleClick}
     >
       <div
-        className="flex justify-between items-center mb-2 md:mb-3 flex-shrink-0"
+        className="relative flex items-center mb-2 md:mb-3 flex-shrink-0"
         onDoubleClick={(event) => {
           if (isMobile) return;
           if (typeof onToggleWideMode !== 'function') return;
@@ -1157,6 +1157,17 @@ const Calendar = ({
             </svg>
           </button>
 
+          <button 
+            onClick={nextMonth}
+            className="text-gray-600 hover:text-white p-2 rounded-full bg-gray-100 hover:bg-indigo-500 transition-colors duration-200 shadow-sm"
+            aria-label="次の月"
+            title="次の月"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
           <button
             type="button"
             onClick={() => onSearchClick?.()}
@@ -1169,23 +1180,12 @@ const Calendar = ({
         </div>
         
         <h2 
-          className="text-base font-bold text-gray-800 cursor-pointer hover:text-indigo-600 transition-colors duration-200 select-none" 
+          className="absolute left-1/2 -translate-x-1/2 text-base font-bold text-gray-800 cursor-pointer hover:text-indigo-600 transition-colors duration-200 select-none" 
           onDoubleClick={goToCurrentMonth}
           title="ダブルクリックで今月に戻る"
         >
           {year}年{month + 1}月
         </h2>
-        
-        <button 
-          onClick={nextMonth}
-          className="text-gray-600 hover:text-white p-2 rounded-full bg-gray-100 hover:bg-indigo-500 transition-colors duration-200 shadow-sm"
-          aria-label="次の月"
-          title="次の月"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
       </div>
       
       <div className="grid grid-cols-7 gap-1 mb-1 md:mb-2 flex-shrink-0">
