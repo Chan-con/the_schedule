@@ -71,7 +71,7 @@ const getTaskKey = (task) => {
   return `task-${task?.name ?? 'unknown'}-${task?.date ?? 'no-date'}-${task?.time ?? 'no-time'}`;
 };
 
-const TaskArea = ({ tasks = [], onEdit, onToggleTask, onTaskDelete, isAltPressed = false }) => {
+const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
   const taskList = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
   const { incompleteTasks, completedTasks } = useMemo(() => {
@@ -107,21 +107,10 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask, onTaskDelete, isAltPressed
             onEdit(task);
           }
         }}
-        onContextMenu={(event) => {
-          if (!isAltPressed) return;
-          event.preventDefault();
-          event.stopPropagation();
-          if (onTaskDelete) {
-            onTaskDelete(task);
-          }
-        }}
       >
         <div className="flex items-start gap-3">
           <div className="flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              {isAltPressed && (
-                <span className="mr-1 text-xs" aria-hidden="true">⚡</span>
-              )}
               <span
                 className={`font-medium ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}
                 title={task?.name ? String(task.name) : '名称未設定のタスク'}

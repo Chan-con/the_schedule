@@ -28,7 +28,6 @@ const NoteArea = ({
   onToggleImportantNote,
   onCommitDraftNote,
   canShare = false,
-  isAltPressed = false,
   selectedDateStr = '',
   activeNoteId: controlledActiveNoteId,
   onActiveNoteIdChange,
@@ -146,14 +145,6 @@ const NoteArea = ({
         className={`border border-gray-200 rounded-lg bg-white shadow-sm transition hover:shadow-md ${
           isArchived ? 'opacity-70' : ''
         }`}
-        onContextMenu={(event) => {
-          if (!isAltPressed) return;
-          event.preventDefault();
-          event.stopPropagation();
-          if (onDeleteNote) {
-            onDeleteNote(note);
-          }
-        }}
       >
         <button
           type="button"
@@ -163,9 +154,6 @@ const NoteArea = ({
           <div className="flex items-start gap-3">
             <div className="flex-1 space-y-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                {isAltPressed && (
-                  <span className="mr-1 text-xs" aria-hidden="true">⚡</span>
-                )}
                 <span
                   className={`font-medium truncate ${isArchived ? 'text-gray-500' : 'text-gray-900'}`}
                   title={title.trim() ? title : '無題のノート'}

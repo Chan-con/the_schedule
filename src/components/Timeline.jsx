@@ -105,86 +105,12 @@ const Timeline = ({
 	const [draggedTimeInfo, setDraggedTimeInfo] = useState(null);
 	const [timeDragOverInfo, setTimeDragOverInfo] = useState(null);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
-	const [isAltPressed, setIsAltPressed] = useState(false);
-	const [voltModifierKey, setVoltModifierKey] = useState('ctrlOrCmd'); // 'ctrlOrCmd' | 'alt'
 	const loopTimelineAreaRef = useRef(null);
 	const questAreaRef = useRef(null);
 	const quickMemoBoardRef = useRef(null);
 	const cardRef = useRef(null);
 	const timelineRef = useRef(null);
 	const headerRef = useRef(null);
-
-	useEffect(() => {
-		try {
-			const storedVoltModifier = window.localStorage.getItem('voltModifierKey');
-			if (storedVoltModifier === 'alt' || storedVoltModifier === 'ctrlOrCmd') {
-				setVoltModifierKey(storedVoltModifier);
-			}
-		} catch {
-			// ignore
-		}
-
-		const updateFromStorage = () => {
-			try {
-				const stored = window.localStorage.getItem('voltModifierKey');
-				if (stored === 'alt' || stored === 'ctrlOrCmd') {
-					setVoltModifierKey(stored);
-				}
-			} catch {
-				// ignore
-			}
-		};
-
-		const handleVoltModifierChanged = (e) => {
-			const next = e?.detail?.value;
-			if (next === 'alt' || next === 'ctrlOrCmd') {
-				setVoltModifierKey(next);
-			} else {
-				updateFromStorage();
-			}
-		};
-
-		const handleStorage = (ev) => {
-			if (ev?.key === 'voltModifierKey') {
-				updateFromStorage();
-			}
-		};
-
-		const isVoltActive = (event) => {
-			if (!event) return false;
-			return voltModifierKey === 'alt' ? !!event.altKey : !!(event.ctrlKey || event.metaKey);
-		};
-
-		const handleKeyDown = (event) => {
-			if (isVoltActive(event)) {
-				setIsAltPressed(true);
-			}
-		};
-
-		const handleKeyUp = (event) => {
-			if (!isVoltActive(event)) {
-				setIsAltPressed(false);
-			}
-		};
-
-		const handleBlur = () => {
-			setIsAltPressed(false);
-		};
-
-		document.addEventListener('keydown', handleKeyDown);
-		document.addEventListener('keyup', handleKeyUp);
-		window.addEventListener('blur', handleBlur);
-		window.addEventListener('voltModifierKeyChanged', handleVoltModifierChanged);
-		window.addEventListener('storage', handleStorage);
-
-		return () => {
-			document.removeEventListener('keydown', handleKeyDown);
-			document.removeEventListener('keyup', handleKeyUp);
-			window.removeEventListener('blur', handleBlur);
-			window.removeEventListener('voltModifierKeyChanged', handleVoltModifierChanged);
-			window.removeEventListener('storage', handleStorage);
-		};
-	}, [voltModifierKey]);
 
 	const currentTab = ['timeline', 'tasks', 'notes', 'quickMemo', 'loop', 'quest'].includes(activeTab) ? activeTab : 'timeline';
 	const showTasks = currentTab === 'tasks';
@@ -655,22 +581,11 @@ const Timeline = ({
 				onDragLeave={handleAllDayDragLeave}
 				onDrop={(event) => handleAllDayDrop(event, index)}
 				onDoubleClick={() => onEdit && onEdit(schedule)}
-				onContextMenu={(event) => {
-					if (!isAltPressed) return;
-					event.preventDefault();
-					event.stopPropagation();
-					if (onScheduleDelete) {
-						onScheduleDelete(schedule);
-					}
-				}}
 			>
 				<span className="absolute inset-y-3 left-0 w-1 rounded-full bg-amber-400" aria-hidden="true" />
 				<div className="relative ml-3 flex flex-col gap-1">
 					<div className="flex items-start justify-between gap-2">
 						<div className="flex flex-wrap items-center gap-2">
-							{isAltPressed && (
-								<span className="mr-1 text-xs" aria-hidden="true">⚡</span>
-							)}
 							<span
 								className={`font-medium ${
 									isTaskItem && isCompleted ? 'text-slate-500 line-through' : isPast ? 'text-slate-500' : 'text-slate-900'
@@ -769,22 +684,11 @@ const Timeline = ({
 					onDragLeave={handleTimeDragLeave}
 					onDrop={(event) => handleTimeDrop(event, { timeKey, dropIndexInBucket: index })}
 					onDoubleClick={() => onEdit && onEdit(schedule)}
-					onContextMenu={(event) => {
-						if (!isAltPressed) return;
-						event.preventDefault();
-						event.stopPropagation();
-						if (onScheduleDelete) {
-							onScheduleDelete(schedule);
-						}
-					}}
 				>
 					<span className="absolute inset-y-3 left-0 w-1 rounded-full bg-indigo-300" aria-hidden="true" />
 					<div className="relative ml-2.5 flex flex-wrap items-start gap-3">
 						<div className="flex min-w-0 flex-1 flex-col gap-1">
 							<div className="flex flex-wrap items-center gap-2">
-								{isAltPressed && (
-									<span className="mr-1 text-xs" aria-hidden="true">⚡</span>
-								)}
 								<span
 									className={`min-w-0 break-words whitespace-normal font-medium ${
 										isTaskSchedule && isCompleted ? 'line-through text-slate-500' : 'text-slate-900'
@@ -1018,8 +922,6 @@ const Timeline = ({
 						tasks={availableTasks}
 						onEdit={onEdit}
 						onToggleTask={onToggleTask}
-						onTaskDelete={onScheduleDelete}
-						isAltPressed={isAltPressed}
 					/>
 				) : showNotes ? (
 					<NoteArea
@@ -1030,7 +932,6 @@ const Timeline = ({
 						onToggleImportantNote={onToggleImportantNote}
 						onCommitDraftNote={onCommitDraftNote}
 						canShare={canShareNotes}
-						isAltPressed={isAltPressed}
 						selectedDateStr={selectedDateStr}
 						activeNoteId={activeNoteId}
 						onActiveNoteIdChange={onActiveNoteIdChange}
