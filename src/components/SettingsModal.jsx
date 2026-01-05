@@ -14,6 +14,7 @@ import {
 const SettingsModal = ({ isOpen, onClose }) => {
   const auth = useAuth();
   const userId = auth?.user?.id || null;
+  const [voltModifierKey, setVoltModifierKey] = useState('ctrlOrCmd'); // 'ctrlOrCmd' | 'alt'
   const [shortcuts, setShortcuts] = useState({
     undo: 'Control+Z',
     redo: 'Control+Shift+Z',
@@ -85,6 +86,16 @@ const SettingsModal = ({ isOpen, onClose }) => {
       setShortcuts(JSON.parse(savedShortcuts));
     }
 
+    // Voltモードの修飾キー設定の読み込み
+    try {
+      const storedVoltModifier = localStorage.getItem('voltModifierKey');
+      if (storedVoltModifier === 'alt' || storedVoltModifier === 'ctrlOrCmd') {
+        setVoltModifierKey(storedVoltModifier);
+      }
+    } catch {
+      // ignore
+    }
+
     // モーダル開いている間は背景のスクロールを防止
     if (isOpen) {
       // より強力なスクロール防止
@@ -132,6 +143,14 @@ const SettingsModal = ({ isOpen, onClose }) => {
 
   const handleSave = async () => {
     localStorage.setItem('scheduleAppShortcuts', JSON.stringify(shortcuts));
+    try {
+      localStorage.setItem('voltModifierKey', voltModifierKey);
+      window.dispatchEvent(
+        new CustomEvent('voltModifierKeyChanged', { detail: { value: voltModifierKey } })
+      );
+    } catch {
+      // ignore
+    }
     onClose();
   };
 
@@ -400,6 +419,36 @@ const SettingsModal = ({ isOpen, onClose }) => {
                 </p>
               </div>
             )}
+          </div>
+
+          {/* Voltモード */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Voltモード（複数選択/一括移動）</h3>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="voltModifierKey"
+                  value="ctrlOrCmd"
+                  checked={voltModifierKey === 'ctrlOrCmd'}
+                  onChange={() => setVoltModifierKey('ctrlOrCmd')}
+                />
+                Ctrl / Cmd
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="voltModifierKey"
+                  value="alt"
+                  checked={voltModifierKey === 'alt'}
+                  onChange={() => setVoltModifierKey('alt')}
+                />
+                Alt
+              </label>
+              <p className="text-xs text-gray-600">
+                ブラウザのAlt系ショートカットと競合する場合は、Ctrl/Cmd を推奨します。
+              </p>
+            </div>
           </div>
 
           {/* ホットキー設定 */}

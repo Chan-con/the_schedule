@@ -74,6 +74,7 @@ const Calendar = ({
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [isAltPressed, setIsAltPressed] = useState(false);
+  const [voltModifierKey, setVoltModifierKey] = useState('ctrlOrCmd'); // 'ctrlOrCmd' | 'alt'
   const [selectedTaskIds, setSelectedTaskIds] = useState(() => new Set());
   const [altTaskBulkMode, setAltTaskBulkMode] = useState('aggregate'); // 'aggregate' | 'relative'
   const [altTaskActionMode, setAltTaskActionMode] = useState('move'); // 'move' | 'copy'
@@ -118,9 +119,50 @@ const Calendar = ({
       if (storedAction === 'move' || storedAction === 'copy') {
         setAltTaskActionMode(storedAction);
       }
+
+      const storedVoltModifier = window.localStorage.getItem('voltModifierKey');
+      if (storedVoltModifier === 'alt' || storedVoltModifier === 'ctrlOrCmd') {
+        setVoltModifierKey(storedVoltModifier);
+      }
     } catch {
       // ignore
     }
+  }, []);
+
+  useEffect(() => {
+    const updateFromStorage = () => {
+      try {
+        const stored = window.localStorage.getItem('voltModifierKey');
+        if (stored === 'alt' || stored === 'ctrlOrCmd') {
+          setVoltModifierKey(stored);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const handleChanged = (e) => {
+      const next = e?.detail?.value;
+      if (next === 'alt' || next === 'ctrlOrCmd') {
+        setVoltModifierKey(next);
+      } else {
+        updateFromStorage();
+      }
+    };
+
+    const handleStorage = (ev) => {
+      if (ev?.key === 'voltModifierKey') {
+        updateFromStorage();
+      }
+    };
+
+    window.addEventListener('voltModifierKeyChanged', handleChanged);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener('voltModifierKeyChanged', handleChanged);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   useEffect(() => {
@@ -375,16 +417,21 @@ const Calendar = ({
   // 終日予定の並び替えハンドラー
   // キーボードイベントの監視
   useEffect(() => {
+    const isVoltActive = (e) => {
+      if (!e) return false;
+      return voltModifierKey === 'alt' ? !!e.altKey : !!(e.ctrlKey || e.metaKey);
+    };
+
     const handleKeyDown = (e) => {
-      if (e.altKey && !isAltPressed) {
-        console.log('🔑 ALT key pressed');
+      if (isVoltActive(e) && !isAltPressed) {
+        console.log('🔑 VOLT modifier pressed');
         setIsAltPressed(true);
       }
     };
     
     const handleKeyUp = (e) => {
-      if (!e.altKey && isAltPressed) {
-        console.log('🔓 ALT key released');
+      if (!isVoltActive(e) && isAltPressed) {
+        console.log('🔓 VOLT modifier released');
         setIsAltPressed(false);
         clearTaskSelection();
       }
@@ -397,7 +444,7 @@ const Calendar = ({
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('keyup', handleKeyUp);
     };
-  }, [clearTaskSelection, isAltPressed]);
+  }, [clearTaskSelection, isAltPressed, voltModifierKey]);
 
   useEffect(() => {
     if (!isAltPressed) {

@@ -106,6 +106,7 @@ const Timeline = ({
 	const [timeDragOverInfo, setTimeDragOverInfo] = useState(null);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
 	const [isAltPressed, setIsAltPressed] = useState(false);
+	const [voltModifierKey, setVoltModifierKey] = useState('ctrlOrCmd'); // 'ctrlOrCmd' | 'alt'
 	const loopTimelineAreaRef = useRef(null);
 	const questAreaRef = useRef(null);
 	const quickMemoBoardRef = useRef(null);
@@ -114,14 +115,54 @@ const Timeline = ({
 	const headerRef = useRef(null);
 
 	useEffect(() => {
+		try {
+			const storedVoltModifier = window.localStorage.getItem('voltModifierKey');
+			if (storedVoltModifier === 'alt' || storedVoltModifier === 'ctrlOrCmd') {
+				setVoltModifierKey(storedVoltModifier);
+			}
+		} catch {
+			// ignore
+		}
+
+		const updateFromStorage = () => {
+			try {
+				const stored = window.localStorage.getItem('voltModifierKey');
+				if (stored === 'alt' || stored === 'ctrlOrCmd') {
+					setVoltModifierKey(stored);
+				}
+			} catch {
+				// ignore
+			}
+		};
+
+		const handleVoltModifierChanged = (e) => {
+			const next = e?.detail?.value;
+			if (next === 'alt' || next === 'ctrlOrCmd') {
+				setVoltModifierKey(next);
+			} else {
+				updateFromStorage();
+			}
+		};
+
+		const handleStorage = (ev) => {
+			if (ev?.key === 'voltModifierKey') {
+				updateFromStorage();
+			}
+		};
+
+		const isVoltActive = (event) => {
+			if (!event) return false;
+			return voltModifierKey === 'alt' ? !!event.altKey : !!(event.ctrlKey || event.metaKey);
+		};
+
 		const handleKeyDown = (event) => {
-			if (event.altKey) {
+			if (isVoltActive(event)) {
 				setIsAltPressed(true);
 			}
 		};
 
 		const handleKeyUp = (event) => {
-			if (!event.altKey) {
+			if (!isVoltActive(event)) {
 				setIsAltPressed(false);
 			}
 		};
@@ -133,13 +174,17 @@ const Timeline = ({
 		document.addEventListener('keydown', handleKeyDown);
 		document.addEventListener('keyup', handleKeyUp);
 		window.addEventListener('blur', handleBlur);
+		window.addEventListener('voltModifierKeyChanged', handleVoltModifierChanged);
+		window.addEventListener('storage', handleStorage);
 
 		return () => {
 			document.removeEventListener('keydown', handleKeyDown);
 			document.removeEventListener('keyup', handleKeyUp);
 			window.removeEventListener('blur', handleBlur);
+			window.removeEventListener('voltModifierKeyChanged', handleVoltModifierChanged);
+			window.removeEventListener('storage', handleStorage);
 		};
-	}, []);
+	}, [voltModifierKey]);
 
 	const currentTab = ['timeline', 'tasks', 'notes', 'quickMemo', 'loop', 'quest'].includes(activeTab) ? activeTab : 'timeline';
 	const showTasks = currentTab === 'tasks';
