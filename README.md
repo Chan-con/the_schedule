@@ -74,6 +74,49 @@ VITE_VAPID_PUBLIC_KEY=...
 
 	 - 「更新日時」を自動で管理したい場合はトリガーで `updated_at` を更新するなど調整してください。
 
+	 - **（推奨）パフォーマンス用インデックス**
+		- データが年単位で増える想定の場合、以下のインデックスを追加するとクエリが安定します（特に「月表示の範囲ロード」「未完了タスク一覧」「完了タスクのページング」「ノートのアーカイブ一覧」）。
+		- Supabase Dashboard の SQL Editor で実行してください。
+		- 実行結果が `Success. No rows returned` でも正常です（`CREATE INDEX` は行を返しません）。
+
+		```sql
+		-- schedules: range loads by date
+		create index if not exists idx_schedules_user_date
+		  on public.schedules (user_id, date);
+
+		-- schedules: task tab (active / incomplete tasks)
+		create index if not exists idx_schedules_user_task_incomplete_date
+		  on public.schedules (user_id, date)
+		  where is_task is true and completed is false;
+
+		-- schedules: completed tasks paging (updated_at desc + id desc)
+		create index if not exists idx_schedules_user_task_completed_updated_id
+		  on public.schedules (user_id, updated_at desc, id desc)
+		  where is_task is true and completed is true;
+
+		-- schedules: completed tasks in visible range
+		create index if not exists idx_schedules_user_task_completed_date
+		  on public.schedules (user_id, date)
+		  where is_task is true and completed is true;
+
+		-- notes: list by archived flag (updated_at desc + id desc)
+		create index if not exists idx_notes_user_archived_false_updated_id
+		  on public.notes (user_id, updated_at desc, id desc)
+		  where archived is false;
+
+		create index if not exists idx_notes_user_archived_true_updated_id
+		  on public.notes (user_id, updated_at desc, id desc)
+		  where archived is true;
+
+		-- notes: fetch by date (order updated_at desc)
+		create index if not exists idx_notes_user_date_updated
+		  on public.notes (user_id, date, updated_at desc);
+
+		-- notes: calendar dot dates (created_at range)
+		create index if not exists idx_notes_user_created_at
+		  on public.notes (user_id, created_at);
+		```
+
 	 - **クイックメモ（付箋ボード）**
 		- 1ユーザーにつき1行で、`content` にメモ一覧（JSON文字列）を保存します。
 		- 現在の実装は `quick_memos.content` を丸ごと同期する方式です（検索/並べ替えはフロント側）。
