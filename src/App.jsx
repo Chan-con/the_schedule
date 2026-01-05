@@ -4291,7 +4291,7 @@ function App() {
       </main>
 
       {tabbedNotes.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-[60] flex items-end justify-start gap-px px-3 pl-16 pr-16">
+        <div className="fixed bottom-0 left-0 right-0 z-[65] flex items-end justify-start gap-px px-3">
           {tabbedNotes.map((note) => {
             const noteId = note?.id ?? null;
             if (noteId == null) return null;
