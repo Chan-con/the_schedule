@@ -346,7 +346,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     setIsModalOpen(false);
   }, []);
 
-  const handleBlurMemo = useCallback((tabId) => {
+  const _handleBlurMemo = useCallback((tabId) => {
     commitState((prev) => {
       const target = prev.tabs.find((t) => t.id === tabId);
       const content = normalizeText(target?.content);
@@ -588,7 +588,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     return { pinnedTabs: pinned, normalTabs: normal };
   }, [isSearching, sortedTabs]);
 
-  const buildMasonryColumns = useCallback((tabs, { lookahead = QUICK_MEMO_LOOKAHEAD } = {}) => {
+  const buildMasonryColumns = useCallback((tabs, { lookahead = QUICK_MEMO_LOOKAHEAD, anchorFirst = true } = {}) => {
     const count = Math.max(1, columnCount);
     const cols = Array.from({ length: count }, () => []);
     const heights = Array.from({ length: count }, () => 0);
@@ -601,6 +601,20 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     };
 
     const queue = Array.isArray(tabs) ? [...tabs] : [];
+
+    // 1列レイアウトは“上から順番に”が一番わかりやすいので、背の高さ最適化はしない
+    if (count === 1) {
+      cols[0] = queue;
+      return cols;
+    }
+
+    // 先頭（= 新規/更新が一番新しいもの）を必ず左上の軸に固定する
+    if (anchorFirst && queue.length > 0) {
+      const first = queue.shift();
+      cols[0].push(first);
+      heights[0] += Math.max(0, getHeight(first));
+    }
+
     const safeLookahead = Math.max(1, Number.isFinite(lookahead) ? Math.floor(lookahead) : QUICK_MEMO_LOOKAHEAD);
 
     while (queue.length > 0) {
