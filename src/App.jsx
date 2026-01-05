@@ -40,7 +40,6 @@ import {
   fetchNoteDatesForUserInRange,
 } from './utils/supabaseNotes';
 import { clearDateHash, clearNoteHash, parseDateStrFromHash, parseNoteIdFromHash, setNoteHash } from './utils/noteShare';
-import { useNotifications } from './hooks/useNotifications';
 import { useHistory } from './hooks/useHistory';
 import { AuthContext } from './context/AuthContextBase';
 import {
@@ -834,8 +833,7 @@ function App() {
   
   // ハンバーガーメニューの開閉状態
   
-  // 通知システム
-  const { cancelScheduleNotifications, sendTestNotification } = useNotifications(notificationEntries);
+  // 通知は workers（push）に一本化
 
   const refreshFromSupabase = useCallback(
     async (actionType = 'supabase_resync', options = {}) => {
@@ -3527,8 +3525,6 @@ function App() {
       timestamp: new Date().toISOString(),
     }));
 
-    cancelScheduleNotifications(entry.id);
-
     const scheduleId = entry.id;
     const currentSchedules = schedulesRef.current;
     const optimisticSchedules = currentSchedules.filter((item) => item.id !== scheduleId);
@@ -3565,7 +3561,7 @@ function App() {
     } finally {
       endSupabaseJob(jobMeta);
     }
-  }, [beginSupabaseJob, cancelScheduleNotifications, commitSchedules, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, setSupabaseError, userId]);
 
   // 予定移動ハンドラー（ドラッグ&ドロップ用）
   const handleScheduleMove = useCallback((schedule, nextDate) => {
@@ -4376,7 +4372,6 @@ function App() {
               onSave={handleSave} 
               onClose={handleClose} 
               onDelete={editingSchedule?.id ? handleDelete : undefined}
-              sendTestNotification={sendTestNotification}
               onAfterCopy={isMobile ? closeTimeline : undefined}
             />
           </div>

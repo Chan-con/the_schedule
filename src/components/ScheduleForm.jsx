@@ -26,7 +26,7 @@ const createInitialFormData = (schedule) => {
   return base;
 };
 
-const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotification, onAfterCopy }) => {
+const ScheduleForm = ({ schedule, onSave, onClose, onDelete, onAfterCopy }) => {
   const [formData, setFormData] = useState(() => createInitialFormData(schedule));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [copyMode, setCopyMode] = useState(false);
@@ -480,7 +480,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
 
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label className="block text-gray-700 font-medium">通知設定</label>
+              <label className="block text-gray-700 font-medium">通知設定（Push通知）</label>
               {formData.notifications.length < MAX_NOTIFICATIONS && (
                 <button
                   type="button"
@@ -493,7 +493,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
             </div>
 
             <div className="text-xs text-gray-500 mb-3 p-2 bg-blue-50 rounded border border-blue-200">
-              💡 <strong>通知タイミング：</strong>
+              💡 <strong>通知タイミング（Push通知）：</strong>
               <br />• <strong>終日予定：</strong> 当日9:00に通知
               <br />• <strong>時間指定予定：</strong> 設定時間の指定分/時間/日前に通知
               <br />• <strong>1日前の場合：</strong> 終日予定なら前日9:00、時間指定なら同時刻の1日前
@@ -553,16 +553,6 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, sendTestNotificatio
                         に通知{isPast ? ' (過去)' : ''}
                       </div>
                       <div className="ml-auto flex flex-shrink-0 items-center gap-1">
-                        {sendTestNotification && !isPast && (
-                          <button
-                            type="button"
-                            onClick={() => sendTestNotification(formData, notification)}
-                            className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 bg-white p-1 rounded transition-colors duration-200 text-xs px-2"
-                            title="テスト通知"
-                          >
-                            📢
-                          </button>
-                        )}
                         <button
                           type="button"
                           onClick={() => removeNotification(index)}

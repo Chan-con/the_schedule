@@ -348,7 +348,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
         >
           {/* Push通知 */}
           <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Push通知（ブラウザを閉じても届く）</h3>
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Push通知（通知はこれのみ）</h3>
 
             {!pushStatus.supported ? (
               <p className="text-xs text-gray-600">
@@ -358,6 +358,10 @@ const SettingsModal = ({ isOpen, onClose }) => {
               <div className="space-y-2">
                 <p className="text-xs text-gray-600">
                   状態: {pushStatus.subscribed ? '有効' : '無効'} / 権限: {String(pushStatus.permission)}
+                </p>
+
+                <p className="text-xs text-gray-600">
+                  予定/タスク/ループの通知は workers からのPush通知で配信されます。Pushが無効だと通知は届きません。
                 </p>
 
                 {pushStatus.error && (
