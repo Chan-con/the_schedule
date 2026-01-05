@@ -1315,8 +1315,8 @@ const Calendar = ({
                               ? 'bg-yellow-100 text-yellow-600 hover:bg-yellow-200 cursor-grab'
                               : 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300 cursor-grab'
                             : isPast
-                              ? 'bg-blue-100 text-blue-600 hover:bg-blue-200 cursor-pointer'
-                              : 'bg-blue-200 text-blue-800 hover:bg-blue-300 cursor-pointer'}
+                              ? 'bg-blue-100 text-blue-600 hover:bg-blue-200 cursor-grab'
+                              : 'bg-blue-200 text-blue-800 hover:bg-blue-300 cursor-grab'}
                           ${isPast || isDimTask ? 'opacity-60' : ''}
                           ${isDraggedSchedule ? 'opacity-50' : ''}
                           ${isCustomDragging && isDraggedSchedule ? 'opacity-30 transform scale-95' : ''}
@@ -1385,7 +1385,7 @@ const Calendar = ({
                                 aria-checked={isTaskSelected}
                                 tabIndex={-1}
                                 className={
-                                  `inline-flex h-3 w-3 shrink-0 items-center justify-center rounded border text-[10px] leading-none ` +
+                                  `inline-flex h-3 w-3 shrink-0 items-center justify-center rounded border text-[10px] leading-none cursor-pointer ` +
                                   (isTaskSelected
                                     ? 'bg-amber-100 border-amber-500 text-amber-700'
                                     : 'bg-white border-amber-400 text-transparent')
@@ -1426,7 +1426,7 @@ const Calendar = ({
                               role="button"
                               tabIndex={-1}
                               aria-disabled={isAltPressed}
-                              className={`ml-1 inline-flex h-3 w-3 shrink-0 items-center justify-center rounded border p-0 text-[8px] leading-none transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'} ${isAltPressed ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
+                              className={`ml-1 inline-flex h-3 w-3 shrink-0 items-center justify-center rounded border p-0 text-[8px] leading-none transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'} ${isAltPressed ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'cursor-pointer'}`}
                               title={isAltPressed ? 'Alt中は無効' : (schedule.completed ? '完了済み' : '未完了')}
                               aria-label={isAltPressed ? 'Alt中は無効' : (schedule.completed ? '完了済み' : '未完了')}
                               onMouseDown={(event) => {
