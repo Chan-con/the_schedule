@@ -142,7 +142,7 @@ const Calendar = ({
   const selectedTasks = useMemo(() => {
     if (!selectedTaskIds || selectedTaskIds.size === 0) return [];
     return schedules
-      .filter((schedule) => schedule?.isTask && selectedTaskIds.has(String(schedule.id)));
+      .filter((schedule) => selectedTaskIds.has(String(schedule?.id ?? '')));
   }, [schedules, selectedTaskIds]);
 
   const toggleTaskSelection = useCallback((scheduleId) => {
@@ -673,12 +673,11 @@ const Calendar = ({
           const shouldBulkMove =
             isAltPressed &&
             hasSelection &&
-            draggedSchedule?.isTask &&
             (draggedId == null || selectedTaskIds.has(draggedId));
 
           if (shouldBulkMove && onScheduleUpdate) {
             const tasksToMove = schedules
-              .filter((schedule) => schedule?.isTask && selectedTaskIds.has(String(schedule.id)));
+              .filter((schedule) => selectedTaskIds.has(String(schedule?.id ?? '')));
 
             if (tasksToMove.length > 0) {
               const baseDraggedDate = draggedSchedule?.date;
@@ -1299,7 +1298,7 @@ const Calendar = ({
                         (!draggedSchedule?.allDay && !schedule.allDay && String(dragOverScheduleInfo?.timeKey ?? '') === String(schedule?.time ? schedule.time : ''))) &&
                       (dragOverScheduleInfo?.scheduleId ?? null) === (scheduleId ?? null);
                     const isDraggedSchedule = draggedScheduleId != null && scheduleId === draggedScheduleId;
-                    const isTaskSelected = !!(schedule?.isTask && scheduleId != null && selectedTaskIds.has(scheduleId));
+                    const isTaskSelected = !!(scheduleId != null && selectedTaskIds.has(scheduleId));
 
                     return (
                       <div
@@ -1379,44 +1378,36 @@ const Calendar = ({
                       >
                         <div className="flex items-center gap-1">
                           {isAltPressed && (
-                            schedule.isTask ? (
-                              <span
-                                role="checkbox"
-                                aria-checked={isTaskSelected}
-                                tabIndex={-1}
-                                className={
-                                  `inline-flex h-3 w-3 shrink-0 items-center justify-center rounded border text-[10px] leading-none cursor-pointer ` +
-                                  (isTaskSelected
-                                    ? 'bg-amber-100 border-amber-500 text-amber-700'
-                                    : 'bg-white border-amber-400 text-transparent')
-                                }
-                                title={isTaskSelected ? '選択中（Alt）' : '選択（Alt）'}
-                                aria-label={isTaskSelected ? '選択中（Alt）' : '選択（Alt）'}
-                                onMouseDown={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                }}
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  toggleTaskSelection(schedule.id);
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  toggleTaskSelection(schedule.id);
-                                }}
-                              >
-                                ✓
-                              </span>
-                            ) : (
-                              <span
-                                aria-hidden="true"
-                                className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded border border-amber-300 bg-amber-50"
-                                title="Alt"
-                              />
-                            )
+                            <span
+                              role="checkbox"
+                              aria-checked={isTaskSelected}
+                              tabIndex={-1}
+                              className={
+                                `inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[11px] leading-none cursor-pointer ` +
+                                (isTaskSelected
+                                  ? 'bg-amber-100 border-amber-500 text-amber-700'
+                                  : 'bg-white border-amber-400 text-transparent')
+                              }
+                              title={isTaskSelected ? '選択中（Alt）' : '選択（Alt）'}
+                              aria-label={isTaskSelected ? '選択中（Alt）' : '選択（Alt）'}
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                              }}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                toggleTaskSelection(schedule.id);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key !== 'Enter' && event.key !== ' ') return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                toggleTaskSelection(schedule.id);
+                              }}
+                            >
+                              ✓
+                            </span>
                           )}
                           <span className={`truncate pointer-events-none text-left text-[0.66rem] font-bold flex-1 ${schedule.isTask ? 'text-gray-700' : 'text-gray-800'}`}>
                             {displayText}
