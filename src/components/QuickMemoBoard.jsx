@@ -46,10 +46,11 @@ const normalizeMemoTabsState = (rawValue) => {
         const content = typeof tab.content === 'string' ? tab.content : '';
         const createdAt = normalizeIsoString(tab.createdAt || tab.created_at);
         const updatedAt = normalizeIsoString(tab.updatedAt || tab.updated_at);
-        return { id, title, content, createdAt, updatedAt };
+        const pinnedAt = normalizeIsoString(tab.pinnedAt || tab.pinned_at);
+        return { id, title, content, createdAt, updatedAt, pinnedAt };
       });
 
-    const safeTabs = tabs.length > 0 ? tabs : [{ id: createMemoId(), title: '', content: '', createdAt: nowIso(), updatedAt: nowIso() }];
+    const safeTabs = tabs.length > 0 ? tabs : [{ id: createMemoId(), title: '', content: '', createdAt: nowIso(), updatedAt: nowIso(), pinnedAt: '' }];
     const activeTabId =
       typeof parsed.activeTabId === 'string' && safeTabs.some((t) => t.id === parsed.activeTabId)
         ? parsed.activeTabId
@@ -65,7 +66,7 @@ const normalizeMemoTabsState = (rawValue) => {
   return {
     version: MEMO_TABS_VERSION,
     activeTabId: id,
-    tabs: [{ id, title: '', content: legacyContent, createdAt: now, updatedAt: now }],
+    tabs: [{ id, title: '', content: legacyContent, createdAt: now, updatedAt: now, pinnedAt: '' }],
   };
 };
 
@@ -79,6 +80,7 @@ const serializeMemoTabsState = (state) => {
       content: tab.content,
       createdAt: tab.createdAt || '',
       updatedAt: tab.updatedAt || '',
+      pinnedAt: tab.pinnedAt || '',
     })),
   });
 };
@@ -148,7 +150,7 @@ const toTime = (value) => {
   return Number.isNaN(t) ? 0 : t;
 };
 
-const AutoGrowTextarea = ({ value, onChange, onBlur, placeholder, className }) => {
+const AutoGrowTextarea = ({ value, onChange, onBlur, onDoubleClick, placeholder, className }) => {
   const ref = useRef(null);
 
   const syncHeight = useCallback(() => {
@@ -168,6 +170,7 @@ const AutoGrowTextarea = ({ value, onChange, onBlur, placeholder, className }) =
       value={value}
       onChange={onChange}
       onBlur={onBlur}
+      onDoubleClick={onDoubleClick}
       placeholder={placeholder}
       rows={1}
       className={className}
@@ -216,7 +219,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
   const addMemo = useCallback(() => {
     const now = nowIso();
     commitState((prev) => {
-      const newTab = { id: createMemoId(), title: '', content: '', createdAt: now, updatedAt: now };
+      const newTab = { id: createMemoId(), title: '', content: '', createdAt: now, updatedAt: now, pinnedAt: '' };
       return {
         ...prev,
         tabs: [newTab, ...prev.tabs],
@@ -249,7 +252,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
       if (prev.tabs.length <= 1) {
         const only = prev.tabs[0] || { id: createMemoId(), title: '', content: '' };
         const now = nowIso();
-        const normalizedOnly = { ...only, content: '', createdAt: only.createdAt || now, updatedAt: now };
+        const normalizedOnly = { ...only, content: '', createdAt: only.createdAt || now, updatedAt: now, pinnedAt: only.pinnedAt || '' };
         return { ...prev, tabs: [normalizedOnly], activeTabId: normalizedOnly.id };
       }
 
@@ -263,6 +266,22 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
     });
   }, [commitState]);
 
+  const togglePinMemo = useCallback((tabId) => {
+    const now = nowIso();
+    commitState((prev) => {
+      const exists = prev.tabs.some((t) => t.id === tabId);
+      if (!exists) return prev;
+      const nextTabs = prev.tabs.map((tab) => {
+        if (tab.id !== tabId) return tab;
+        const pinnedAt = normalizeIsoString(tab.pinnedAt);
+        const nextPinnedAt = pinnedAt ? '' : now;
+        // ピン留めは並び順のためのメタ情報なので、updatedAtは更新しない
+        return { ...tab, pinnedAt: nextPinnedAt };
+      });
+      return { ...prev, tabs: nextTabs, activeTabId: tabId };
+    });
+  }, [commitState]);
+
   const sortedTabs = useMemo(() => {
     const tabs = Array.isArray(memoState.tabs) ? [...memoState.tabs] : [];
     const q = normalizeForSearch(query);
@@ -273,6 +292,13 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
     });
 
     withScore.sort((a, b) => {
+      const aPinned = !!normalizeIsoString(a.tab?.pinnedAt);
+      const bPinned = !!normalizeIsoString(b.tab?.pinnedAt);
+      if (aPinned !== bPinned) return aPinned ? -1 : 1;
+
+      const pinnedDiff = toTime(b.tab?.pinnedAt) - toTime(a.tab?.pinnedAt);
+      if (pinnedDiff !== 0) return pinnedDiff;
+
       if (q) {
         const scoreDiff = (b.score || 0) - (a.score || 0);
         if (scoreDiff !== 0) return scoreDiff;
@@ -306,16 +332,50 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, className = '' }, re
             const tabId = tab?.id ?? null;
             if (!tabId) return null;
             const content = normalizeText(tab?.content);
+            const isPinned = !!normalizeIsoString(tab?.pinnedAt);
 
             return (
               <div
                 key={tabId}
-                className="mb-3 break-inside-avoid rounded-lg border border-amber-200 bg-amber-50/70 p-3 shadow-sm"
+                className="relative mb-3 break-inside-avoid rounded-lg border border-amber-200 bg-amber-50/70 p-3 shadow-sm"
+                onDoubleClick={() => togglePinMemo(tabId)}
+                role="button"
+                tabIndex={0}
+                aria-label="クイックメモ"
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  togglePinMemo(tabId);
+                }}
               >
+                {isPinned && (
+                  <div className="pointer-events-none absolute right-2 top-2 text-amber-700" aria-hidden="true" title="ピン留め中">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4"
+                    >
+                      <path d="M12 17v5" />
+                      <path d="M5 9l14 0" />
+                      <path d="M9 9V3h6v6" />
+                      <path d="M9 9l-2 4h10l-2-4" />
+                    </svg>
+                    <span className="sr-only">ピン留め中</span>
+                  </div>
+                )}
                 <AutoGrowTextarea
                   value={content}
                   onChange={(event) => handleChangeMemo(tabId, event?.target?.value ?? '')}
                   onBlur={() => handleBlurMemo(tabId)}
+                  onDoubleClick={(event) => {
+                    // textareaのダブルクリックは「単語選択」を優先
+                    event.stopPropagation();
+                  }}
                   placeholder="思いついたことを書き留めておけます"
                   className="w-full resize-none overflow-hidden bg-transparent text-sm leading-relaxed text-slate-900 outline-none"
                 />
