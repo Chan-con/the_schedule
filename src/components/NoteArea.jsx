@@ -36,6 +36,7 @@ const NoteArea = ({
 }) => {
   const [query, setQuery] = useState('');
   const [internalActiveNoteId, setInternalActiveNoteId] = useState(null);
+  const [tabbedNoteIds, setTabbedNoteIds] = useState([]);
 
   const resolvedActiveNoteId = controlledActiveNoteId !== undefined ? controlledActiveNoteId : internalActiveNoteId;
   const setActiveNoteId = useCallback(
@@ -88,6 +89,13 @@ const NoteArea = ({
       setActiveNoteId(null);
     }
   }, [controlledActiveNoteId, noteList, resolvedActiveNoteId, setActiveNoteId]);
+
+  useEffect(() => {
+    // タブ化したノートが削除された等で一覧から消えた場合は、タブも掃除する
+    if (!Array.isArray(tabbedNoteIds) || tabbedNoteIds.length === 0) return;
+    const existingIds = new Set((Array.isArray(noteList) ? noteList : []).map((n) => n?.id ?? null).filter((v) => v != null));
+    setTabbedNoteIds((prev) => (Array.isArray(prev) ? prev.filter((id) => existingIds.has(id)) : []));
+  }, [noteList, tabbedNoteIds]);
 
   const filteredNotes = useMemo(() => {
     const q = normalizeText(query).trim().toLowerCase();
@@ -199,6 +207,35 @@ const NoteArea = ({
     setActiveNoteId(null);
   }, [onRequestClose, resolvedActiveNoteId, setActiveNoteId]);
 
+  const handleTabify = useCallback(
+    (note) => {
+      const noteId = note?.id ?? null;
+      if (noteId == null) return;
+
+      setTabbedNoteIds((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        if (list.includes(noteId)) return list;
+        return [...list, noteId];
+      });
+    },
+    []
+  );
+
+  const tabbedNotes = useMemo(() => {
+    if (!Array.isArray(tabbedNoteIds) || tabbedNoteIds.length === 0) return [];
+    const map = new Map((Array.isArray(noteList) ? noteList : []).map((n) => [n?.id ?? null, n]));
+    return tabbedNoteIds.map((id) => map.get(id) || null).filter(Boolean);
+  }, [noteList, tabbedNoteIds]);
+
+  const handleRestoreFromTab = useCallback(
+    (noteId) => {
+      if (noteId == null) return;
+      setTabbedNoteIds((prev) => (Array.isArray(prev) ? prev.filter((id) => id !== noteId) : []));
+      setActiveNoteId(noteId);
+    },
+    [setActiveNoteId]
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
       <div className="px-4 pt-3 pb-2 bg-white">
@@ -263,8 +300,32 @@ const NoteArea = ({
         onToggleArchive={onToggleArchiveNote}
         onToggleImportant={onToggleImportantNote}
         onCommitDraft={onCommitDraftNote}
+        onTab={handleTabify}
         canShare={canShare}
       />
+
+      {tabbedNotes.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-[60] flex items-end justify-start gap-2 px-3">
+          {tabbedNotes.map((note) => {
+            const noteId = note?.id ?? null;
+            if (noteId == null) return null;
+            const title = normalizeText(note?.title).trim() || '無題のノート';
+            const tabTitle = title.length > 6 ? `${title.slice(0, 6)}…` : title;
+            return (
+              <button
+                key={noteId}
+                type="button"
+                onClick={() => handleRestoreFromTab(noteId)}
+                className="inline-flex max-w-[160px] items-center gap-2 rounded-t-lg rounded-b-none border border-b-0 border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm hover:bg-indigo-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                title={title}
+                aria-label={`タブ: ${title}`}
+              >
+                <span className="truncate">{tabTitle}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

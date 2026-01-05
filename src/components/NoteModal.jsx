@@ -18,7 +18,7 @@ const formatUpdatedDateTime = (value) => {
   });
 };
 
-const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleImportant, onCommitDraft, canShare = false }) => {
+const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleImportant, onCommitDraft, onTab, canShare = false }) => {
   const titleRef = useRef(null);
   const contentTextareaRef = useRef(null);
   const lastRightClickCaretRef = useRef(null);
@@ -57,6 +57,37 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
       console.error('[Note] Failed to persist draft:', error);
     }
   }, [draftContent, draftTitle, note, noteContent, noteTitle, onUpdate]);
+
+  const handleTabify = useCallback(() => {
+    if (!note || note?.id == null) return;
+
+    // タブ化は「一旦隠しておく」目的なので、編集状態のまま閉じて変更が失われないよう、
+    // ここでは表示モードへ戻すのと同等の保存処理を行う。
+    try {
+      if (isEditing) {
+        persistDraftIfNeeded();
+
+        if (onCommitDraft && note?.id != null && note?.__isDraft) {
+          onCommitDraft(note.id, {
+            title: draftTitle,
+            content: draftContent,
+            date: note?.date,
+          });
+        }
+
+        setIsEditing(false);
+      }
+    } catch (error) {
+      console.error('[Note] Failed to tabify note:', error);
+    }
+
+    if (typeof onTab === 'function') {
+      onTab(note);
+    }
+    if (typeof onClose === 'function') {
+      onClose();
+    }
+  }, [draftContent, draftTitle, isEditing, note, onClose, onCommitDraft, onTab, persistDraftIfNeeded]);
 
   const requestClose = useCallback(() => {
     if (isEditing) {
@@ -576,6 +607,25 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                   <path d="M10 12h4" />
                 </svg>
               )}
+            </button>
+
+            <button
+              type="button"
+              disabled={!note || note?.id == null}
+              onClick={handleTabify}
+              className={`inline-flex h-9 w-9 p-1 items-center justify-center rounded-full border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                !note || note?.id == null
+                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
+              }`}
+              title="タブ化"
+              aria-label="タブ化"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M7 7h10" />
+                <path d="M7 12h10" />
+                <path d="M7 17h6" />
+              </svg>
             </button>
 
             <button
