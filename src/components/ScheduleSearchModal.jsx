@@ -68,7 +68,17 @@ export default function ScheduleSearchModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="予定/タスク検索">
+    <div
+      className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="予定/タスク検索"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose?.();
+        }
+      }}
+    >
       <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
         <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">

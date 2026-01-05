@@ -191,7 +191,16 @@ const QuickMemoEditModal = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <div className="flex w-full max-w-xl max-h-[90svh] flex-col overflow-hidden rounded-xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3">
           <h2 className="text-base font-semibold text-gray-900">{title}</h2>

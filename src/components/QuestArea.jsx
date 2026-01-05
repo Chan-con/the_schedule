@@ -328,7 +328,14 @@ const QuestArea = React.forwardRef(({
       </div>
 
       {isEditOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              closeEditModal();
+            }
+          }}
+        >
           <div className="quest-modal-content w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-lg">
             <div className="border-b border-slate-200 px-4 py-3">
               <div className="text-sm font-semibold text-slate-900">{modalMode === 'create' ? 'クエストを追加' : 'クエストを編集'}</div>
