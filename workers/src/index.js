@@ -1,6 +1,10 @@
 import { ApplicationServerKeys, generatePushHTTPRequest } from "webpush-webcrypto";
 
-const DEFAULT_WINDOW_MS = 70_000; // cronの揺れを吸収
+// cron は「毎分」想定のため、未来方向の許容を大きくすると
+// 次の分の通知を前の分の実行で拾ってしまい、最大約1分早く送られ得る。
+// 遅延（過去方向）は多少許容しつつ、早まり（未来方向）は最小限にする。
+const DEFAULT_LATE_WINDOW_MS = 70_000; // 遅れて実行されたcronの揺れを吸収
+const DEFAULT_EARLY_WINDOW_MS = 5_000; // 早まりは極力許容しない（5秒以内）
 const DEFAULT_LOOKAHEAD_DAYS = 365;
 
 const json = (obj, init = {}) =>
@@ -284,7 +288,9 @@ const sendPush = async ({ env, applicationServerKeys, target, payload, ttl = 60 
 
 const runCron = async (env) => {
   const lookaheadDays = Number(env.LOOKAHEAD_DAYS || "") || DEFAULT_LOOKAHEAD_DAYS;
-  const windowMs = Number(env.DUE_WINDOW_MS || "") || DEFAULT_WINDOW_MS;
+  // 互換: 以前の DUE_WINDOW_MS は「遅れ側」の許容として扱う。
+  const lateWindowMs = Number(env.DUE_LATE_WINDOW_MS || env.DUE_WINDOW_MS || "") || DEFAULT_LATE_WINDOW_MS;
+  const earlyWindowMs = Number(env.DUE_EARLY_WINDOW_MS || "") || DEFAULT_EARLY_WINDOW_MS;
 
   const now = new Date();
   const startDate = toDateStrUTC(addDaysUTC(now, -2));
@@ -339,7 +345,7 @@ const runCron = async (env) => {
         if (!fireAt) continue;
 
         const diff = fireAt.getTime() - now.getTime();
-        if (diff < -windowMs || diff > windowMs) continue;
+        if (diff < -lateWindowMs || diff > earlyWindowMs) continue;
 
         const fireAtIso = fireAt.toISOString();
         const shouldSend = await tryInsertSendLog({
@@ -412,7 +418,7 @@ const runCron = async (env) => {
           for (const cycle of candidateCycles) {
             const fireAtMs = startAtMs + (cycle * durationMs) + (offsetMinutes * 60_000);
             const diff = fireAtMs - nowMs;
-            if (diff < -windowMs || diff > windowMs) continue;
+            if (diff < -lateWindowMs || diff > earlyWindowMs) continue;
 
             const fireAtIso = new Date(fireAtMs).toISOString();
             const shouldSend = await tryInsertLoopSendLog({
