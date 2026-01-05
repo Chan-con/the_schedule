@@ -99,9 +99,13 @@ const Calendar = ({
     if (!(selectedDate instanceof Date)) return;
     const y = selectedDate.getFullYear();
     const m = selectedDate.getMonth();
-    if (currentDate.getFullYear() === y && currentDate.getMonth() === m) return;
-    setCurrentDate(new Date(selectedDate));
-  }, [currentDate, selectedDate]);
+    setCurrentDate((prev) => {
+      if (prev instanceof Date && prev.getFullYear() === y && prev.getMonth() === m) {
+        return prev;
+      }
+      return new Date(selectedDate);
+    });
+  }, [selectedDate]);
 
   const IconSearch = (props) => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
@@ -1128,7 +1132,7 @@ const Calendar = ({
       onMouseDown={handleMiddleClick}
     >
       <div
-        className="relative flex items-center mb-2 md:mb-3 flex-shrink-0"
+        className="grid grid-cols-[1fr_auto_1fr] items-center mb-2 md:mb-3 flex-shrink-0"
         onDoubleClick={(event) => {
           if (isMobile) return;
           if (typeof onToggleWideMode !== 'function') return;
@@ -1145,7 +1149,7 @@ const Calendar = ({
           onToggleWideMode('calendar');
         }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 justify-self-start">
           <button 
             onClick={prevMonth}
             className="text-gray-600 hover:text-white p-2 rounded-full bg-gray-100 hover:bg-indigo-500 transition-colors duration-200 shadow-sm"
@@ -1180,12 +1184,14 @@ const Calendar = ({
         </div>
         
         <h2 
-          className="absolute left-1/2 -translate-x-1/2 text-base font-bold text-gray-800 cursor-pointer hover:text-indigo-600 transition-colors duration-200 select-none" 
+          className="text-base font-bold text-gray-800 cursor-pointer hover:text-indigo-600 transition-colors duration-200 select-none justify-self-center" 
           onDoubleClick={goToCurrentMonth}
           title="ダブルクリックで今月に戻る"
         >
           {year}年{month + 1}月
         </h2>
+
+        <div className="justify-self-end" />
       </div>
       
       <div className="grid grid-cols-7 gap-1 mb-1 md:mb-2 flex-shrink-0">
