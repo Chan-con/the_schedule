@@ -74,6 +74,9 @@ const Calendar = ({
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [isAltPressed, setIsAltPressed] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState(() => new Set());
+  const [altTaskBulkMode, setAltTaskBulkMode] = useState('aggregate'); // 'aggregate' | 'relative'
+  const [altTaskActionMode, setAltTaskActionMode] = useState('move'); // 'move' | 'copy'
   const [dragOverDate, setDragOverDate] = useState(null);
   const [dragOverScheduleInfo, setDragOverScheduleInfo] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -88,6 +91,77 @@ const Calendar = ({
   const calendarRef = useRef(null);
   const wheelNavigationLockRef = useRef(false);
   const wheelNavigationTimeoutRef = useRef(null);
+
+  const parseDateStrToNoonLocal = useCallback((dateStr) => {
+    const parts = String(dateStr || '').split('-').map((v) => Number(v));
+    if (parts.length !== 3) return null;
+    const [y, m, d] = parts;
+    if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+    return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0, 0);
+  }, []);
+
+  const addDaysToDateStr = useCallback((dateStr, deltaDays) => {
+    const base = parseDateStrToNoonLocal(dateStr);
+    if (!base) return null;
+    const next = new Date(base);
+    next.setDate(next.getDate() + Number(deltaDays || 0));
+    return toDateStrLocal(next);
+  }, [parseDateStrToNoonLocal]);
+
+  useEffect(() => {
+    try {
+      const storedBulk = window.localStorage.getItem('altTaskBulkMode');
+      if (storedBulk === 'aggregate' || storedBulk === 'relative') {
+        setAltTaskBulkMode(storedBulk);
+      }
+      const storedAction = window.localStorage.getItem('altTaskActionMode');
+      if (storedAction === 'move' || storedAction === 'copy') {
+        setAltTaskActionMode(storedAction);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('altTaskBulkMode', altTaskBulkMode);
+    } catch {
+      // ignore
+    }
+  }, [altTaskBulkMode]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('altTaskActionMode', altTaskActionMode);
+    } catch {
+      // ignore
+    }
+  }, [altTaskActionMode]);
+
+  const selectedTasks = useMemo(() => {
+    if (!selectedTaskIds || selectedTaskIds.size === 0) return [];
+    return schedules
+      .filter((schedule) => schedule?.isTask && selectedTaskIds.has(String(schedule.id)));
+  }, [schedules, selectedTaskIds]);
+
+  const toggleTaskSelection = useCallback((scheduleId) => {
+    if (scheduleId == null || scheduleId === '') return;
+    const key = String(scheduleId);
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearTaskSelection = useCallback(() => {
+    setSelectedTaskIds((prev) => (prev.size > 0 ? new Set() : prev));
+  }, []);
 
   const adjustDateCellScroll = useCallback((dateCell, deltaY) => {
     if (!dateCell) return false;
@@ -312,6 +386,7 @@ const Calendar = ({
       if (!e.altKey && isAltPressed) {
         console.log('🔓 ALT key released');
         setIsAltPressed(false);
+        clearTaskSelection();
       }
     };
     
@@ -322,7 +397,13 @@ const Calendar = ({
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('keyup', handleKeyUp);
     };
-  }, [isAltPressed]);
+  }, [clearTaskSelection, isAltPressed]);
+
+  useEffect(() => {
+    if (!isAltPressed) {
+      clearTaskSelection();
+    }
+  }, [clearTaskSelection, isAltPressed]);
 
   // ドラッグ中の特別なwheelイベント監視
   useEffect(() => {
@@ -587,9 +668,63 @@ const Calendar = ({
         console.log('🏁 Custom drag ended');
         
         if (dragOverDate && draggedSchedule) {
-          if (dragOverDate !== draggedSchedule.date) {
-            if (isAltPressed && onScheduleCopy) {
-              // ALTキー押下時: コピー（新しいIDで複製）
+          const draggedId = draggedSchedule?.id != null ? String(draggedSchedule.id) : null;
+          const hasSelection = selectedTaskIds && selectedTaskIds.size > 0;
+          const shouldBulkMove =
+            isAltPressed &&
+            hasSelection &&
+            draggedSchedule?.isTask &&
+            (draggedId == null || selectedTaskIds.has(draggedId));
+
+          if (shouldBulkMove && onScheduleUpdate) {
+            const tasksToMove = schedules
+              .filter((schedule) => schedule?.isTask && selectedTaskIds.has(String(schedule.id)));
+
+            if (tasksToMove.length > 0) {
+              const baseDraggedDate = draggedSchedule?.date;
+              const targetDate = dragOverDate;
+
+              let deltaDays = 0;
+              if (altTaskBulkMode === 'relative') {
+                const fromNoon = parseDateStrToNoonLocal(baseDraggedDate);
+                const toNoon = parseDateStrToNoonLocal(targetDate);
+                if (fromNoon && toNoon) {
+                  const msPerDay = 24 * 60 * 60 * 1000;
+                  deltaDays = Math.round((toNoon.getTime() - fromNoon.getTime()) / msPerDay);
+                }
+              }
+
+              const moveOrCopyTasks = tasksToMove.map((task, index) => {
+                const nextDate =
+                  altTaskBulkMode === 'relative'
+                    ? (addDaysToDateStr(task?.date, deltaDays) || targetDate)
+                    : targetDate;
+
+                if (altTaskActionMode === 'copy') {
+                  return {
+                    ...task,
+                    id: Date.now() + index,
+                    date: nextDate,
+                    notificationSettings: null,
+                  };
+                }
+
+                return {
+                  ...task,
+                  date: nextDate,
+                };
+              });
+
+              onScheduleUpdate(
+                moveOrCopyTasks,
+                altTaskActionMode === 'copy'
+                  ? 'schedule_copy_multi_task_alt'
+                  : 'schedule_move_multi_task_alt'
+              );
+            }
+          } else if (dragOverDate !== draggedSchedule.date) {
+            if (isAltPressed && altTaskActionMode === 'copy' && onScheduleCopy) {
+              // Alt中 & コピーモード: コピー（新しいIDで複製）
               const newSchedule = {
                 ...draggedSchedule,
                 date: dragOverDate,
@@ -807,10 +942,16 @@ const Calendar = ({
     draggedSchedule,
     dragOverScheduleInfo,
     isAltPressed,
-  onScheduleCopy,
-  onScheduleDelete,
-  onScheduleMove,
-  onScheduleUpdate,
+    onScheduleCopy,
+    onScheduleDelete,
+    onScheduleMove,
+    onScheduleUpdate,
+    clearTaskSelection,
+    addDaysToDateStr,
+    altTaskActionMode,
+    altTaskBulkMode,
+    parseDateStrToNoonLocal,
+    selectedTaskIds,
     schedules,
     adjustDateCellScroll,
     maxSchedulesPerCell,
@@ -1158,6 +1299,7 @@ const Calendar = ({
                         (!draggedSchedule?.allDay && !schedule.allDay && String(dragOverScheduleInfo?.timeKey ?? '') === String(schedule?.time ? schedule.time : ''))) &&
                       (dragOverScheduleInfo?.scheduleId ?? null) === (scheduleId ?? null);
                     const isDraggedSchedule = draggedScheduleId != null && scheduleId === draggedScheduleId;
+                    const isTaskSelected = !!(schedule?.isTask && scheduleId != null && selectedTaskIds.has(scheduleId));
 
                     return (
                       <div
@@ -1178,6 +1320,7 @@ const Calendar = ({
                           ${isPast || isDimTask ? 'opacity-60' : ''}
                           ${isDraggedSchedule ? 'opacity-50' : ''}
                           ${isCustomDragging && isDraggedSchedule ? 'opacity-30 transform scale-95' : ''}
+                          ${isAltPressed && isTaskSelected ? 'opacity-40' : ''}
                           ${isHoverTarget ? 'ring-2 ring-indigo-300 ring-offset-1 ring-offset-white bg-indigo-50 relative' : ''}
                           transition-all duration-150
                         `}
@@ -1202,6 +1345,10 @@ const Calendar = ({
                           });
                           setMousePosition({ x: event.clientX, y: event.clientY });
                         }}
+                        onMouseMove={(event) => {
+                          if (!isAltPressed) return;
+                          setMousePosition({ x: event.clientX, y: event.clientY });
+                        }}
                         onDoubleClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
@@ -1212,6 +1359,9 @@ const Calendar = ({
                         }}
                         onClick={(event) => {
                           event.stopPropagation();
+                          if (isAltPressed) {
+                            return;
+                          }
                           if (typeof onScheduleClick === 'function') {
                             onScheduleClick(schedule, new Date(dateStr));
                             return;
@@ -1229,9 +1379,44 @@ const Calendar = ({
                       >
                         <div className="flex items-center gap-1">
                           {isAltPressed && (
-                            <span className="text-[10px] font-bold opacity-70">
-                              {isDraggedSchedule ? '📋' : '⚡'}
-                            </span>
+                            schedule.isTask ? (
+                              <span
+                                role="checkbox"
+                                aria-checked={isTaskSelected}
+                                tabIndex={-1}
+                                className={
+                                  `inline-flex h-3 w-3 shrink-0 items-center justify-center rounded border text-[10px] leading-none ` +
+                                  (isTaskSelected
+                                    ? 'bg-amber-100 border-amber-500 text-amber-700'
+                                    : 'bg-white border-amber-400 text-transparent')
+                                }
+                                title={isTaskSelected ? '選択中（Alt）' : '選択（Alt）'}
+                                aria-label={isTaskSelected ? '選択中（Alt）' : '選択（Alt）'}
+                                onMouseDown={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                }}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  toggleTaskSelection(schedule.id);
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  toggleTaskSelection(schedule.id);
+                                }}
+                              >
+                                ✓
+                              </span>
+                            ) : (
+                              <span
+                                aria-hidden="true"
+                                className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded border border-amber-300 bg-amber-50"
+                                title="Alt"
+                              />
+                            )
                           )}
                           <span className={`truncate pointer-events-none text-left text-[0.66rem] font-bold flex-1 ${schedule.isTask ? 'text-gray-700' : 'text-gray-800'}`}>
                             {displayText}
@@ -1240,9 +1425,10 @@ const Calendar = ({
                             <span
                               role="button"
                               tabIndex={-1}
-                              className={`ml-1 inline-flex h-3 w-3 shrink-0 items-center justify-center rounded border p-0 text-[8px] leading-none transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'}`}
-                              title={schedule.completed ? '完了済み' : '未完了'}
-                              aria-label={schedule.completed ? '完了済み' : '未完了'}
+                              aria-disabled={isAltPressed}
+                              className={`ml-1 inline-flex h-3 w-3 shrink-0 items-center justify-center rounded border p-0 text-[8px] leading-none transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${schedule.completed ? 'bg-green-500 border-green-600 text-white' : 'bg-white border-gray-300 text-transparent hover:border-gray-400'} ${isAltPressed ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
+                              title={isAltPressed ? 'Alt中は無効' : (schedule.completed ? '完了済み' : '未完了')}
+                              aria-label={isAltPressed ? 'Alt中は無効' : (schedule.completed ? '完了済み' : '未完了')}
                               onMouseDown={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
@@ -1250,6 +1436,7 @@ const Calendar = ({
                               onClick={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
+                                if (isAltPressed) return;
                                 if (onToggleTask) {
                                   onToggleTask(schedule, !schedule.completed);
                                 }
@@ -1258,6 +1445,7 @@ const Calendar = ({
                                 if (event.key !== 'Enter' && event.key !== ' ') return;
                                 event.preventDefault();
                                 event.stopPropagation();
+                                if (isAltPressed) return;
                                 if (onToggleTask) {
                                   onToggleTask(schedule, !schedule.completed);
                                 }
@@ -1357,14 +1545,89 @@ const Calendar = ({
             }
           `}>
             <div className="flex items-center">
-              {isAltPressed && (
+              {isAltPressed && selectedTasks.length > 0 ? (
+                <span className="mr-1 text-xs font-bold text-amber-800">{selectedTasks.length}</span>
+              ) : isAltPressed ? (
                 <span className="mr-1 text-xs opacity-70">📋</span>
-              )}
+              ) : null}
               <span className="font-bold">
                 {draggedSchedule.allDay || !draggedSchedule.time
                   ? draggedSchedule.name
                   : `${draggedSchedule.time} ${draggedSchedule.name}`}
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Alt選択中: 選択タスクをカーソル付近に集約表示 */}
+      {isAltPressed && selectedTasks.length > 0 && !isCustomDragging && (
+        <div
+          className="fixed z-40 pointer-events-none select-none"
+          style={{
+            left: mousePosition.x + 12,
+            top: mousePosition.y + 12,
+          }}
+        >
+          <div className="rounded border border-amber-400 bg-amber-50 px-2 py-1 text-[11px] text-amber-800 shadow-sm">
+            <div className="font-semibold">選択タスク: {selectedTasks.length}件</div>
+            <div className="max-w-[220px] truncate">
+              {selectedTasks
+                .slice(0, 3)
+                .map((task) => String(task?.name ?? ''))
+                .filter(Boolean)
+                .join(' / ')}
+              {selectedTasks.length > 3 ? ' …' : ''}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Alt中のフロートメニュー（邪魔になりにくい: 右上固定） */}
+      {isAltPressed && (
+        <div className="fixed right-3 top-3 z-[90] select-none">
+          <div className="rounded-xl border border-gray-200 bg-white/95 p-2 shadow-sm backdrop-blur">
+            <div className="flex items-center gap-2">
+              <div className="text-[11px] font-semibold text-gray-700">タスク操作</div>
+              <div className="h-3 w-px bg-gray-200" aria-hidden="true" />
+
+              <div className="inline-flex overflow-hidden rounded-lg border border-gray-200">
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-[11px] font-semibold transition-colors ${altTaskBulkMode === 'aggregate' ? 'bg-amber-50 text-amber-800' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  onClick={() => setAltTaskBulkMode('aggregate')}
+                  title="選択タスクを同一日へ集約"
+                >
+                  集約
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-[11px] font-semibold transition-colors ${altTaskBulkMode === 'relative' ? 'bg-amber-50 text-amber-800' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  onClick={() => setAltTaskBulkMode('relative')}
+                  title="掴んだタスクから相対的に移動"
+                >
+                  相対
+                </button>
+              </div>
+
+              <div className="inline-flex overflow-hidden rounded-lg border border-gray-200">
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-[11px] font-semibold transition-colors ${altTaskActionMode === 'move' ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  onClick={() => setAltTaskActionMode('move')}
+                  title="移動モード"
+                >
+                  移動
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-[11px] font-semibold transition-colors ${altTaskActionMode === 'copy' ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  onClick={() => setAltTaskActionMode('copy')}
+                  title="コピーモード"
+                >
+                  コピー
+                </button>
+              </div>
             </div>
           </div>
         </div>

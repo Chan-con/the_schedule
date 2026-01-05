@@ -3779,6 +3779,13 @@ function App() {
       updateMap.has(schedule.id) ? { ...schedule, ...updateMap.get(schedule.id) } : schedule
     );
 
+    // 新規ID（copy等）を含む場合は、既存にない分を追加
+    const existingIdSet = new Set(current.map((item) => item.id));
+    const missing = scheduleUpdates.filter((item) => item?.id != null && !existingIdSet.has(item.id));
+    if (missing.length > 0) {
+      optimistic = [...optimistic, ...missing];
+    }
+
     const affectedDates = scheduleUpdates.filter((item) => item.allDay).map((item) => item.date);
     if (affectedDates.length > 0) {
       optimistic = rebalanceAllDayOrdersForDates(optimistic, affectedDates);
