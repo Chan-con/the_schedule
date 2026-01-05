@@ -530,6 +530,7 @@ function App() {
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const layoutContainerRef = useRef(null);
+  const [isWideMode, setIsWideMode] = useState(false);
   
   // モバイル表示の状態管理
   const [isMobile, setIsMobile] = useState(false);
@@ -3193,6 +3194,17 @@ function App() {
     return () => window.removeEventListener('resize', checkScreenSize);
   }, []);
 
+  useEffect(() => {
+    if (isMobile) {
+      setIsWideMode(false);
+    }
+  }, [isMobile]);
+
+  const toggleWideMode = useCallback(() => {
+    if (isMobile) return;
+    setIsWideMode((prev) => !prev);
+  }, [isMobile]);
+
   // モバイルブラウザのビューポート高さを動的に設定
   useEffect(() => {
     const setViewportHeight = () => {
@@ -4219,55 +4231,59 @@ function App() {
         ) : (
           /* デスクトップ表示 */
           <>
-            {/* カレンダー部分 */}
-            <div 
-              className="flex flex-col h-full overflow-hidden pr-1"
-              style={{ width: `${splitRatio}%` }}
-            >
-              <Calendar 
-                schedules={schedules} 
-                onDateClick={handleDateClick} 
-                onScheduleClick={handleCalendarScheduleClick}
-                selectedDate={selectedDate}
-                onScheduleCopy={handleScheduleCopy}
-                onScheduleDelete={handleScheduleDelete}
-                onScheduleMove={handleScheduleMove}
-                onScheduleUpdate={handleScheduleUpdate}
-                onAdd={handleAdd}
-                onEdit={handleEdit}
-                isMobile={isMobile}
-                onToggleTask={handleToggleTask}
-                noteDates={calendarNoteDates}
-                noteTitlesByDate={calendarNoteTitlesByDate}
-                dailyQuestCrowns={calendarDailyQuestCrownsByDate}
-                dailyQuestTaskTitlesByDate={calendarDailyQuestTaskTitlesByDate}
-                onVisibleRangeChange={handleCalendarVisibleRangeChange}
-              />
-            </div>
-            
-            {/* 分割バー */}
-            <div 
-              className={`
-                w-2 cursor-col-resize transition-colors duration-200 flex-shrink-0 mx-1 bg-transparent hover:bg-transparent
-                ${isDragging ? '' : ''}
-              `}
-              onMouseDown={handleMouseDown}
-              onTouchStart={handleTouchStartResize}
-            >
-              <div className="w-full h-full flex items-center justify-center">
-                <div className={`
-                  w-1 h-12 rounded-full transition-colors duration-200
-                  ${isDragging ? 'bg-indigo-500' : 'bg-gray-400 hover:bg-indigo-400'}
-                `}
-                data-layout-handle
-                ></div>
-              </div>
-            </div>
+            {!isWideMode && (
+              <>
+                {/* カレンダー部分 */}
+                <div 
+                  className="flex flex-col h-full overflow-hidden pr-1"
+                  style={{ width: `${splitRatio}%` }}
+                >
+                  <Calendar 
+                    schedules={schedules} 
+                    onDateClick={handleDateClick} 
+                    onScheduleClick={handleCalendarScheduleClick}
+                    selectedDate={selectedDate}
+                    onScheduleCopy={handleScheduleCopy}
+                    onScheduleDelete={handleScheduleDelete}
+                    onScheduleMove={handleScheduleMove}
+                    onScheduleUpdate={handleScheduleUpdate}
+                    onAdd={handleAdd}
+                    onEdit={handleEdit}
+                    isMobile={isMobile}
+                    onToggleTask={handleToggleTask}
+                    noteDates={calendarNoteDates}
+                    noteTitlesByDate={calendarNoteTitlesByDate}
+                    dailyQuestCrowns={calendarDailyQuestCrownsByDate}
+                    dailyQuestTaskTitlesByDate={calendarDailyQuestTaskTitlesByDate}
+                    onVisibleRangeChange={handleCalendarVisibleRangeChange}
+                  />
+                </div>
+                
+                {/* 分割バー */}
+                <div 
+                  className={`
+                    w-2 cursor-col-resize transition-colors duration-200 flex-shrink-0 mx-1 bg-transparent hover:bg-transparent
+                    ${isDragging ? '' : ''}
+                  `}
+                  onMouseDown={handleMouseDown}
+                  onTouchStart={handleTouchStartResize}
+                >
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className={`
+                      w-1 h-12 rounded-full transition-colors duration-200
+                      ${isDragging ? 'bg-indigo-500' : 'bg-gray-400 hover:bg-indigo-400'}
+                    `}
+                    data-layout-handle
+                    ></div>
+                  </div>
+                </div>
+              </>
+            )}
             
             {/* タイムライン部分 */}
             <div 
-              className="flex min-h-0 flex-col gap-1 pl-1 overflow-hidden"
-              style={{ width: `${100 - splitRatio}%` }}
+              className={`flex min-h-0 flex-col gap-1 overflow-hidden ${isWideMode ? '' : 'pl-1'}`}
+              style={{ width: isWideMode ? '100%' : `${100 - splitRatio}%` }}
               ref={timelineRef}
             >
               <CurrentDateTimeBar />
@@ -4313,6 +4329,7 @@ function App() {
                   onUpdateQuestTask={handleUpdateQuestTask}
                   onDeleteQuestTask={handleDeleteQuestTask}
                   onReorderQuestTasks={handleReorderQuestTasks}
+                  onToggleWideMode={toggleWideMode}
                 />
               </div>
             </div>

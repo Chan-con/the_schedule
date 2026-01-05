@@ -98,6 +98,7 @@ const Timeline = ({
 	onUpdateQuestTask,
 	onDeleteQuestTask,
 	onReorderQuestTasks,
+	onToggleWideMode,
 }) => {
 	const [draggedAllDayId, setDraggedAllDayId] = useState(null);
 	const [allDayDragOverIndex, setAllDayDragOverIndex] = useState(null);
@@ -888,7 +889,15 @@ const Timeline = ({
 			ref={cardRef}
 			className="flex h-full min-h-0 flex-col rounded-lg border border-slate-200 bg-white shadow-xl"
 		>
-			<header ref={headerRef} className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 rounded-t-lg">
+			<header
+				ref={headerRef}
+				className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 rounded-t-lg"
+				onDoubleClick={(event) => {
+					if (typeof onToggleWideMode !== 'function') return;
+					event.preventDefault();
+					onToggleWideMode();
+				}}
+			>
 				<div className="flex flex-wrap items-center gap-3">
 					<div className="inline-flex items-center rounded-full bg-slate-100 p-1">
 						{tabs.map((tab) => {
