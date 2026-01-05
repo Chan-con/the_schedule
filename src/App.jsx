@@ -530,7 +530,7 @@ function App() {
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const layoutContainerRef = useRef(null);
-  const [isWideMode, setIsWideMode] = useState(false);
+  const [wideMode, setWideMode] = useState('none');
   
   // モバイル表示の状態管理
   const [isMobile, setIsMobile] = useState(false);
@@ -3196,14 +3196,18 @@ function App() {
 
   useEffect(() => {
     if (isMobile) {
-      setIsWideMode(false);
+      setWideMode('none');
     }
   }, [isMobile]);
 
-  const toggleWideMode = useCallback(() => {
-    if (isMobile) return;
-    setIsWideMode((prev) => !prev);
-  }, [isMobile]);
+  const toggleWideMode = useCallback(
+    (target = 'timeline') => {
+      if (isMobile) return;
+      const nextTarget = target === 'calendar' ? 'calendar' : 'timeline';
+      setWideMode((prev) => (prev === nextTarget ? 'none' : nextTarget));
+    },
+    [isMobile]
+  );
 
   // モバイルブラウザのビューポート高さを動的に設定
   useEffect(() => {
@@ -4231,12 +4235,12 @@ function App() {
         ) : (
           /* デスクトップ表示 */
           <>
-            {!isWideMode && (
+            {wideMode !== 'timeline' && (
               <>
                 {/* カレンダー部分 */}
                 <div 
                   className="flex flex-col h-full overflow-hidden pr-1"
-                  style={{ width: `${splitRatio}%` }}
+                  style={{ width: wideMode === 'calendar' ? '100%' : `${splitRatio}%` }}
                 >
                   <Calendar 
                     schedules={schedules} 
@@ -4256,10 +4260,12 @@ function App() {
                     dailyQuestCrowns={calendarDailyQuestCrownsByDate}
                     dailyQuestTaskTitlesByDate={calendarDailyQuestTaskTitlesByDate}
                     onVisibleRangeChange={handleCalendarVisibleRangeChange}
+                    onToggleWideMode={toggleWideMode}
                   />
                 </div>
                 
                 {/* 分割バー */}
+                {wideMode === 'none' && (
                 <div 
                   className={`
                     w-2 cursor-col-resize transition-colors duration-200 flex-shrink-0 mx-1 bg-transparent hover:bg-transparent
@@ -4277,62 +4283,65 @@ function App() {
                     ></div>
                   </div>
                 </div>
+                )}
               </>
             )}
             
             {/* タイムライン部分 */}
-            <div 
-              className={`flex min-h-0 flex-col gap-1 overflow-hidden ${isWideMode ? '' : 'pl-1'}`}
-              style={{ width: isWideMode ? '100%' : `${100 - splitRatio}%` }}
-              ref={timelineRef}
-            >
-              <CurrentDateTimeBar />
-              <div className="flex-1 min-h-0 overflow-hidden">
-                <Timeline 
-                  schedules={filteredSchedules} 
-                  selectedDate={selectedDate} 
-                  selectedDateStr={selectedDateStr}
-                  onEdit={handleEdit}
-                  onAdd={handleAdd}
-                  onAddTask={handleAddTask}
-                  onAddNote={handleAddNote}
-                  quickMemo={quickMemo}
-                  onQuickMemoChange={handleQuickMemoChange}
-                  onQuickMemoImmediatePersist={handleQuickMemoImmediatePersist}
-                  onUpdateNote={handleUpdateNote}
-                  onDeleteNote={handleDeleteNote}
-                  onToggleArchiveNote={handleToggleArchiveNote}
-                  onToggleImportantNote={handleToggleImportantNote}
-                  onCommitDraftNote={handleCommitDraftNote}
-                  canShareNotes={isAuthenticated}
-                  activeNoteId={activeNoteId}
-                  onActiveNoteIdChange={setActiveNoteId}
-                  onRequestCloseNote={handleRequestCloseNote}
-                  onScheduleUpdate={handleScheduleUpdate}
-                  onToggleTask={handleToggleTask}
-                  onScheduleDelete={handleScheduleDelete}
-                  activeTab={timelineActiveTab}
-                  onTabChange={setTimelineActiveTab}
-                  tasks={taskSchedules}
-                  notes={notes}
-                  onTabNote={handleTabNote}
-                  canShareLoopTimeline={isAuthenticated}
-                  loopTimelineState={loopTimelineState}
-                  loopTimelineMarkers={loopTimelineMarkers}
-                  onLoopTimelineSaveState={handleLoopTimelineSaveState}
-                  onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
-                  onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
-                  onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
-                  dailyQuestTasks={dailyQuestTasks}
-                  onCreateQuestTask={handleCreateQuestTask}
-                  onToggleQuestTask={handleToggleQuestTask}
-                  onUpdateQuestTask={handleUpdateQuestTask}
-                  onDeleteQuestTask={handleDeleteQuestTask}
-                  onReorderQuestTasks={handleReorderQuestTasks}
-                  onToggleWideMode={toggleWideMode}
-                />
+            {wideMode !== 'calendar' && (
+              <div 
+                className={`flex min-h-0 flex-col gap-1 overflow-hidden ${wideMode === 'timeline' ? '' : 'pl-1'}`}
+                style={{ width: wideMode === 'timeline' ? '100%' : `${100 - splitRatio}%` }}
+                ref={timelineRef}
+              >
+                <CurrentDateTimeBar />
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <Timeline 
+                    schedules={filteredSchedules} 
+                    selectedDate={selectedDate} 
+                    selectedDateStr={selectedDateStr}
+                    onEdit={handleEdit}
+                    onAdd={handleAdd}
+                    onAddTask={handleAddTask}
+                    onAddNote={handleAddNote}
+                    quickMemo={quickMemo}
+                    onQuickMemoChange={handleQuickMemoChange}
+                    onQuickMemoImmediatePersist={handleQuickMemoImmediatePersist}
+                    onUpdateNote={handleUpdateNote}
+                    onDeleteNote={handleDeleteNote}
+                    onToggleArchiveNote={handleToggleArchiveNote}
+                    onToggleImportantNote={handleToggleImportantNote}
+                    onCommitDraftNote={handleCommitDraftNote}
+                    canShareNotes={isAuthenticated}
+                    activeNoteId={activeNoteId}
+                    onActiveNoteIdChange={setActiveNoteId}
+                    onRequestCloseNote={handleRequestCloseNote}
+                    onScheduleUpdate={handleScheduleUpdate}
+                    onToggleTask={handleToggleTask}
+                    onScheduleDelete={handleScheduleDelete}
+                    activeTab={timelineActiveTab}
+                    onTabChange={setTimelineActiveTab}
+                    tasks={taskSchedules}
+                    notes={notes}
+                    onTabNote={handleTabNote}
+                    canShareLoopTimeline={isAuthenticated}
+                    loopTimelineState={loopTimelineState}
+                    loopTimelineMarkers={loopTimelineMarkers}
+                    onLoopTimelineSaveState={handleLoopTimelineSaveState}
+                    onLoopTimelineAddMarker={handleLoopTimelineAddMarker}
+                    onLoopTimelineUpdateMarker={handleLoopTimelineUpdateMarker}
+                    onLoopTimelineDeleteMarker={handleLoopTimelineDeleteMarker}
+                    dailyQuestTasks={dailyQuestTasks}
+                    onCreateQuestTask={handleCreateQuestTask}
+                    onToggleQuestTask={handleToggleQuestTask}
+                    onUpdateQuestTask={handleUpdateQuestTask}
+                    onDeleteQuestTask={handleDeleteQuestTask}
+                    onReorderQuestTasks={handleReorderQuestTasks}
+                    onToggleWideMode={() => toggleWideMode('timeline')}
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </>
         )}
       </main>

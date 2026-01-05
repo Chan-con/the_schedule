@@ -68,6 +68,8 @@ const Calendar = ({
   dailyQuestCrowns = {},
   dailyQuestTaskTitlesByDate = null,
   onVisibleRangeChange,
+  isMobile = false,
+  onToggleWideMode,
 }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
@@ -921,7 +923,24 @@ const Calendar = ({
       className="bg-white rounded-lg shadow-lg p-2 md:p-3 w-full h-full flex flex-col overflow-hidden"
       onMouseDown={handleMiddleClick}
     >
-      <div className="flex justify-between items-center mb-2 md:mb-3 flex-shrink-0">
+      <div
+        className="flex justify-between items-center mb-2 md:mb-3 flex-shrink-0"
+        onDoubleClick={(event) => {
+          if (isMobile) return;
+          if (typeof onToggleWideMode !== 'function') return;
+
+          const rawTarget = event.target;
+          const targetEl = rawTarget instanceof Element ? rawTarget : rawTarget?.parentElement;
+          if (!targetEl) return;
+
+          // 月移動ボタン / 月タイトル(今月に戻る)のダブルクリックは既存動作を優先
+          if (targetEl.closest('button')) return;
+          if (targetEl.closest('h2')) return;
+
+          event.preventDefault();
+          onToggleWideMode('calendar');
+        }}
+      >
         <button 
           onClick={prevMonth}
           className="text-gray-600 hover:text-white p-2 rounded-full bg-gray-100 hover:bg-indigo-500 transition-colors duration-200 shadow-sm"
