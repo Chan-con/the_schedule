@@ -101,7 +101,7 @@ export default function ScheduleSearchModal({
             ) : list.length === 0 ? (
               <div className="text-sm text-gray-400">候補がありません</div>
             ) : (
-              <div className="max-h-[55vh] overflow-y-auto rounded-lg border border-gray-200">
+              <div className="custom-scrollbar max-h-[55vh] overflow-y-auto rounded-lg border border-gray-200">
                 {list.map((item) => {
                   const key = String(item?.id ?? `${item?.date ?? 'unknown'}:${item?.name ?? ''}`);
                   const { title, meta } = formatLabel(item);
