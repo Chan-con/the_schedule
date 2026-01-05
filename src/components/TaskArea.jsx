@@ -1,6 +1,40 @@
 import React, { useMemo } from 'react';
 import MemoWithLinks from './MemoWithLinks';
 
+const isTaskOverdue = (task, now = new Date()) => {
+  if (!task || task?.completed) return false;
+  if (!task?.date) return false;
+
+  const parts = String(task.date || '')
+    .split('-')
+    .map((value) => Number(value));
+  if (parts.length < 3 || Number.isNaN(parts[0])) {
+    return false;
+  }
+
+  const [year, month, day] = parts;
+
+  const hasTime = !!task?.time && !task?.allDay;
+  if (hasTime) {
+    const [hhStr, mmStr] = String(task.time).split(':');
+    const hour = Number(hhStr);
+    const minute = Number(mmStr);
+    if (!Number.isNaN(hour) && !Number.isNaN(minute)) {
+      const due = new Date(year, (month || 1) - 1, day || 1, hour, minute, 0, 0);
+      if (!Number.isNaN(due.getTime())) {
+        return due.getTime() < now.getTime();
+      }
+    }
+  }
+
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dueDate = new Date(year, (month || 1) - 1, day || 1);
+  if (Number.isNaN(dueDate.getTime())) {
+    return false;
+  }
+  return dueDate.getTime() < todayStart.getTime();
+};
+
 const formatTaskDate = (task) => {
   if (!task?.date) {
     if (task?.time) {
@@ -74,21 +108,29 @@ const getTaskKey = (task) => {
 const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
   const taskList = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
-  const { incompleteTasks, completedTasks } = useMemo(() => {
+  const { overdueTasks, incompleteTasks, completedTasks } = useMemo(() => {
+    const overdue = [];
     const incomplete = [];
     const completed = [];
+
     taskList.forEach((task) => {
       if (task?.completed) {
         completed.push(task);
+        return;
+      }
+
+      if (isTaskOverdue(task)) {
+        overdue.push(task);
       } else {
         incomplete.push(task);
       }
     });
 
+    overdue.sort(compareTasksByDate);
     incomplete.sort(compareTasksByDate);
     completed.sort(compareTasksByDate);
 
-    return { incompleteTasks: incomplete, completedTasks: completed };
+    return { overdueTasks: overdue, incompleteTasks: incomplete, completedTasks: completed };
   }, [taskList]);
 
   const renderTaskCard = (task) => {
@@ -112,7 +154,11 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
           <div className="flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`font-medium ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}
+                className={`font-medium ${
+                  isCompleted
+                    ? 'text-gray-500 line-through'
+                    : 'text-gray-900'
+                }`}
                 title={task?.name ? String(task.name) : '名称未設定のタスク'}
               >
                 {task?.name || '名称未設定のタスク'}
@@ -176,6 +222,20 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
           </div>
         ) : (
           <div className="card-stack">
+            {overdueTasks.map((task) => (
+              <React.Fragment key={getTaskKey(task)}>
+                {renderTaskCard(task)}
+              </React.Fragment>
+            ))}
+
+            {overdueTasks.length > 0 && incompleteTasks.length > 0 && (
+              <div className="mt-1 flex items-center gap-2 text-xs text-red-600">
+                <span className="flex-1 h-px bg-red-200" />
+                <span className="tracking-wide font-semibold">期日超過</span>
+                <span className="flex-1 h-px bg-red-200" />
+              </div>
+            )}
+
             {incompleteTasks.map((task) => (
               <React.Fragment key={getTaskKey(task)}>
                 {renderTaskCard(task)}
