@@ -1432,7 +1432,7 @@ function App() {
     }
   }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, userId]);
 
-  const handleLoopTimelineAddMarker = useCallback(async ({ text, offset_minutes }) => {
+  const handleLoopTimelineAddMarker = useCallback(async ({ text, message, offset_minutes }) => {
     if (!userId) return;
     const jobMeta = { kind: 'loopTimelineAddMarker' };
     beginSupabaseJob(jobMeta);
@@ -1440,6 +1440,7 @@ function App() {
       const created = await createLoopTimelineMarkerForUser({
         userId,
         text,
+        message,
         offsetMinutes: offset_minutes,
       });
       markRealtimeSelfWrite('loop_timeline_markers', created?.id ?? null);
@@ -1477,7 +1478,7 @@ function App() {
     }
   }, [beginSupabaseJob, endSupabaseJob, markRealtimeSelfWrite, userId]);
 
-  const handleLoopTimelineUpdateMarker = useCallback(async ({ id, text, offset_minutes }) => {
+  const handleLoopTimelineUpdateMarker = useCallback(async ({ id, text, message, offset_minutes }) => {
     if (!userId) return;
     if (id == null) return;
     const jobMeta = { kind: 'loopTimelineUpdateMarker' };
@@ -1491,6 +1492,7 @@ function App() {
           return {
             ...m,
             text: text ?? m?.text ?? '',
+            message: message ?? m?.message ?? '',
             offset_minutes: offset_minutes ?? m?.offset_minutes ?? 0,
             updated_at: new Date().toISOString(),
           };
@@ -1509,6 +1511,7 @@ function App() {
         userId,
         id,
         text,
+        message,
         offsetMinutes: offset_minutes,
       });
       setLoopTimelineMarkers((prev) => {

@@ -171,7 +171,7 @@ const listLoopTimelineStatesForUsers = async ({ env, userIds }) => {
 const listLoopTimelineMarkersForUsers = async ({ env, userIds }) => {
   const ids = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
   if (ids.length === 0) return [];
-  const select = "id,user_id,text,offset_minutes";
+  const select = "id,user_id,text,message,offset_minutes";
   const inList = ids.map((id) => encodeURIComponent(String(id))).join(",");
   const query =
     `/rest/v1/loop_timeline_markers?select=${encodeURIComponent(select)}` +
@@ -413,6 +413,7 @@ const runCron = async (env) => {
         for (const marker of markersForUser) {
           const markerId = marker?.id;
           const text = String(marker?.text || "").trim();
+          const message = String(marker?.message || "").trim();
           if (!text) continue;
           if (markerId == null) continue;
 
@@ -439,10 +440,14 @@ const runCron = async (env) => {
             });
             if (!shouldSend) continue;
 
+            const loopBody = offsetMinutes === 0
+              ? `ループ開始（${durationMinutes}分周期）`
+              : `開始から${offsetMinutes}分（${durationMinutes}分周期）`;
+
             const baseUrl = String(env.PUBLIC_APP_URL || "").replace(/\/+$/, "");
             const payload = JSON.stringify({
               title: text,
-              body: "ループ通知",
+              body: message || loopBody,
               url: `${baseUrl || ""}/`,
             });
 

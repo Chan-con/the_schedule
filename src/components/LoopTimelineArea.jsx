@@ -81,6 +81,7 @@ const LoopTimelineArea = React.forwardRef(({
   const [markerModalMode, setMarkerModalMode] = useState('create');
   const [editingMarkerId, setEditingMarkerId] = useState(null);
   const [modalText, setModalText] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
   const [modalOffsetInput, setModalOffsetInput] = useState('0');
 
   useEffect(() => {
@@ -591,6 +592,7 @@ const LoopTimelineArea = React.forwardRef(({
     setMarkerModalMode('create');
     setEditingMarkerId(null);
     setModalText('');
+    setModalMessage('');
     setModalOffsetInput('0');
     setIsMarkerModalOpen(true);
   }, []);
@@ -604,6 +606,7 @@ const LoopTimelineArea = React.forwardRef(({
     setMarkerModalMode('edit');
     setEditingMarkerId(marker?.id ?? null);
     setModalText(String(marker?.text ?? ''));
+    setModalMessage(String(marker?.message ?? ''));
     setModalOffsetInput(String(marker?.offset_minutes ?? 0));
     setIsMarkerModalOpen(true);
   }, []);
@@ -616,19 +619,20 @@ const LoopTimelineArea = React.forwardRef(({
     if (!canShare) return;
     const text = String(modalText || '').trim();
     if (!text) return;
+    const message = String(modalMessage || '').trim();
     const offsetMinutes = clampInt(modalOffsetInput, { min: 0, max: durationMinutes, fallback: 0 });
 
     if (markerModalMode === 'edit') {
       if (typeof onUpdateMarker !== 'function' || editingMarkerId == null) return;
-      await onUpdateMarker({ id: editingMarkerId, text, offset_minutes: offsetMinutes });
+      await onUpdateMarker({ id: editingMarkerId, text, message, offset_minutes: offsetMinutes });
       closeMarkerModal();
       return;
     }
 
     if (typeof onAddMarker !== 'function') return;
-    await onAddMarker({ text, offset_minutes: offsetMinutes });
+    await onAddMarker({ text, message, offset_minutes: offsetMinutes });
     closeMarkerModal();
-  }, [canShare, closeMarkerModal, durationMinutes, editingMarkerId, markerModalMode, modalOffsetInput, modalText, onAddMarker, onUpdateMarker]);
+  }, [canShare, closeMarkerModal, durationMinutes, editingMarkerId, markerModalMode, modalMessage, modalOffsetInput, modalText, onAddMarker, onUpdateMarker]);
 
   const handleDeleteMarkerModal = useCallback(async () => {
     if (!canShare) return;
@@ -870,6 +874,18 @@ const LoopTimelineArea = React.forwardRef(({
                     className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400"
                     placeholder="例: 休憩"
                     autoFocus
+                  />
+                </label>
+
+                <label className="block">
+                  <div className="text-[11px] font-semibold text-slate-700">メッセージ（任意 / 通知の本文）</div>
+                  <textarea
+                    rows={2}
+                    maxLength={80}
+                    value={modalMessage}
+                    onChange={(e) => setModalMessage(e.target.value)}
+                    className="mt-1 w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400"
+                    placeholder="例: 水を飲む"
                   />
                 </label>
 

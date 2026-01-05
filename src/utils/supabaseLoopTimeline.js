@@ -92,7 +92,7 @@ export const fetchLoopTimelineMarkersForUser = async (userId) => {
 
   const { data, error } = await supabase
     .from(MARKERS_TABLE)
-    .select('id, user_id, text, offset_minutes, created_at, updated_at')
+    .select('id, user_id, text, message, offset_minutes, created_at, updated_at')
     .eq('user_id', userId)
     .order('offset_minutes', { ascending: true })
     .order('id', { ascending: true });
@@ -115,12 +115,13 @@ export const fetchLoopTimelineMarkersForUser = async (userId) => {
   return list;
 };
 
-export const createLoopTimelineMarkerForUser = async ({ userId, text, offsetMinutes }) => {
+export const createLoopTimelineMarkerForUser = async ({ userId, text, message, offsetMinutes }) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
 
   const payload = {
     user_id: userId,
     text: text ?? '',
+    message: message ?? '',
     offset_minutes: offsetMinutes ?? 0,
     updated_at: new Date().toISOString(),
   };
@@ -129,13 +130,14 @@ export const createLoopTimelineMarkerForUser = async ({ userId, text, offsetMinu
   logLoop('loopTimeline', 'createMarker', 'request', {
     userId,
     textLength: String(payload.text).length,
+    messageLength: String(payload.message).length,
     offsetMinutes: payload.offset_minutes,
   });
 
   const { data, error } = await supabase
     .from(MARKERS_TABLE)
     .insert(payload)
-    .select('id, user_id, text, offset_minutes, created_at, updated_at')
+    .select('id, user_id, text, message, offset_minutes, created_at, updated_at')
     .single();
 
   if (error) {
@@ -185,12 +187,13 @@ export const deleteLoopTimelineMarkerForUser = async ({ userId, id }) => {
   });
 };
 
-export const updateLoopTimelineMarkerForUser = async ({ userId, id, text, offsetMinutes }) => {
+export const updateLoopTimelineMarkerForUser = async ({ userId, id, text, message, offsetMinutes }) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   if (id == null) throw new Error('更新対象IDが指定されていません。');
 
   const payload = {
     text: text ?? '',
+    message: message ?? '',
     offset_minutes: offsetMinutes ?? 0,
     updated_at: new Date().toISOString(),
   };
@@ -200,6 +203,7 @@ export const updateLoopTimelineMarkerForUser = async ({ userId, id, text, offset
     userId,
     id,
     textLength: String(payload.text).length,
+    messageLength: String(payload.message).length,
     offsetMinutes: payload.offset_minutes,
   });
 
@@ -208,7 +212,7 @@ export const updateLoopTimelineMarkerForUser = async ({ userId, id, text, offset
     .update(payload)
     .eq('user_id', userId)
     .eq('id', id)
-    .select('id, user_id, text, offset_minutes, created_at, updated_at')
+    .select('id, user_id, text, message, offset_minutes, created_at, updated_at')
     .single();
 
   if (error) {
