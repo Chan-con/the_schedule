@@ -7,6 +7,15 @@ const IconSearch = (props) => (
   </svg>
 );
 
+const IconEmpty = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M21 21l-4.35-4.35" />
+    <path d="M8.5 8.5l5 5" />
+    <path d="M13.5 8.5l-5 5" />
+  </svg>
+);
+
 const formatLabel = (item) => {
   const date = typeof item?.date === 'string' ? item.date : '';
   const time = typeof item?.time === 'string' ? item.time : '';
@@ -92,14 +101,17 @@ export default function ScheduleSearchModal({
             className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200"
           />
 
-          <div className="mt-3 min-h-[120px]">
+          <div className="mt-3 min-h-[160px]">
             {loading ? (
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-200 border-t-indigo-500" aria-hidden="true" />
-                検索中…
+              <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 text-gray-500">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-indigo-500" aria-hidden="true" />
+                <div className="text-sm">検索中…</div>
               </div>
             ) : list.length === 0 ? (
-              <div className="text-sm text-gray-400">候補がありません</div>
+              <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 text-gray-400">
+                <IconEmpty className="h-8 w-8" />
+                <div className="text-sm">候補がありません</div>
+              </div>
             ) : (
               <div className="custom-scrollbar max-h-[55vh] overflow-y-auto rounded-lg border border-gray-200">
                 {list.map((item) => {
