@@ -70,6 +70,7 @@ const Calendar = ({
   onVisibleRangeChange,
   isMobile = false,
   onToggleWideMode,
+  onSearchClick,
 }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
@@ -92,6 +93,22 @@ const Calendar = ({
   const calendarRef = useRef(null);
   const wheelNavigationLockRef = useRef(false);
   const wheelNavigationTimeoutRef = useRef(null);
+
+  // 外部から selectedDate が変わったとき、表示中の月も追従させる
+  useEffect(() => {
+    if (!(selectedDate instanceof Date)) return;
+    const y = selectedDate.getFullYear();
+    const m = selectedDate.getMonth();
+    if (currentDate.getFullYear() === y && currentDate.getMonth() === m) return;
+    setCurrentDate(new Date(selectedDate));
+  }, [currentDate, selectedDate]);
+
+  const IconSearch = (props) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.35-4.35" />
+    </svg>
+  );
 
   const parseDateStrToNoonLocal = useCallback((dateStr) => {
     const parts = String(dateStr || '').split('-').map((v) => Number(v));
@@ -1128,14 +1145,28 @@ const Calendar = ({
           onToggleWideMode('calendar');
         }}
       >
-        <button 
-          onClick={prevMonth}
-          className="text-gray-600 hover:text-white p-2 rounded-full bg-gray-100 hover:bg-indigo-500 transition-colors duration-200 shadow-sm"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={prevMonth}
+            className="text-gray-600 hover:text-white p-2 rounded-full bg-gray-100 hover:bg-indigo-500 transition-colors duration-200 shadow-sm"
+            aria-label="前の月"
+            title="前の月"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSearchClick?.()}
+            className="text-gray-600 hover:text-white p-2 rounded-full bg-gray-100 hover:bg-indigo-500 transition-colors duration-200 shadow-sm"
+            aria-label="予定/タスク検索"
+            title="予定/タスク検索"
+          >
+            <IconSearch className="h-4 w-4" />
+          </button>
+        </div>
         
         <h2 
           className="text-base font-bold text-gray-800 cursor-pointer hover:text-indigo-600 transition-colors duration-200 select-none" 
@@ -1148,6 +1179,8 @@ const Calendar = ({
         <button 
           onClick={nextMonth}
           className="text-gray-600 hover:text-white p-2 rounded-full bg-gray-100 hover:bg-indigo-500 transition-colors duration-200 shadow-sm"
+          aria-label="次の月"
+          title="次の月"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

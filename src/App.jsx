@@ -9,6 +9,7 @@ import ScheduleForm from './components/ScheduleForm';
 import TitleBar from './components/TitleBar';
 import SettingsModal from './components/SettingsModal';
 import CornerFloatingMenu from './components/CornerFloatingMenu';
+import ScheduleSearchModal from './components/ScheduleSearchModal';
 import { fetchQuickMemoForUser, saveQuickMemoForUser } from './utils/supabaseQuickMemo';
 import { supabase } from './lib/supabaseClient';
 import {
@@ -54,6 +55,7 @@ import {
   updateScheduleForUser,
   deleteScheduleForUser,
   upsertSchedulesForUser,
+  searchSchedulesForUser,
 } from './utils/supabaseSchedules';
 
 // サンプルデータ - 今日の日付に合わせて調整
@@ -590,6 +592,14 @@ function App() {
   const [isQuickMemoLoaded, setIsQuickMemoLoaded] = useState(false);
 
   const [notes, setNotes] = useState([]);
+
+  // 予定/タスク検索モーダル
+  const [showScheduleSearch, setShowScheduleSearch] = useState(false);
+  const [scheduleSearchKeyword, setScheduleSearchKeyword] = useState('');
+  const [scheduleSearchResults, setScheduleSearchResults] = useState(() => []);
+  const [scheduleSearchLoading, setScheduleSearchLoading] = useState(false);
+  const scheduleSearchTimerRef = useRef(null);
+
   const ARCHIVED_NOTE_PAGE_SIZE = 5;
   const [archivedNotesCursor, setArchivedNotesCursor] = useState(null);
   const [archivedNotesHasMore, setArchivedNotesHasMore] = useState(false);
@@ -647,6 +657,69 @@ function App() {
     },
     [isMobile]
   );
+
+  const openScheduleSearch = useCallback(() => {
+    setShowScheduleSearch(true);
+  }, []);
+
+  const closeScheduleSearch = useCallback(() => {
+    setShowScheduleSearch(false);
+  }, []);
+
+  const runScheduleSearch = useCallback(async (keyword) => {
+    const q = typeof keyword === 'string' ? keyword.trim() : '';
+    if (!q) {
+      setScheduleSearchResults([]);
+      return;
+    }
+
+    setScheduleSearchLoading(true);
+    try {
+      if (userId) {
+        const items = await searchSchedulesForUser({ userId, keyword: q, limit: 50 });
+        setScheduleSearchResults(Array.isArray(items) ? items : []);
+      } else {
+        const list = Array.isArray(schedulesRef.current) ? schedulesRef.current : [];
+        const needle = q.toLowerCase();
+        const filtered = list.filter((s) => {
+          const name = String(s?.name ?? '').toLowerCase();
+          const memo = String(s?.memo ?? '').toLowerCase();
+          return name.includes(needle) || memo.includes(needle);
+        });
+        setScheduleSearchResults(filtered.slice(0, 50));
+      }
+    } catch (error) {
+      console.error('[Search] Failed to search schedules:', error);
+      setScheduleSearchResults([]);
+    } finally {
+      setScheduleSearchLoading(false);
+    }
+  }, [searchSchedulesForUser, userId]);
+
+  const handleScheduleSearchKeywordChange = useCallback((next) => {
+    const value = typeof next === 'string' ? next : '';
+    setScheduleSearchKeyword(value);
+
+    if (scheduleSearchTimerRef.current) {
+      clearTimeout(scheduleSearchTimerRef.current);
+      scheduleSearchTimerRef.current = null;
+    }
+
+    scheduleSearchTimerRef.current = setTimeout(() => {
+      scheduleSearchTimerRef.current = null;
+      runScheduleSearch(value).catch(() => {});
+    }, 250);
+  }, [runScheduleSearch]);
+
+  const handleSelectScheduleSearchResult = useCallback((item) => {
+    const dateStr = typeof item?.date === 'string' ? item.date : '';
+    if (!dateStr) return;
+    const d = fromDateStrLocal(dateStr);
+    if (d) {
+      setSelectedDate(d);
+    }
+    closeScheduleSearch();
+  }, [closeScheduleSearch]);
 
     useEffect(() => {
       // タブ化したノートが削除された等で一覧から消えた場合は、タブも掃除する
@@ -4448,6 +4521,7 @@ function App() {
                 dailyQuestCrowns={calendarDailyQuestCrownsByDate}
                 dailyQuestTaskTitlesByDate={calendarDailyQuestTaskTitlesByDate}
                 onVisibleRangeChange={handleCalendarVisibleRangeChange}
+                onSearchClick={openScheduleSearch}
               />
             </div>
             
@@ -4560,6 +4634,7 @@ function App() {
                     dailyQuestTaskTitlesByDate={calendarDailyQuestTaskTitlesByDate}
                     onVisibleRangeChange={handleCalendarVisibleRangeChange}
                     onToggleWideMode={toggleWideMode}
+                    onSearchClick={openScheduleSearch}
                   />
                 </div>
                 
@@ -4674,6 +4749,16 @@ function App() {
           })}
         </div>
       )}
+
+      <ScheduleSearchModal
+        isOpen={showScheduleSearch}
+        keyword={scheduleSearchKeyword}
+        onKeywordChange={handleScheduleSearchKeywordChange}
+        results={scheduleSearchResults}
+        loading={scheduleSearchLoading}
+        onClose={closeScheduleSearch}
+        onSelect={handleSelectScheduleSearchResult}
+      />
 
       <CornerFloatingMenu
         enabled={isMobile && !showSettings && !showForm}

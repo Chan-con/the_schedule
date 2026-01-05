@@ -332,6 +332,39 @@ export const fetchActiveTasksForUser = async (userId) => {
   return mapped;
 };
 
+export const searchSchedulesForUser = async ({ userId, keyword, limit = 50 } = {}) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+  const q = typeof keyword === 'string' ? keyword.trim() : '';
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 50;
+  if (!q) return [];
+
+  // PostgREST の or() はカンマ区切りのため、カンマは無害化する
+  const normalized = q.replace(/,/g, ' ');
+  const pattern = `%${normalized}%`;
+
+  const startedAt = nowPerf();
+  logSupabase('searchSchedules', 'request', { userId, keyword: normalized, limit: safeLimit });
+
+  const selectFields = 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+  const { data, error } = await supabase
+    .from(TABLE_NAME)
+    .select(selectFields)
+    .eq('user_id', userId)
+    .or(`name.ilike.${pattern},memo.ilike.${pattern}`)
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(safeLimit);
+
+  if (error) {
+    logSupabase('searchSchedules', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });
+    throw new Error(`検索に失敗しました: ${error.message}`);
+  }
+
+  const mapped = (Array.isArray(data) ? data : []).map(mapFromSupabaseRow);
+  logSupabase('searchSchedules', 'success', { userId, durationMs: buildDuration(startedAt), count: mapped.length });
+  return mapped;
+};
+
 export const fetchCompletedTasksPageForUser = async ({ userId, limit = 5, cursor } = {}) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 5;
