@@ -266,7 +266,7 @@ const loadApplicationServerKeys = async (env) => {
   return await ApplicationServerKeys.fromJSON({ publicKey, privateKey });
 };
 
-const sendPush = async ({ env, applicationServerKeys, target, payload, ttl = 60 }) => {
+const sendPush = async ({ env, applicationServerKeys, target, payload, ttl = 60, urgency = "normal" }) => {
   const adminContact = env.ADMIN_CONTACT || "mailto:admin@example.com";
   const { headers, body, endpoint } = await generatePushHTTPRequest({
     applicationServerKeys,
@@ -274,7 +274,7 @@ const sendPush = async ({ env, applicationServerKeys, target, payload, ttl = 60 
     target,
     adminContact,
     ttl,
-    urgency: "normal",
+    urgency,
   });
 
   const res = await fetch(endpoint, {
@@ -334,6 +334,10 @@ const runCron = async (env) => {
 
     if (!userId || !endpoint || !p256dh || !auth) continue;
 
+    // 予定/タスク通知を最優先したいので、同一cron実行内で一度でも送ったendpointでは
+    // ループ通知を抑制する（同時刻にループが重なっても重要通知を邪魔しない）。
+    let sentImportantThisTick = false;
+
     const userSchedules = scheduleList.filter((s) => s?.user_id === userId);
     for (const schedule of userSchedules) {
       const notifs = Array.isArray(schedule?.notifications) ? schedule.notifications : [];
@@ -378,7 +382,10 @@ const runCron = async (env) => {
           },
           payload,
           ttl: 60,
+          urgency: "high",
         });
+
+        sentImportantThisTick = true;
 
         if (res.status === 404 || res.status === 410) {
           await markSubscriptionInactive({ env, userId, endpoint });
@@ -395,7 +402,7 @@ const runCron = async (env) => {
     const startAtMs = startAtRaw ? Date.parse(String(startAtRaw)) : NaN;
     const durationMinutes = Number(loopState?.duration_minutes);
 
-    if (isRunning && !isPaused && Number.isFinite(startAtMs) && Number.isFinite(durationMinutes) && durationMinutes > 0) {
+    if (!sentImportantThisTick && isRunning && !isPaused && Number.isFinite(startAtMs) && Number.isFinite(durationMinutes) && durationMinutes > 0) {
       const nowMs = now.getTime();
       if (startAtMs <= nowMs) {
         const durationMs = durationMinutes * 60_000;
@@ -448,6 +455,7 @@ const runCron = async (env) => {
               },
               payload,
               ttl: 60,
+              urgency: "low",
             });
 
             if (res.status === 404 || res.status === 410) {
