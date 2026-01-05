@@ -83,6 +83,12 @@ const Timeline = ({
 	onTabChange,
 	tasks = [],
 	notes = [],
+	onLoadMoreCompletedTasks,
+	completedTasksHasMore = false,
+	completedTasksLoading = false,
+	onLoadMoreArchivedNotes,
+	archivedNotesHasMore = false,
+	archivedNotesLoading = false,
 	onTabNote,
 	onCommitDraftNote,
 	loopTimelineState,
@@ -922,6 +928,9 @@ const Timeline = ({
 						tasks={availableTasks}
 						onEdit={onEdit}
 						onToggleTask={onToggleTask}
+						onLoadMoreCompleted={onLoadMoreCompletedTasks}
+						completedHasMore={completedTasksHasMore}
+						completedLoading={completedTasksLoading}
 					/>
 				) : showNotes ? (
 					<NoteArea
@@ -931,6 +940,9 @@ const Timeline = ({
 						onToggleArchiveNote={onToggleArchiveNote}
 						onToggleImportantNote={onToggleImportantNote}
 						onCommitDraftNote={onCommitDraftNote}
+						onLoadMoreArchived={onLoadMoreArchivedNotes}
+						archivedHasMore={archivedNotesHasMore}
+						archivedLoading={archivedNotesLoading}
 						canShare={canShareNotes}
 						selectedDateStr={selectedDateStr}
 						activeNoteId={activeNoteId}

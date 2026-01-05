@@ -33,6 +33,8 @@ import {
 } from './utils/supabaseLoopTimeline';
 import {
   fetchNotesForUser,
+  fetchActiveNotesForUser,
+  fetchArchivedNotesPageForUser,
   fetchNoteForUserById,
   createNoteForUser,
   updateNoteForUser,
@@ -44,6 +46,10 @@ import { useHistory } from './hooks/useHistory';
 import { AuthContext } from './context/AuthContextBase';
 import {
   fetchSchedulesForUser,
+  fetchActiveSchedulesForUser,
+  fetchSchedulesForUserInRange,
+  fetchActiveTasksForUser,
+  fetchCompletedTasksPageForUser,
   createScheduleForUser,
   updateScheduleForUser,
   deleteScheduleForUser,
@@ -331,10 +337,33 @@ function App() {
     () => (Array.isArray(historyState?.schedules) ? historyState.schedules : []),
     [historyState?.schedules]
   );
-  const taskSchedules = useMemo(
-    () => (Array.isArray(schedules) ? schedules.filter((item) => item?.isTask) : []),
-    [schedules]
-  );
+
+  // タスクタブ用: 未完了タスクは可視範囲(schedules)とは別で保持
+  const [activeTasks, setActiveTasks] = useState(() => []);
+  const activeTasksRef = useRef([]);
+  useEffect(() => {
+    activeTasksRef.current = Array.isArray(activeTasks) ? activeTasks : [];
+  }, [activeTasks]);
+
+  const COMPLETED_TASK_PAGE_SIZE = 5;
+  const [completedTasks, setCompletedTasks] = useState(() => []);
+  const completedTasksRef = useRef([]);
+  const [completedTasksCursor, setCompletedTasksCursor] = useState(null);
+  const [completedTasksHasMore, setCompletedTasksHasMore] = useState(false);
+  const [completedTasksLoading, setCompletedTasksLoading] = useState(false);
+
+  useEffect(() => {
+    completedTasksRef.current = Array.isArray(completedTasks) ? completedTasks : [];
+  }, [completedTasks]);
+
+  const taskSchedules = useMemo(() => {
+    const hasActiveTasks = Array.isArray(activeTasks) && activeTasks.length > 0;
+    const base = hasActiveTasks
+      ? activeTasks
+      : (Array.isArray(schedules) ? schedules.filter((item) => item?.isTask && !item?.completed) : []);
+    const done = Array.isArray(completedTasks) ? completedTasks : [];
+    return [...base, ...done];
+  }, [activeTasks, completedTasks, schedules]);
 
   const auth = useContext(AuthContext);
   const userId = auth?.user?.id || null;
@@ -470,7 +499,22 @@ function App() {
       },
       actionType
     );
-  }, [setHistoryState]);
+
+    // カレンダー表示範囲内で編集されたタスクの内容を、タスクタブ側にも反映
+    setActiveTasks((prev) => {
+      const base = Array.isArray(prev) ? prev : [];
+      if (base.length === 0) return base;
+      const updates = normalizedSchedules
+        .filter((s) => s?.isTask && !s?.completed && (s?.id ?? null) != null);
+      if (updates.length === 0) return base;
+      const updateMap = new Map(updates.map((t) => [t.id, t]));
+      return base.map((t) => {
+        const id = t?.id ?? null;
+        if (id == null) return t;
+        return updateMap.has(id) ? updateMap.get(id) : t;
+      });
+    });
+  }, [setActiveTasks, setHistoryState]);
 
   const replaceAppState = useCallback(
     (nextSchedules, actionType = 'replace', options = {}) => {
@@ -546,6 +590,10 @@ function App() {
   const [isQuickMemoLoaded, setIsQuickMemoLoaded] = useState(false);
 
   const [notes, setNotes] = useState([]);
+  const ARCHIVED_NOTE_PAGE_SIZE = 5;
+  const [archivedNotesCursor, setArchivedNotesCursor] = useState(null);
+  const [archivedNotesHasMore, setArchivedNotesHasMore] = useState(false);
+  const [archivedNotesLoading, setArchivedNotesLoading] = useState(false);
   const [dailyQuestDateStr, setDailyQuestDateStr] = useState(() => toDateStrLocal(new Date()));
   const [dailyQuestTasks, setDailyQuestTasks] = useState(() => []);
   const [calendarDailyQuestSnapshots, setCalendarDailyQuestSnapshots] = useState(() => []);
@@ -869,20 +917,40 @@ function App() {
       }));
       beginSupabaseJob({ actionType, kind: 'fetchData' });
       try {
+        const getMonthRange = (baseDate) => {
+          const d = baseDate instanceof Date ? baseDate : new Date();
+          const start = new Date(d.getFullYear(), d.getMonth(), 1);
+          const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+          return { startDate: toDateStrLocal(start), endDate: toDateStrLocal(end) };
+        };
+
         const visibleRange = calendarVisibleRangeRef.current;
-        const hasVisibleRange = !!(visibleRange?.startDate && visibleRange?.endDate);
+        const fallbackRange = getMonthRange(selectedDate);
+        const syncRange = (visibleRange?.startDate && visibleRange?.endDate)
+          ? { startDate: visibleRange.startDate, endDate: visibleRange.endDate }
+          : fallbackRange;
+        const hasVisibleRange = !!(syncRange?.startDate && syncRange?.endDate);
 
         const todayStr = toDateStrLocal(new Date());
 
-        const [remoteSchedules, remoteQuickMemo, remoteNotes, remoteNoteDates, remoteLoopState, remoteLoopMarkers, remoteDailyQuestTasks, remoteDailyQuestSnapshots, remoteDailyQuestTasksInRange] = await Promise.all([
-          fetchSchedulesForUser(userId),
+        const [remoteSchedulesInRange, remoteActiveTasks, remoteQuickMemo, remoteNotesActive, remoteNotesArchivedPage, remoteCompletedTasksPage, remoteNoteDates, remoteLoopState, remoteLoopMarkers, remoteDailyQuestTasks, remoteDailyQuestSnapshots, remoteDailyQuestTasksInRange] = await Promise.all([
+          hasVisibleRange
+            ? fetchSchedulesForUserInRange({
+                userId,
+                startDate: syncRange.startDate,
+                endDate: syncRange.endDate,
+              }).catch(() => fetchActiveSchedulesForUser(userId).catch(() => fetchSchedulesForUser(userId)))
+            : fetchActiveSchedulesForUser(userId).catch(() => fetchSchedulesForUser(userId)),
+          fetchActiveTasksForUser(userId).catch(() => []),
           fetchQuickMemoForUser(userId),
-          fetchNotesForUser(userId),
+          fetchActiveNotesForUser(userId).catch(() => fetchNotesForUser(userId)),
+          fetchArchivedNotesPageForUser({ userId, limit: ARCHIVED_NOTE_PAGE_SIZE }).catch(() => ({ items: [], hasMore: false, nextCursor: null })),
+          fetchCompletedTasksPageForUser({ userId, limit: COMPLETED_TASK_PAGE_SIZE }).catch(() => ({ items: [], hasMore: false, nextCursor: null })),
           hasVisibleRange
             ? fetchNoteDatesForUserInRange({
                 userId,
-                startDate: visibleRange.startDate,
-                endDate: visibleRange.endDate,
+                startDate: syncRange.startDate,
+                endDate: syncRange.endDate,
               })
             : Promise.resolve(null),
           fetchLoopTimelineStateForUser(userId).catch((error) => {
@@ -900,8 +968,8 @@ function App() {
           hasVisibleRange
             ? fetchDailyQuestSnapshotsForUserInRange({
                 userId,
-                startDate: visibleRange.startDate,
-                endDate: visibleRange.endDate,
+                startDate: syncRange.startDate,
+                endDate: syncRange.endDate,
               }).catch((error) => {
                 console.warn('[Supabase] daily_quest_snapshots fetch skipped:', error);
                 return [];
@@ -910,8 +978,8 @@ function App() {
           hasVisibleRange
             ? fetchDailyQuestTasksForUserInRange({
                 userId,
-                startDate: visibleRange.startDate,
-                endDate: visibleRange.endDate,
+                startDate: syncRange.startDate,
+                endDate: syncRange.endDate,
               }).catch((error) => {
                 console.warn('[Supabase] daily_quest_tasks range fetch skipped:', error);
                 return [];
@@ -920,9 +988,17 @@ function App() {
         ]);
         if (isCancelledFn()) return;
 
-        replaceAppState(remoteSchedules, actionType, {
+        const baseSchedules = Array.isArray(remoteSchedulesInRange) ? remoteSchedulesInRange : [];
+
+        replaceAppState(baseSchedules, actionType, {
           mode: actionType === 'supabase_initial_sync' ? 'replace' : 'overwrite',
         });
+
+        // 未完了タスク（タスクタブ用）
+        {
+          const list = Array.isArray(remoteActiveTasks) ? remoteActiveTasks : [];
+          setActiveTasks(list);
+        }
 
         // ローカルに未保存の変更がある場合、再同期で上書きしない。
         // (追加直後のデバウンス保存前に resync が走ると、追加が消えることがある)
@@ -944,15 +1020,29 @@ function App() {
           }
         }
 
+        // 完了済みタスク（ページング）
+        {
+          const page = remoteCompletedTasksPage && typeof remoteCompletedTasksPage === 'object'
+            ? remoteCompletedTasksPage
+            : { items: [], hasMore: false, nextCursor: null };
+          setCompletedTasks(Array.isArray(page.items) ? page.items : []);
+          setCompletedTasksHasMore(!!page.hasMore);
+          setCompletedTasksCursor(page.nextCursor || null);
+        }
+
         // ノート同期: pending patch（未送信の編集）と下書きを保持して上書き事故を防ぐ
         {
-          const remoteList = Array.isArray(remoteNotes) ? remoteNotes : [];
+          const remoteActive = Array.isArray(remoteNotesActive) ? remoteNotesActive : [];
+          const remoteArchivedItems = Array.isArray(remoteNotesArchivedPage?.items) ? remoteNotesArchivedPage.items : [];
+          setArchivedNotesHasMore(!!remoteNotesArchivedPage?.hasMore);
+          setArchivedNotesCursor(remoteNotesArchivedPage?.nextCursor || null);
+
           const pendingMap = notePendingPatchRef.current;
           const localList = Array.isArray(notesRef.current) ? notesRef.current : [];
           const draftNotes = localList.filter((note) => note?.__isDraft);
           const draftIdSet = new Set(draftNotes.map((note) => note?.id).filter((id) => id != null));
 
-          const mergedRemote = remoteList.map((note) => {
+          const mergeWithPending = (note) => {
             const id = note?.id ?? null;
             if (id == null) return note;
             const pendingPatch = pendingMap.get(id);
@@ -964,9 +1054,12 @@ function App() {
               ...pendingPatch,
               ...(nextUpdatedAt ? { updated_at: nextUpdatedAt } : {}),
             };
-          });
+          };
 
-          const combined = [...draftNotes, ...mergedRemote.filter((note) => !draftIdSet.has(note?.id ?? null))];
+          const mergedActive = remoteActive.map(mergeWithPending);
+          const mergedArchived = remoteArchivedItems.map(mergeWithPending);
+          const combinedRemote = [...mergedActive, ...mergedArchived];
+          const combined = [...draftNotes, ...combinedRemote.filter((note) => !draftIdSet.has(note?.id ?? null))];
           setNotes(applyNoteFlagsToNotes(combined, {
             archiveFlags: noteArchiveFlagsRef.current,
             importantFlags: noteImportantFlagsRef.current,
@@ -1004,11 +1097,11 @@ function App() {
         hasFetchedRemoteRef.current = true;
         console.info('[SupabaseSync] payload', JSON.stringify({
           actionType,
-          schedules: remoteSchedules.slice(0, 10),
+          schedules: baseSchedules.slice(0, 10),
         }));
         console.info('[SupabaseSync] success', JSON.stringify({
           actionType,
-          count: remoteSchedules.length,
+          count: baseSchedules.length,
           durationMs:
             (typeof performance !== 'undefined' && typeof performance.now === 'function'
               ? Math.round(performance.now() - startedAt)
@@ -1045,7 +1138,34 @@ function App() {
         }));
       }
     },
-    [applyQuickMemoValue, beginSupabaseJob, endSupabaseJob, loadLocalDailyQuestTasksByDate, replaceAppState, saveLocalDailyQuestTasksByDate, userId]
+    [
+      applyQuickMemoValue,
+      beginSupabaseJob,
+      endSupabaseJob,
+      loadLocalDailyQuestTasksByDate,
+      replaceAppState,
+      saveLocalDailyQuestTasksByDate,
+      setActiveTasks,
+      userId,
+      fetchSchedulesForUser,
+      fetchActiveSchedulesForUser,
+      fetchSchedulesForUserInRange,
+      fetchActiveTasksForUser,
+      fetchQuickMemoForUser,
+      fetchNotesForUser,
+      fetchActiveNotesForUser,
+      fetchArchivedNotesPageForUser,
+      fetchCompletedTasksPageForUser,
+      fetchNoteDatesForUserInRange,
+      fetchLoopTimelineStateForUser,
+      fetchLoopTimelineMarkersForUser,
+      fetchDailyQuestTasksForUserByDate,
+      fetchDailyQuestSnapshotsForUserInRange,
+      fetchDailyQuestTasksForUserInRange,
+      ARCHIVED_NOTE_PAGE_SIZE,
+      COMPLETED_TASK_PAGE_SIZE,
+      selectedDate,
+    ]
   );
 
   const requestSupabaseSync = useCallback(
@@ -1087,6 +1207,92 @@ function App() {
     },
     [refreshFromSupabase, userId]
   );
+
+  const handleLoadMoreCompletedTasks = useCallback(async () => {
+    if (!userId) return;
+    if (completedTasksLoading) return;
+    if (!completedTasksHasMore) return;
+
+    setCompletedTasksLoading(true);
+    try {
+      const page = await fetchCompletedTasksPageForUser({
+        userId,
+        limit: COMPLETED_TASK_PAGE_SIZE,
+        cursor: completedTasksCursor,
+      });
+      const items = Array.isArray(page?.items) ? page.items : [];
+      setCompletedTasks((prev) => {
+        const base = Array.isArray(prev) ? prev : [];
+        const idSet = new Set(base.map((t) => t?.id ?? null).filter((v) => v != null));
+        const appended = items.filter((t) => {
+          const id = t?.id ?? null;
+          if (id == null) return true;
+          if (idSet.has(id)) return false;
+          idSet.add(id);
+          return true;
+        });
+        return [...base, ...appended];
+      });
+      setCompletedTasksHasMore(!!page?.hasMore);
+      setCompletedTasksCursor(page?.nextCursor || null);
+    } catch (error) {
+      console.error('[Supabase] Failed to load more completed tasks:', error);
+    } finally {
+      setCompletedTasksLoading(false);
+    }
+  }, [
+    userId,
+    completedTasksLoading,
+    completedTasksHasMore,
+    completedTasksCursor,
+    fetchCompletedTasksPageForUser,
+    COMPLETED_TASK_PAGE_SIZE,
+  ]);
+
+  const handleLoadMoreArchivedNotes = useCallback(async () => {
+    if (!userId) return;
+    if (archivedNotesLoading) return;
+    if (!archivedNotesHasMore) return;
+
+    setArchivedNotesLoading(true);
+    try {
+      const page = await fetchArchivedNotesPageForUser({
+        userId,
+        limit: ARCHIVED_NOTE_PAGE_SIZE,
+        cursor: archivedNotesCursor,
+      });
+      const items = Array.isArray(page?.items) ? page.items : [];
+      setNotes((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const archivedExisting = list.filter((n) => n?.archived);
+        const nonArchived = list.filter((n) => !n?.archived);
+
+        const idSet = new Set(archivedExisting.map((n) => n?.id ?? null).filter((v) => v != null));
+        const appended = items.filter((n) => {
+          const id = n?.id ?? null;
+          if (id == null) return true;
+          if (idSet.has(id)) return false;
+          idSet.add(id);
+          return true;
+        });
+
+        return [...nonArchived, ...archivedExisting, ...appended];
+      });
+      setArchivedNotesHasMore(!!page?.hasMore);
+      setArchivedNotesCursor(page?.nextCursor || null);
+    } catch (error) {
+      console.error('[Supabase] Failed to load more archived notes:', error);
+    } finally {
+      setArchivedNotesLoading(false);
+    }
+  }, [
+    userId,
+    archivedNotesLoading,
+    archivedNotesHasMore,
+    archivedNotesCursor,
+    fetchArchivedNotesPageForUser,
+    ARCHIVED_NOTE_PAGE_SIZE,
+  ]);
 
   const normalizeQuestTitleForCompare = useCallback((value) => {
     const trimmed = String(value ?? '').trim();
@@ -2636,12 +2842,19 @@ function App() {
 
   const handleCalendarVisibleRangeChange = useCallback((range) => {
     if (!range?.startDate || !range?.endDate) return;
+
+    const prev = calendarVisibleRangeRef.current;
+    const changed = !prev || prev.startDate !== range.startDate || prev.endDate !== range.endDate;
+
     calendarVisibleRangeRef.current = { startDate: range.startDate, endDate: range.endDate };
     setCalendarVisibleRange({ startDate: range.startDate, endDate: range.endDate });
     refreshCalendarNoteDates().catch(() => {});
     refreshCalendarDailyQuestSnapshots().catch(() => {});
     refreshCalendarDailyQuestTasks().catch(() => {});
-  }, [refreshCalendarDailyQuestSnapshots, refreshCalendarDailyQuestTasks, refreshCalendarNoteDates]);
+    if (changed) {
+      requestSupabaseSync('visible_range_change', { showSpinner: false });
+    }
+  }, [refreshCalendarDailyQuestSnapshots, refreshCalendarDailyQuestTasks, refreshCalendarNoteDates, requestSupabaseSync]);
 
   const handleAddNote = useCallback(async () => {
     if (!selectedDateStr) return;
@@ -3110,7 +3323,7 @@ function App() {
     if (activeNoteId == null) return;
 
     const currentNote = notesRef.current.find((note) => (note?.id ?? null) === activeNoteId) || null;
-    if (!currentNote || currentNote.__isDraft) return;
+    if (currentNote?.__isDraft) return;
 
     let cancelled = false;
     fetchNoteForUserById({ userId, id: activeNoteId })
@@ -3118,6 +3331,12 @@ function App() {
         if (cancelled) return;
         setNotes((prev) => {
           const list = Array.isArray(prev) ? prev : [];
+          const exists = list.some((note) => (note?.id ?? null) === activeNoteId);
+          if (!exists) {
+            const archived = typeof fresh?.archived === 'boolean' ? fresh.archived : !!noteArchiveFlagsRef.current?.[String(activeNoteId)];
+            const important = typeof fresh?.important === 'boolean' ? fresh.important : !!noteImportantFlagsRef.current?.[String(activeNoteId)];
+            return [{ ...fresh, archived, important }, ...list];
+          }
           return list.map((note) => {
             if ((note?.id ?? null) !== activeNoteId) return note;
             const archived = typeof note?.archived === 'boolean' ? note.archived : !!noteArchiveFlagsRef.current?.[String(activeNoteId)];
@@ -3845,7 +4064,8 @@ function App() {
     const entry =
       typeof target === 'object'
         ? target
-        : schedulesRef.current.find((item) => item.id === target);
+        : (schedulesRef.current.find((item) => item.id === target)
+          || completedTasksRef.current.find((item) => item?.id === target));
 
     if (!entry) return;
 
@@ -3863,10 +4083,50 @@ function App() {
     });
 
     const currentSchedules = schedulesRef.current;
-    const optimisticSchedules = currentSchedules.map((item) =>
-      item.id === scheduleId ? updatedSchedule : item
-    );
-    commitSchedules(optimisticSchedules, 'task_toggle');
+    let nextSchedules = currentSchedules;
+    // schedules 側は完了/未完了どちらでも保持（カレンダー/タイムラインに出す）
+    {
+      const exists = currentSchedules.some((item) => item.id === scheduleId);
+      if (exists) {
+        nextSchedules = currentSchedules.map((item) => (item.id === scheduleId ? updatedSchedule : item));
+      } else {
+        // 可視範囲外のタスクを schedules に混入させない（可視範囲ロードの前提を守る）
+        const range = calendarVisibleRangeRef.current;
+        const dateStr = typeof updatedSchedule?.date === 'string' ? updatedSchedule.date : '';
+        const inRange = !!(
+          range?.startDate
+          && range?.endDate
+          && dateStr
+          && dateStr >= range.startDate
+          && dateStr <= range.endDate
+        );
+        nextSchedules = inRange ? [...currentSchedules, updatedSchedule] : currentSchedules;
+      }
+    }
+
+    // タスクタブ用の未完了リスト
+    if (completed) {
+      setActiveTasks((prev) => (Array.isArray(prev) ? prev.filter((t) => (t?.id ?? null) !== scheduleId) : []));
+    } else {
+      setActiveTasks((prev) => {
+        const base = Array.isArray(prev) ? prev : [];
+        const filtered = base.filter((t) => (t?.id ?? null) !== scheduleId);
+        return [updatedSchedule, ...filtered];
+      });
+    }
+
+    if (completed) {
+      // タスクタブの完了リスト（ページング表示用）は先頭に追加
+      setCompletedTasks((prev) => {
+        const base = Array.isArray(prev) ? prev : [];
+        const filtered = base.filter((t) => (t?.id ?? null) !== scheduleId);
+        return [updatedSchedule, ...filtered];
+      });
+    } else {
+      // 未完了に戻す場合は完了リストから外す
+      setCompletedTasks((prev) => (Array.isArray(prev) ? prev.filter((t) => (t?.id ?? null) !== scheduleId) : []));
+    }
+    commitSchedules(nextSchedules, 'task_toggle');
     console.info('[TaskToggle] optimistic applied', JSON.stringify({
       scheduleId,
       completed,
@@ -3880,9 +4140,35 @@ function App() {
         try {
           markRealtimeSelfWrite('schedules', scheduleId);
           const persisted = await updateScheduleForUser(updatedSchedule, userId);
-          const latest = schedulesRef.current;
-          const synced = latest.map((item) => (item.id === persisted.id ? persisted : item));
-          commitSchedules(synced, 'task_toggle_sync');
+          const normalized = normalizeSchedule({
+            ...persisted,
+            isTask: persisted?.isTask ?? true,
+          });
+
+          {
+            const latest = schedulesRef.current;
+            const exists = latest.some((item) => item.id === normalized.id);
+            const synced = exists
+              ? latest.map((item) => (item.id === normalized.id ? normalized : item))
+              : [...latest, normalized];
+            commitSchedules(synced, 'task_toggle_sync');
+          }
+
+          if (normalized.completed) {
+            setActiveTasks((prev) => (Array.isArray(prev) ? prev.filter((t) => (t?.id ?? null) !== normalized.id) : []));
+            setCompletedTasks((prev) => {
+              const base = Array.isArray(prev) ? prev : [];
+              const filtered = base.filter((t) => (t?.id ?? null) !== normalized.id);
+              return [normalized, ...filtered];
+            });
+          } else {
+            setActiveTasks((prev) => {
+              const base = Array.isArray(prev) ? prev : [];
+              const filtered = base.filter((t) => (t?.id ?? null) !== normalized.id);
+              return [normalized, ...filtered];
+            });
+            setCompletedTasks((prev) => (Array.isArray(prev) ? prev.filter((t) => (t?.id ?? null) !== normalized.id) : []));
+          }
           setSupabaseError(null);
           requestSupabaseSync('task_toggle_success');
           console.info('[TaskToggle] synced', JSON.stringify({
@@ -3902,7 +4188,7 @@ function App() {
         }
       })();
     }
-  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, setSupabaseError, userId]);
+  }, [beginSupabaseJob, commitSchedules, endSupabaseJob, markRealtimeSelfWrite, requestSupabaseSync, setSupabaseError, updateScheduleForUser, userId]);
 
   const handleAdd = (targetDate = null) => {
     // ターゲット日付が指定されていればその日付を使用、なければ選択中の日付を使用
@@ -4218,6 +4504,12 @@ function App() {
                         onClosePanel={closeTimeline}
                         tasks={taskSchedules}
                         notes={notes}
+                        onLoadMoreCompletedTasks={handleLoadMoreCompletedTasks}
+                        completedTasksHasMore={completedTasksHasMore}
+                        completedTasksLoading={completedTasksLoading}
+                        onLoadMoreArchivedNotes={handleLoadMoreArchivedNotes}
+                        archivedNotesHasMore={archivedNotesHasMore}
+                        archivedNotesLoading={archivedNotesLoading}
                         onTabNote={handleTabNote}
                         canShareLoopTimeline={isAuthenticated}
                         loopTimelineState={loopTimelineState}
@@ -4330,6 +4622,12 @@ function App() {
                     onTabChange={setTimelineActiveTab}
                     tasks={taskSchedules}
                     notes={notes}
+                    onLoadMoreCompletedTasks={handleLoadMoreCompletedTasks}
+                    completedTasksHasMore={completedTasksHasMore}
+                    completedTasksLoading={completedTasksLoading}
+                    onLoadMoreArchivedNotes={handleLoadMoreArchivedNotes}
+                    archivedNotesHasMore={archivedNotesHasMore}
+                    archivedNotesLoading={archivedNotesLoading}
                     onTabNote={handleTabNote}
                     canShareLoopTimeline={isAuthenticated}
                     loopTimelineState={loopTimelineState}

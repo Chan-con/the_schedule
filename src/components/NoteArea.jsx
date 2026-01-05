@@ -27,6 +27,9 @@ const NoteArea = ({
   onToggleArchiveNote,
   onToggleImportantNote,
   onCommitDraftNote,
+  onLoadMoreArchived,
+  archivedHasMore = false,
+  archivedLoading = false,
   canShare = false,
   selectedDateStr = '',
   activeNoteId: controlledActiveNoteId,
@@ -36,8 +39,6 @@ const NoteArea = ({
 }) => {
   const [query, setQuery] = useState('');
   const [internalActiveNoteId, setInternalActiveNoteId] = useState(null);
-  const PAGE_SIZE = 5;
-  const [archivedVisibleCount, setArchivedVisibleCount] = useState(PAGE_SIZE);
   const scrollContainerRef = useRef(null);
   const archivedSentinelRef = useRef(null);
 
@@ -105,11 +106,6 @@ const NoteArea = ({
     });
   }, [sortedNotes, query]);
 
-  useEffect(() => {
-    // 検索条件や並びが変わったら、アーカイブ表示件数をリセット
-    setArchivedVisibleCount(PAGE_SIZE);
-  }, [query, sortedNotes]);
-
   const { activeNotes, archivedNotes } = useMemo(() => {
     const active = [];
     const archived = [];
@@ -123,17 +119,9 @@ const NoteArea = ({
     return { activeNotes: active, archivedNotes: archived };
   }, [filteredNotes]);
 
-  const hasMoreArchived = archivedNotes.length > archivedVisibleCount;
-
-  const loadMoreArchived = useCallback(() => {
-    setArchivedVisibleCount((prev) => {
-      const next = prev + PAGE_SIZE;
-      return next > archivedNotes.length ? archivedNotes.length : next;
-    });
-  }, [archivedNotes.length]);
-
   useEffect(() => {
-    if (!hasMoreArchived) return;
+    if (!archivedHasMore) return;
+    if (archivedLoading) return;
     const root = scrollContainerRef.current;
     const target = archivedSentinelRef.current;
     if (!root || !target) return;
@@ -145,7 +133,9 @@ const NoteArea = ({
         if (cancelled) return;
         const entry = entries[0];
         if (!entry?.isIntersecting) return;
-        loadMoreArchived();
+        if (typeof onLoadMoreArchived === 'function') {
+          onLoadMoreArchived();
+        }
       },
       {
         root,
@@ -158,7 +148,7 @@ const NoteArea = ({
       cancelled = true;
       observer.disconnect();
     };
-  }, [hasMoreArchived, loadMoreArchived]);
+  }, [archivedHasMore, archivedLoading, onLoadMoreArchived]);
 
   const { importantNotes, normalActiveNotes } = useMemo(() => {
     const important = [];
@@ -295,9 +285,9 @@ const NoteArea = ({
               </div>
             )}
 
-            {archivedNotes.slice(0, archivedVisibleCount).map((note) => renderNoteCard(note))}
+            {archivedNotes.map((note) => renderNoteCard(note))}
 
-            {hasMoreArchived && <div ref={archivedSentinelRef} className="h-6" />}
+            {archivedHasMore && <div ref={archivedSentinelRef} className="h-6" />}
           </div>
         )}
       </div>

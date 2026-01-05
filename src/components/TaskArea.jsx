@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import MemoWithLinks from './MemoWithLinks';
 
 const isTaskOverdue = (task, now = new Date()) => {
@@ -105,11 +105,15 @@ const getTaskKey = (task) => {
   return `task-${task?.name ?? 'unknown'}-${task?.date ?? 'no-date'}-${task?.time ?? 'no-time'}`;
 };
 
-const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
+const TaskArea = ({
+  tasks = [],
+  onEdit,
+  onToggleTask,
+  onLoadMoreCompleted,
+  completedHasMore = false,
+  completedLoading = false,
+}) => {
   const taskList = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
-
-  const PAGE_SIZE = 5;
-  const [completedVisibleCount, setCompletedVisibleCount] = useState(PAGE_SIZE);
   const scrollContainerRef = useRef(null);
   const completedSentinelRef = useRef(null);
 
@@ -133,27 +137,13 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
 
     overdue.sort(compareTasksByDate);
     incomplete.sort(compareTasksByDate);
-    completed.sort(compareTasksByDate);
 
     return { overdueTasks: overdue, incompleteTasks: incomplete, completedTasks: completed };
   }, [taskList]);
 
   useEffect(() => {
-    // タスク一覧が変わったら完了済みの表示件数をリセット
-    setCompletedVisibleCount(PAGE_SIZE);
-  }, [taskList]);
-
-  const hasMoreCompleted = completedTasks.length > completedVisibleCount;
-
-  const loadMoreCompleted = useCallback(() => {
-    setCompletedVisibleCount((prev) => {
-      const next = prev + PAGE_SIZE;
-      return next > completedTasks.length ? completedTasks.length : next;
-    });
-  }, [completedTasks.length]);
-
-  useEffect(() => {
-    if (!hasMoreCompleted) return;
+    if (!completedHasMore) return;
+    if (completedLoading) return;
     const root = scrollContainerRef.current;
     const target = completedSentinelRef.current;
     if (!root || !target) return;
@@ -165,7 +155,9 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
         if (cancelled) return;
         const entry = entries[0];
         if (!entry?.isIntersecting) return;
-        loadMoreCompleted();
+        if (typeof onLoadMoreCompleted === 'function') {
+          onLoadMoreCompleted();
+        }
       },
       {
         root,
@@ -178,7 +170,7 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
       cancelled = true;
       observer.disconnect();
     };
-  }, [hasMoreCompleted, loadMoreCompleted]);
+  }, [completedHasMore, completedLoading, onLoadMoreCompleted]);
 
   const renderTaskCard = (task) => {
     const isCompleted = !!task?.completed;
@@ -297,9 +289,9 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
               </div>
             )}
 
-            {completedTasks.slice(0, completedVisibleCount).map((task) => renderTaskCard(task))}
+            {completedTasks.map((task) => renderTaskCard(task))}
 
-            {hasMoreCompleted && <div ref={completedSentinelRef} className="h-6" />}
+            {completedHasMore && <div ref={completedSentinelRef} className="h-6" />}
           </div>
         )}
       </div>

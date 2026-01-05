@@ -65,6 +65,82 @@ export const fetchNotesForUser = async (userId) => {
   return result;
 };
 
+export const fetchActiveNotesForUser = async (userId) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+
+  const startedAt = nowPerf();
+  logNotes('fetchActive', 'request', { userId });
+
+  const { data, error } = await supabase
+    .from(TABLE_NAME)
+    .select('id, date, title, content, archived, important, created_at, updated_at')
+    .eq('user_id', userId)
+    .eq('archived', false)
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: false });
+
+  if (error) {
+    logNotes('fetchActive', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });
+    throw new Error(`ノートを取得できませんでした: ${error.message}`);
+  }
+
+  const result = Array.isArray(data) ? data : [];
+  logNotes('fetchActive', 'success', { userId, durationMs: buildDuration(startedAt), count: result.length });
+  return result;
+};
+
+export const fetchArchivedNotesPageForUser = async ({ userId, limit = 5, cursor } = {}) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 5;
+
+  const startedAt = nowPerf();
+  logNotes('fetchArchivedPage', 'request', {
+    userId,
+    limit: safeLimit,
+    cursorUpdatedAt: cursor?.updated_at ?? null,
+    cursorId: cursor?.id ?? null,
+  });
+
+  let query = supabase
+    .from(TABLE_NAME)
+    .select('id, date, title, content, archived, important, created_at, updated_at')
+    .eq('user_id', userId)
+    .eq('archived', true)
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(safeLimit + 1);
+
+  const cursorUpdatedAt = cursor?.updated_at;
+  const cursorId = cursor?.id;
+  if (cursorUpdatedAt && cursorId != null) {
+    query = query.or(`updated_at.lt.${cursorUpdatedAt},and(updated_at.eq.${cursorUpdatedAt},id.lt.${cursorId})`);
+  } else if (cursorUpdatedAt) {
+    query = query.lt('updated_at', cursorUpdatedAt);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    logNotes('fetchArchivedPage', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });
+    throw new Error(`アーカイブノートを取得できませんでした: ${error.message}`);
+  }
+
+  const list = Array.isArray(data) ? data : [];
+  const hasMore = list.length > safeLimit;
+  const items = hasMore ? list.slice(0, safeLimit) : list;
+  const last = items.length > 0 ? items[items.length - 1] : null;
+  const nextCursor = last ? { updated_at: last.updated_at ?? null, id: last.id ?? null } : null;
+
+  logNotes('fetchArchivedPage', 'success', {
+    userId,
+    durationMs: buildDuration(startedAt),
+    count: items.length,
+    hasMore,
+  });
+
+  return { items, hasMore, nextCursor };
+};
+
 export const createNoteForUser = async ({ userId, date, title = '', content = '' }) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   if (!date) throw new Error('日付が指定されていません。');

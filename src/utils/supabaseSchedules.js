@@ -152,6 +152,271 @@ export const fetchSchedulesForUser = async (userId) => {
   return mapped;
 };
 
+export const fetchActiveSchedulesForUser = async (userId) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+  const startedAt = nowPerf();
+  logSupabase('fetchActiveSchedules', 'request', { userId });
+
+  const runQuery = async (withTimeOrder) => {
+    const selectFields = withTimeOrder
+      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, completed, created_at, updated_at'
+      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+
+    let query = supabase
+      .from(TABLE_NAME)
+      .select(selectFields)
+      .eq('user_id', userId)
+      // (非タスク) OR (未完了)
+      .or('is_task.eq.false,completed.eq.false')
+      .order('date', { ascending: true })
+      .order('all_day', { ascending: false })
+      .order('all_day_order', { ascending: true })
+      .order('time', { ascending: true, nullsFirst: true });
+
+    if (withTimeOrder) {
+      query = query.order('time_order', { ascending: true, nullsFirst: false });
+    }
+
+    return query;
+  };
+
+  let data;
+  let error;
+  const tryTimeOrder = shouldTryTimeOrder();
+  if (tryTimeOrder) {
+    ({ data, error } = await runQuery(true));
+    if (error && isMissingColumnError(error, 'time_order')) {
+      scheduleTimeOrderSupport = 'missing';
+      lastScheduleTimeOrderProbeAt = Date.now();
+      logSupabase('fetchActiveSchedules', 'info', { userId, message: 'time_order column missing; fallback without ordering' });
+      ({ data, error } = await runQuery(false));
+    } else if (!error) {
+      scheduleTimeOrderSupport = 'supported';
+    }
+  } else {
+    ({ data, error } = await runQuery(false));
+  }
+
+  if (error) {
+    logSupabase('fetchActiveSchedules', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });
+    throw new Error(`Supabaseから予定を取得できませんでした: ${error.message}`);
+  }
+
+  const mapped = (data || []).map(mapFromSupabaseRow);
+  logSupabase('fetchActiveSchedules', 'success', { userId, durationMs: buildDuration(startedAt), count: mapped.length });
+  return mapped;
+};
+
+export const fetchSchedulesForUserInRange = async ({ userId, startDate, endDate } = {}) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+  const safeStart = typeof startDate === 'string' ? startDate : '';
+  const safeEnd = typeof endDate === 'string' ? endDate : '';
+  if (!safeStart || !safeEnd) throw new Error('startDate / endDate が指定されていません。');
+  const startedAt = nowPerf();
+  logSupabase('fetchSchedulesInRange', 'request', { userId, startDate: safeStart, endDate: safeEnd });
+
+  const runQuery = async (withTimeOrder) => {
+    const selectFields = withTimeOrder
+      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, completed, created_at, updated_at'
+      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+
+    let query = supabase
+      .from(TABLE_NAME)
+      .select(selectFields)
+      .eq('user_id', userId)
+      .gte('date', safeStart)
+      .lte('date', safeEnd)
+      .order('date', { ascending: true })
+      .order('all_day', { ascending: false })
+      .order('all_day_order', { ascending: true })
+      .order('time', { ascending: true, nullsFirst: true });
+
+    if (withTimeOrder) {
+      query = query.order('time_order', { ascending: true, nullsFirst: false });
+    }
+
+    return query;
+  };
+
+  let data;
+  let error;
+  const tryTimeOrder = shouldTryTimeOrder();
+  if (tryTimeOrder) {
+    ({ data, error } = await runQuery(true));
+    if (error && isMissingColumnError(error, 'time_order')) {
+      scheduleTimeOrderSupport = 'missing';
+      lastScheduleTimeOrderProbeAt = Date.now();
+      logSupabase('fetchSchedulesInRange', 'info', { userId, message: 'time_order column missing; fallback without ordering' });
+      ({ data, error } = await runQuery(false));
+    } else if (!error) {
+      scheduleTimeOrderSupport = 'supported';
+    }
+  } else {
+    ({ data, error } = await runQuery(false));
+  }
+
+  if (error) {
+    logSupabase('fetchSchedulesInRange', 'error', {
+      userId,
+      durationMs: buildDuration(startedAt),
+      message: error.message,
+      startDate: safeStart,
+      endDate: safeEnd,
+    });
+    throw new Error(`Supabaseから予定を取得できませんでした: ${error.message}`);
+  }
+
+  const mapped = (data || []).map(mapFromSupabaseRow);
+  logSupabase('fetchSchedulesInRange', 'success', {
+    userId,
+    durationMs: buildDuration(startedAt),
+    startDate: safeStart,
+    endDate: safeEnd,
+    count: mapped.length,
+  });
+  return mapped;
+};
+
+export const fetchActiveTasksForUser = async (userId) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+  const startedAt = nowPerf();
+  logSupabase('fetchActiveTasks', 'request', { userId });
+
+  const runQuery = async (withTimeOrder) => {
+    const selectFields = withTimeOrder
+      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, completed, created_at, updated_at'
+      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+
+    let query = supabase
+      .from(TABLE_NAME)
+      .select(selectFields)
+      .eq('user_id', userId)
+      .eq('is_task', true)
+      .eq('completed', false)
+      .order('date', { ascending: true })
+      .order('all_day', { ascending: false })
+      .order('all_day_order', { ascending: true })
+      .order('time', { ascending: true, nullsFirst: true });
+
+    if (withTimeOrder) {
+      query = query.order('time_order', { ascending: true, nullsFirst: false });
+    }
+
+    return query;
+  };
+
+  let data;
+  let error;
+  const tryTimeOrder = shouldTryTimeOrder();
+  if (tryTimeOrder) {
+    ({ data, error } = await runQuery(true));
+    if (error && isMissingColumnError(error, 'time_order')) {
+      scheduleTimeOrderSupport = 'missing';
+      lastScheduleTimeOrderProbeAt = Date.now();
+      logSupabase('fetchActiveTasks', 'info', { userId, message: 'time_order column missing; fallback without ordering' });
+      ({ data, error } = await runQuery(false));
+    } else if (!error) {
+      scheduleTimeOrderSupport = 'supported';
+    }
+  } else {
+    ({ data, error } = await runQuery(false));
+  }
+
+  if (error) {
+    logSupabase('fetchActiveTasks', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });
+    throw new Error(`Supabaseからタスクを取得できませんでした: ${error.message}`);
+  }
+
+  const mapped = (data || []).map(mapFromSupabaseRow);
+  logSupabase('fetchActiveTasks', 'success', { userId, durationMs: buildDuration(startedAt), count: mapped.length });
+  return mapped;
+};
+
+export const fetchCompletedTasksPageForUser = async ({ userId, limit = 5, cursor } = {}) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 5;
+  const startedAt = nowPerf();
+  logSupabase('fetchCompletedTasksPage', 'request', {
+    userId,
+    limit: safeLimit,
+    cursorUpdatedAt: cursor?.updated_at ?? null,
+    cursorId: cursor?.id ?? null,
+  });
+
+  const selectFields = 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+
+  let query = supabase
+    .from(TABLE_NAME)
+    .select(selectFields)
+    .eq('user_id', userId)
+    .eq('is_task', true)
+    .eq('completed', true)
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(safeLimit + 1);
+
+  const cursorUpdatedAt = cursor?.updated_at;
+  const cursorId = cursor?.id;
+  if (cursorUpdatedAt && cursorId != null) {
+    query = query.or(`updated_at.lt.${cursorUpdatedAt},and(updated_at.eq.${cursorUpdatedAt},id.lt.${cursorId})`);
+  } else if (cursorUpdatedAt) {
+    query = query.lt('updated_at', cursorUpdatedAt);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    logSupabase('fetchCompletedTasksPage', 'error', { userId, durationMs: buildDuration(startedAt), message: error.message });
+    throw new Error(`完了済みタスクを取得できませんでした: ${error.message}`);
+  }
+
+  const list = Array.isArray(data) ? data : [];
+  const hasMore = list.length > safeLimit;
+  const items = hasMore ? list.slice(0, safeLimit) : list;
+  const mapped = items.map(mapFromSupabaseRow);
+  const last = mapped.length > 0 ? mapped[mapped.length - 1] : null;
+  const nextCursor = last ? { updated_at: last.updatedAt ?? null, id: last.id ?? null } : null;
+
+  logSupabase('fetchCompletedTasksPage', 'success', {
+    userId,
+    durationMs: buildDuration(startedAt),
+    count: mapped.length,
+    hasMore,
+  });
+
+  return { items: mapped, hasMore, nextCursor };
+};
+
+export const fetchCompletedTasksForUserInRange = async ({ userId, startDate, endDate } = {}) => {
+  if (!userId) throw new Error('ユーザーIDが指定されていません。');
+  if (!startDate || !endDate) return [];
+
+  const startedAt = nowPerf();
+  logSupabase('fetchCompletedTasksInRange', 'request', { userId, startDate, endDate });
+
+  const selectFields = 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+  const { data, error } = await supabase
+    .from(TABLE_NAME)
+    .select(selectFields)
+    .eq('user_id', userId)
+    .eq('is_task', true)
+    .eq('completed', true)
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .order('date', { ascending: true })
+    .order('all_day', { ascending: false })
+    .order('all_day_order', { ascending: true })
+    .order('time', { ascending: true, nullsFirst: true });
+
+  if (error) {
+    logSupabase('fetchCompletedTasksInRange', 'error', { userId, startDate, endDate, durationMs: buildDuration(startedAt), message: error.message });
+    throw new Error(`完了済みタスクを取得できませんでした: ${error.message}`);
+  }
+
+  const mapped = (data || []).map(mapFromSupabaseRow);
+  logSupabase('fetchCompletedTasksInRange', 'success', { userId, startDate, endDate, durationMs: buildDuration(startedAt), count: mapped.length });
+  return mapped;
+};
+
 export const createScheduleForUser = async (schedule, userId) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   const basePayload = mapToSupabaseRow(schedule, userId);
