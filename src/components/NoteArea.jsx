@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import NoteModal from './NoteModal';
 
 const formatUpdatedDate = (value) => {
@@ -36,6 +36,10 @@ const NoteArea = ({
 }) => {
   const [query, setQuery] = useState('');
   const [internalActiveNoteId, setInternalActiveNoteId] = useState(null);
+  const PAGE_SIZE = 5;
+  const [archivedVisibleCount, setArchivedVisibleCount] = useState(PAGE_SIZE);
+  const scrollContainerRef = useRef(null);
+  const archivedSentinelRef = useRef(null);
 
   const resolvedActiveNoteId = controlledActiveNoteId !== undefined ? controlledActiveNoteId : internalActiveNoteId;
   const setActiveNoteId = useCallback(
@@ -101,6 +105,11 @@ const NoteArea = ({
     });
   }, [sortedNotes, query]);
 
+  useEffect(() => {
+    // 検索条件や並びが変わったら、アーカイブ表示件数をリセット
+    setArchivedVisibleCount(PAGE_SIZE);
+  }, [query, sortedNotes]);
+
   const { activeNotes, archivedNotes } = useMemo(() => {
     const active = [];
     const archived = [];
@@ -113,6 +122,43 @@ const NoteArea = ({
     });
     return { activeNotes: active, archivedNotes: archived };
   }, [filteredNotes]);
+
+  const hasMoreArchived = archivedNotes.length > archivedVisibleCount;
+
+  const loadMoreArchived = useCallback(() => {
+    setArchivedVisibleCount((prev) => {
+      const next = prev + PAGE_SIZE;
+      return next > archivedNotes.length ? archivedNotes.length : next;
+    });
+  }, [archivedNotes.length]);
+
+  useEffect(() => {
+    if (!hasMoreArchived) return;
+    const root = scrollContainerRef.current;
+    const target = archivedSentinelRef.current;
+    if (!root || !target) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+
+    let cancelled = false;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (cancelled) return;
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        loadMoreArchived();
+      },
+      {
+        root,
+        threshold: 1,
+      }
+    );
+
+    observer.observe(target);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [hasMoreArchived, loadMoreArchived]);
 
   const { importantNotes, normalActiveNotes } = useMemo(() => {
     const important = [];
@@ -210,7 +256,7 @@ const NoteArea = ({
         />
       </div>
 
-      <div className="custom-scrollbar flex-1 overflow-y-auto px-4 pb-3 bg-white">
+      <div ref={scrollContainerRef} className="custom-scrollbar flex-1 overflow-y-auto px-4 pb-3 bg-white">
         {filteredNotes.length === 0 ? (
           <div className="flex min-h-full flex-col items-center justify-center gap-2 text-gray-400">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -249,7 +295,9 @@ const NoteArea = ({
               </div>
             )}
 
-            {archivedNotes.map((note) => renderNoteCard(note))}
+            {archivedNotes.slice(0, archivedVisibleCount).map((note) => renderNoteCard(note))}
+
+            {hasMoreArchived && <div ref={archivedSentinelRef} className="h-6" />}
           </div>
         )}
       </div>

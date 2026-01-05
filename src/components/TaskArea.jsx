@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import MemoWithLinks from './MemoWithLinks';
 
 const isTaskOverdue = (task, now = new Date()) => {
@@ -108,6 +108,11 @@ const getTaskKey = (task) => {
 const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
   const taskList = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
+  const PAGE_SIZE = 5;
+  const [completedVisibleCount, setCompletedVisibleCount] = useState(PAGE_SIZE);
+  const scrollContainerRef = useRef(null);
+  const completedSentinelRef = useRef(null);
+
   const { overdueTasks, incompleteTasks, completedTasks } = useMemo(() => {
     const overdue = [];
     const incomplete = [];
@@ -132,6 +137,48 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
 
     return { overdueTasks: overdue, incompleteTasks: incomplete, completedTasks: completed };
   }, [taskList]);
+
+  useEffect(() => {
+    // タスク一覧が変わったら完了済みの表示件数をリセット
+    setCompletedVisibleCount(PAGE_SIZE);
+  }, [taskList]);
+
+  const hasMoreCompleted = completedTasks.length > completedVisibleCount;
+
+  const loadMoreCompleted = useCallback(() => {
+    setCompletedVisibleCount((prev) => {
+      const next = prev + PAGE_SIZE;
+      return next > completedTasks.length ? completedTasks.length : next;
+    });
+  }, [completedTasks.length]);
+
+  useEffect(() => {
+    if (!hasMoreCompleted) return;
+    const root = scrollContainerRef.current;
+    const target = completedSentinelRef.current;
+    if (!root || !target) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+
+    let cancelled = false;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (cancelled) return;
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        loadMoreCompleted();
+      },
+      {
+        root,
+        threshold: 1,
+      }
+    );
+
+    observer.observe(target);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [hasMoreCompleted, loadMoreCompleted]);
 
   const renderTaskCard = (task) => {
     const isCompleted = !!task?.completed;
@@ -211,7 +258,7 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="custom-scrollbar flex-1 overflow-y-auto pl-2 pr-2 pt-2 pb-3">
+      <div ref={scrollContainerRef} className="custom-scrollbar flex-1 overflow-y-auto pl-2 pr-2 pt-2 pb-3">
         {taskList.length === 0 ? (
           <div className="flex min-h-full flex-col items-center justify-center gap-2 text-gray-400">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -250,7 +297,9 @@ const TaskArea = ({ tasks = [], onEdit, onToggleTask }) => {
               </div>
             )}
 
-            {completedTasks.map((task) => renderTaskCard(task))}
+            {completedTasks.slice(0, completedVisibleCount).map((task) => renderTaskCard(task))}
+
+            {hasMoreCompleted && <div ref={completedSentinelRef} className="h-6" />}
           </div>
         )}
       </div>
