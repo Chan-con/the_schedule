@@ -973,6 +973,7 @@ const Timeline = ({
 					<QuestArea
 						ref={questAreaRef}
 						tasks={availableQuestTasks}
+						dateStr={selectedDateStr}
 						onCreateTask={onCreateQuestTask}
 						onToggleTask={onToggleQuestTask}
 						onUpdateTask={onUpdateQuestTask}

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback, useImperativeHandle } from 'react';
+import { fromDateStrLocal, toDateStrLocal } from '../utils/date';
 
 const IconTrophy = (props) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
@@ -18,8 +19,46 @@ const IconCrown = (props) => (
   </svg>
 );
 
+const clamp01 = (value) => Math.max(0, Math.min(1, value));
+
+const mixRgb = (a, b, t) => {
+  const tt = clamp01(t);
+  const r = Math.round(a[0] + (b[0] - a[0]) * tt);
+  const g = Math.round(a[1] + (b[1] - a[1]) * tt);
+  const bl = Math.round(a[2] + (b[2] - a[2]) * tt);
+  return `rgb(${r} ${g} ${bl})`;
+};
+
+// Tailwind default-ish:
+// green-500: rgb(34 197 94)
+// yellow-400: rgb(250 204 21)
+// red-500: rgb(239 68 68)
+const QUEST_BAR_GREEN = [34, 197, 94];
+const QUEST_BAR_YELLOW = [250, 204, 21];
+const QUEST_BAR_RED = [239, 68, 68];
+
+const getQuestProgressColor = (elapsedRatio) => {
+  const r = clamp01(Number(elapsedRatio) || 0);
+
+  // 0-60%: green
+  if (r <= 0.6) {
+    return `rgb(${QUEST_BAR_GREEN[0]} ${QUEST_BAR_GREEN[1]} ${QUEST_BAR_GREEN[2]})`;
+  }
+
+  // 60-80%: green -> yellow
+  if (r <= 0.8) {
+    const t = (r - 0.6) / 0.2;
+    return mixRgb(QUEST_BAR_GREEN, QUEST_BAR_YELLOW, t);
+  }
+
+  // 80-100%: yellow -> red
+  const t = (r - 0.8) / 0.2;
+  return mixRgb(QUEST_BAR_YELLOW, QUEST_BAR_RED, t);
+};
+
 const QuestArea = React.forwardRef(({
   tasks = [],
+  dateStr = null,
   onCreateTask,
   onToggleTask,
   onUpdateTask,
@@ -37,6 +76,16 @@ const QuestArea = React.forwardRef(({
   const [dragOverTaskId, setDragOverTaskId] = useState(null);
 
   const safeTasks = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
+
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  const effectiveDateStr = useMemo(() => {
+    const direct = String(dateStr ?? '').trim();
+    if (direct) return direct;
+    const fromTasks = String(safeTasks?.[0]?.date_str ?? '').trim();
+    if (fromTasks) return fromTasks;
+    return toDateStrLocal(new Date(nowMs));
+  }, [dateStr, nowMs, safeTasks]);
 
   const normalizeTitleKey = useCallback((value) => {
     const trimmed = String(value ?? '').trim();
@@ -83,6 +132,59 @@ const QuestArea = React.forwardRef(({
   const allCleared = useMemo(() => {
     return orderedTasks.length > 0 && orderedTasks.every((t) => !!t?.completed);
   }, [orderedTasks]);
+
+  const showRefreshCountdown = useMemo(() => {
+    if (orderedTasks.length === 0) return false;
+    if (allCleared) return false;
+    const todayStr = toDateStrLocal(new Date(nowMs));
+    return effectiveDateStr === todayStr;
+  }, [allCleared, effectiveDateStr, nowMs, orderedTasks.length]);
+
+  useEffect(() => {
+    if (!showRefreshCountdown) return;
+    const id = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [showRefreshCountdown]);
+
+  const refreshCountdown = useMemo(() => {
+    if (!showRefreshCountdown) {
+      return { remainingLabel: '', elapsedRatio: 0 };
+    }
+
+    const start = fromDateStrLocal(effectiveDateStr);
+    if (!start) {
+      return { remainingLabel: '', elapsedRatio: 0 };
+    }
+
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+
+    const totalMs = Math.max(1, end.getTime() - start.getTime());
+    const remainingMsRaw = end.getTime() - nowMs;
+    const remainingMs = Math.max(0, Math.min(totalMs, remainingMsRaw));
+    const remainingRatio = remainingMs / totalMs;
+    const elapsedRatio = 1 - remainingRatio;
+
+    const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const remainingLabel = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+    return { remainingLabel, elapsedRatio };
+  }, [effectiveDateStr, nowMs, showRefreshCountdown]);
+
+  const questProgressFill = useMemo(() => {
+    const ratio = clamp01(refreshCountdown.elapsedRatio);
+    return {
+      widthPct: Math.max(0, Math.min(100, ratio * 100)),
+      color: getQuestProgressColor(ratio),
+    };
+  }, [refreshCountdown.elapsedRatio]);
 
   const applyReorder = useCallback((dragId, overId, dropToEnd = false) => {
     const dragKey = dragId ?? null;
@@ -294,6 +396,25 @@ const QuestArea = React.forwardRef(({
           </div>
         ) : (
           <div className="card-stack">
+            {showRefreshCountdown && (
+              <div className="mb-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="text-xs font-semibold text-slate-500">更新まで</div>
+                  <div className="text-xs font-semibold text-slate-800 tabular-nums">{refreshCountdown.remainingLabel}</div>
+                </div>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full transition-[width,background-color] duration-300"
+                    style={{
+                      width: `${questProgressFill.widthPct}%`,
+                      backgroundColor: questProgressFill.color,
+                    }}
+                    aria-hidden="true"
+                  />
+                </div>
+              </div>
+            )}
+
             {allCleared && (
               <div className="mb-2 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700">
                 <IconCrown className="h-5 w-5 flex-shrink-0 text-amber-500" />
