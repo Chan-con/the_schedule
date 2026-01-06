@@ -3,6 +3,13 @@ import { toDateStrLocal } from '../utils/date';
 
 const MAX_NOTIFICATIONS = 3;
 
+const FlagIcon = ({ className = '' } = {}) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className} aria-hidden="true">
+    <path d="M4 2a1 1 0 0 1 1 1v14a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Z" />
+    <path d="M6 3.5a1 1 0 0 1 1-1h8.2a1 1 0 0 1 .8 1.6l-2.4 3.2 2.4 3.2a1 1 0 0 1-.8 1.6H7a1 1 0 0 1-1-1v-7.6Z" />
+  </svg>
+);
+
 const createInitialFormData = (schedule) => {
   const now = new Date();
   const isTaskEntry = schedule?.isTask ?? false;
@@ -15,6 +22,7 @@ const createInitialFormData = (schedule) => {
     allDay: schedule?.allDay ?? !(schedule?.time),
     notifications: schedule?.notifications ? schedule.notifications.map((n) => ({ ...n })) : [],
     isTask: isTaskEntry,
+    isDeadlineTask: isTaskEntry ? (schedule?.isDeadlineTask ?? false) : false,
     completed: schedule?.completed ?? false,
     source: schedule?.source ?? (isTaskEntry ? 'scheduleTask' : 'schedule'),
   };
@@ -38,6 +46,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, onAfterCopy }) => {
   const copySnapshotRef = useRef(null);
   const copyTriggeredRef = useRef(false);
   const isTaskMode = !!formData.isTask;
+  const isDeadlineTaskMode = isTaskMode && !!formData.isDeadlineTask;
 
   useEffect(() => {
     setFormData(createInitialFormData(schedule));
@@ -323,6 +332,8 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, onAfterCopy }) => {
       : '新規予定登録';
 
   const nameLabel = isTaskMode ? 'タスク名' : '予定名';
+  const dateLabel = isDeadlineTaskMode ? '納期日' : '日付';
+  const timeLabel = isDeadlineTaskMode ? '納期時間' : '開始時間';
 
   return (
     <div
@@ -356,6 +367,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, onAfterCopy }) => {
                     setFormData((prev) => ({
                       ...prev,
                       isTask: false,
+                      isDeadlineTask: false,
                       completed: false,
                       source: 'schedule',
                       date: prev.date || toDateStrLocal(new Date()),
@@ -373,6 +385,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, onAfterCopy }) => {
                     setFormData((prev) => ({
                       ...prev,
                       isTask: true,
+                      isDeadlineTask: prev.isDeadlineTask ?? false,
                       source: 'scheduleTask',
                       date: prev.date || toDateStrLocal(new Date()),
                     }))
@@ -416,20 +429,44 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, onAfterCopy }) => {
 
           <div>
             <label className="block text-gray-700 font-medium mb-2">{nameLabel}</label>
-            <input
-              ref={nameInputRef}
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-              required
-              placeholder="予定名を入力してください"
-            />
+            <div className={`flex items-stretch gap-2 ${isTaskMode ? '' : 'w-full'}`}>
+              {isTaskMode && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      isDeadlineTask: !prev.isDeadlineTask,
+                      isTask: true,
+                    }))
+                  }
+                  className={`inline-flex h-[50px] w-11 flex-shrink-0 items-center justify-center rounded-lg border transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                    formData.isDeadlineTask
+                      ? 'bg-amber-500 border-amber-600 text-white'
+                      : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                  }`}
+                  title={formData.isDeadlineTask ? '納期タスク' : '通常タスク'}
+                  aria-pressed={!!formData.isDeadlineTask}
+                  aria-label={formData.isDeadlineTask ? '納期タスクに設定' : '納期タスクを解除'}
+                >
+                  <FlagIcon className="h-5 w-5" />
+                </button>
+              )}
+              <input
+                ref={nameInputRef}
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                className="w-full h-[50px] border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                required
+                placeholder="予定名を入力してください"
+              />
+            </div>
           </div>
 
           <div>
-            <label className="block text-gray-700 font-medium mb-2">日付</label>
+            <label className="block text-gray-700 font-medium mb-2">{dateLabel}</label>
             <input
               ref={dateInputRef}
               type="date"
@@ -443,7 +480,7 @@ const ScheduleForm = ({ schedule, onSave, onClose, onDelete, onAfterCopy }) => {
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-gray-700 font-medium">開始時間</label>
+              <label className="block text-gray-700 font-medium">{timeLabel}</label>
               <span className={`text-xs px-2 py-1 rounded-full ${formData.allDay ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
                 {formData.allDay ? '終日' : '時間指定'}
               </span>

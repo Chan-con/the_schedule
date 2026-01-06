@@ -22,6 +22,13 @@ const IconNote = (props) => (
   </svg>
 );
 
+const IconFlag = (props) => (
+  <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" {...props}>
+    <path d="M4 2a1 1 0 0 1 1 1v14a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Z" />
+    <path d="M6 3.5a1 1 0 0 1 1-1h8.2a1 1 0 0 1 .8 1.6l-2.4 3.2 2.4 3.2a1 1 0 0 1-.8 1.6H7a1 1 0 0 1-1-1v-7.6Z" />
+  </svg>
+);
+
 // 予定が過去かどうかを判定する関数
 const isSchedulePast = (schedule) => {
   const now = new Date();
@@ -1495,6 +1502,9 @@ const Calendar = ({
                             >
                               ✓
                             </span>
+                          )}
+                          {!isAltPressed && schedule.isTask && schedule.isDeadlineTask && (
+                            <IconFlag className="h-3.5 w-3.5 text-amber-600" />
                           )}
                           <span className={`truncate pointer-events-none text-left text-[0.66rem] font-bold flex-1 ${schedule.isTask ? 'text-gray-700' : 'text-gray-800'}`}>
                             {displayText}

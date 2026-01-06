@@ -73,6 +73,7 @@ export const mapFromSupabaseRow = (row) => {
     timeOrder: typeof row.time_order === 'number' ? row.time_order : 0,
     notifications: sanitizeNotifications(row.notifications),
     isTask: !!row.is_task,
+    isDeadlineTask: !!row.is_deadline_task,
     completed: !!row.completed,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
@@ -93,6 +94,7 @@ const mapToSupabaseRow = (schedule, userId) => {
     time_order: typeof schedule?.timeOrder === 'number' ? schedule.timeOrder : 0,
     notifications,
     is_task: !!schedule?.isTask,
+    is_deadline_task: !!schedule?.isDeadlineTask,
     completed: !!schedule?.completed,
   };
 
@@ -106,8 +108,8 @@ export const fetchSchedulesForUser = async (userId) => {
 
   const runQuery = async (withTimeOrder) => {
     const selectFields = withTimeOrder
-      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, completed, created_at, updated_at'
-      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, is_deadline_task, completed, created_at, updated_at'
+      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, is_deadline_task, completed, created_at, updated_at';
 
     let query = supabase
       .from(TABLE_NAME)
@@ -160,8 +162,8 @@ export const fetchActiveSchedulesForUser = async (userId) => {
 
   const runQuery = async (withTimeOrder) => {
     const selectFields = withTimeOrder
-      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, completed, created_at, updated_at'
-      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, is_deadline_task, completed, created_at, updated_at'
+      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, is_deadline_task, completed, created_at, updated_at';
 
     let query = supabase
       .from(TABLE_NAME)
@@ -218,8 +220,8 @@ export const fetchSchedulesForUserInRange = async ({ userId, startDate, endDate 
 
   const runQuery = async (withTimeOrder) => {
     const selectFields = withTimeOrder
-      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, completed, created_at, updated_at'
-      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, is_deadline_task, completed, created_at, updated_at'
+      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, is_deadline_task, completed, created_at, updated_at';
 
     let query = supabase
       .from(TABLE_NAME)
@@ -285,8 +287,8 @@ export const fetchActiveTasksForUser = async (userId) => {
 
   const runQuery = async (withTimeOrder) => {
     const selectFields = withTimeOrder
-      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, completed, created_at, updated_at'
-      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+      ? 'id, user_id, name, date, time, memo, all_day, all_day_order, time_order, notifications, is_task, is_deadline_task, completed, created_at, updated_at'
+      : 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, is_deadline_task, completed, created_at, updated_at';
 
     let query = supabase
       .from(TABLE_NAME)
@@ -346,7 +348,7 @@ export const searchSchedulesForUser = async ({ userId, keyword, limit = 50 } = {
   const startedAt = nowPerf();
   logSupabase('searchSchedules', 'request', { userId, keyword: normalized, limit: safeLimit });
 
-  const selectFields = 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+  const selectFields = 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, is_deadline_task, completed, created_at, updated_at';
   const { data, error } = await supabase
     .from(TABLE_NAME)
     .select(selectFields)
@@ -377,7 +379,7 @@ export const fetchCompletedTasksPageForUser = async ({ userId, limit = 5, cursor
     cursorId: cursor?.id ?? null,
   });
 
-  const selectFields = 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+  const selectFields = 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, is_deadline_task, completed, created_at, updated_at';
 
   let query = supabase
     .from(TABLE_NAME)
@@ -427,7 +429,7 @@ export const fetchCompletedTasksForUserInRange = async ({ userId, startDate, end
   const startedAt = nowPerf();
   logSupabase('fetchCompletedTasksInRange', 'request', { userId, startDate, endDate });
 
-  const selectFields = 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, completed, created_at, updated_at';
+  const selectFields = 'id, user_id, name, date, time, memo, all_day, all_day_order, notifications, is_task, is_deadline_task, completed, created_at, updated_at';
   const { data, error } = await supabase
     .from(TABLE_NAME)
     .select(selectFields)

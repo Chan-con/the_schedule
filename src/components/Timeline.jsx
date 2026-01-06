@@ -1,10 +1,17 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import MemoWithLinks from './MemoWithLinks';
 import TaskArea from './TaskArea';
 import NoteArea from './NoteArea';
 import LoopTimelineArea from './LoopTimelineArea';
 import QuestArea from './QuestArea';
 import QuickMemoBoard from './QuickMemoBoard';
+
+const FlagIcon = ({ className = '' } = {}) => (
+	<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className} aria-hidden="true">
+		<path d="M4 2a1 1 0 0 1 1 1v14a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Z" />
+		<path d="M6 3.5a1 1 0 0 1 1-1h8.2a1 1 0 0 1 .8 1.6l-2.4 3.2 2.4 3.2a1 1 0 0 1-.8 1.6H7a1 1 0 0 1-1-1v-7.6Z" />
+	</svg>
+);
 
 const isSchedulePast = (schedule, selectedDate) => {
 	if (!selectedDate) return false;
@@ -78,7 +85,6 @@ const Timeline = ({
 	onRequestCloseNote,
 	onScheduleUpdate,
 	onToggleTask,
-	onScheduleDelete,
 	activeTab = 'timeline',
 	onTabChange,
 	tasks = [],
@@ -592,6 +598,9 @@ const Timeline = ({
 				<div className="relative ml-3 flex flex-col gap-1">
 					<div className="flex items-start justify-between gap-2">
 						<div className="flex flex-wrap items-center gap-2">
+							{isTaskItem && !!schedule?.isDeadlineTask && (
+								<FlagIcon className="h-3.5 w-3.5 text-amber-600" />
+							)}
 							<span
 								className={`font-medium ${
 									isTaskItem && isCompleted ? 'text-slate-500 line-through' : isPast ? 'text-slate-500' : 'text-slate-900'
@@ -695,6 +704,9 @@ const Timeline = ({
 					<div className="relative ml-2.5 flex flex-wrap items-start gap-3">
 						<div className="flex min-w-0 flex-1 flex-col gap-1">
 							<div className="flex flex-wrap items-center gap-2">
+								{isTaskSchedule && !!schedule?.isDeadlineTask && (
+									<FlagIcon className="h-3.5 w-3.5 text-amber-600" />
+								)}
 								<span
 									className={`min-w-0 break-words whitespace-normal font-medium ${
 										isTaskSchedule && isCompleted ? 'line-through text-slate-500' : 'text-slate-900'
