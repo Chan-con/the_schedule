@@ -124,9 +124,15 @@ const TaskArea = ({
   const scrollContainerRef = useRef(null);
   const completedSentinelRef = useRef(null);
 
-  const { overdueTasks, incompleteTasks, completedTasks } = useMemo(() => {
+  const {
+    overdueTasks,
+    deadlineTasks,
+    normalTasks,
+    completedTasks,
+  } = useMemo(() => {
     const overdue = [];
-    const incomplete = [];
+    const deadline = [];
+    const normal = [];
     const completed = [];
 
     taskList.forEach((task) => {
@@ -137,15 +143,26 @@ const TaskArea = ({
 
       if (isTaskOverdue(task)) {
         overdue.push(task);
+        return;
+      }
+
+      if (task?.isDeadlineTask) {
+        deadline.push(task);
       } else {
-        incomplete.push(task);
+        normal.push(task);
       }
     });
 
     overdue.sort(compareTasksByDate);
-    incomplete.sort(compareTasksByDate);
+    deadline.sort(compareTasksByDate);
+    normal.sort(compareTasksByDate);
 
-    return { overdueTasks: overdue, incompleteTasks: incomplete, completedTasks: completed };
+    return {
+      overdueTasks: overdue,
+      deadlineTasks: deadline,
+      normalTasks: normal,
+      completedTasks: completed,
+    };
   }, [taskList]);
 
   useEffect(() => {
@@ -271,13 +288,7 @@ const TaskArea = ({
           </div>
         ) : (
           <div className="card-stack">
-            {overdueTasks.map((task) => (
-              <React.Fragment key={getTaskKey(task)}>
-                {renderTaskCard(task)}
-              </React.Fragment>
-            ))}
-
-            {overdueTasks.length > 0 && incompleteTasks.length > 0 && (
+            {overdueTasks.length > 0 && (
               <div className="mt-1 flex items-center gap-2 text-xs text-red-600">
                 <span className="flex-1 h-px bg-red-200" />
                 <span className="tracking-wide font-semibold">期日超過</span>
@@ -285,7 +296,35 @@ const TaskArea = ({
               </div>
             )}
 
-            {incompleteTasks.map((task) => (
+            {overdueTasks.map((task) => (
+              <React.Fragment key={getTaskKey(task)}>
+                {renderTaskCard(task)}
+              </React.Fragment>
+            ))}
+
+            {deadlineTasks.length > 0 && (
+              <div className="mt-1 flex items-center gap-2 text-xs text-amber-700">
+                <span className="flex-1 h-px bg-amber-200" />
+                <span className="tracking-wide font-semibold">納期タスク</span>
+                <span className="flex-1 h-px bg-amber-200" />
+              </div>
+            )}
+
+            {deadlineTasks.map((task) => (
+              <React.Fragment key={getTaskKey(task)}>
+                {renderTaskCard(task)}
+              </React.Fragment>
+            ))}
+
+            {normalTasks.length > 0 && (
+              <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
+                <span className="flex-1 h-px bg-gray-200" />
+                <span className="tracking-wide font-semibold">タスク</span>
+                <span className="flex-1 h-px bg-gray-200" />
+              </div>
+            )}
+
+            {normalTasks.map((task) => (
               <React.Fragment key={getTaskKey(task)}>
                 {renderTaskCard(task)}
               </React.Fragment>
