@@ -481,6 +481,111 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={requestClose}
+              className="text-gray-500 hover:text-gray-800 p-2 rounded-full hover:bg-gray-100 bg-white border border-gray-200 transition-colors duration-200"
+              aria-label="閉じる"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+          <div className={isEditing ? 'flex min-h-full flex-col gap-6 p-4' : 'space-y-6 p-4'}>
+            {isEditing ? (
+              <>
+                <div>
+                  <label className="block text-gray-700 font-medium mb-2">タイトル</label>
+                  <input
+                    ref={titleRef}
+                    type="text"
+                    value={title}
+                    placeholder="タイトル"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                    onFocus={() => {
+                      isTitleFocusedRef.current = true;
+                    }}
+                    onBlur={() => {
+                      isTitleFocusedRef.current = false;
+                    }}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setDraftTitle(next);
+                      setTitleDirty(next !== noteTitle);
+                    }}
+                  />
+                </div>
+
+                <div className="flex flex-1 min-h-0 flex-col">
+                  <label className="block text-gray-700 font-medium mb-2">本文（Markdown対応）</label>
+                  <textarea
+                    ref={contentTextareaRef}
+                    value={content}
+                    placeholder="本文"
+                    className="w-full flex-1 min-h-0 border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
+                    onFocus={() => {
+                      isContentFocusedRef.current = true;
+                    }}
+                    onBlur={() => {
+                      isContentFocusedRef.current = false;
+                    }}
+                    onMouseDown={(event) => {
+                      if (event.button === 2) {
+                        handleContentMouseDown();
+                      }
+                    }}
+                    onMouseUp={(event) => {
+                      if (event.button === 2) {
+                        handleContentMouseDown();
+                      }
+                    }}
+                    onContextMenu={handleContentContextMenu}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setDraftContent(next);
+                      setContentDirty(next !== noteContent);
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="note-markdown w-full px-1 text-sm text-gray-800">
+                {content.trim() ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: renderMarkdownLink,
+                      input: ({ type, ...props }) => {
+                        if (type === 'checkbox') {
+                          return (
+                            <input
+                              {...props}
+                              type="checkbox"
+                              className="custom-checkbox mr-2 align-middle"
+                              disabled
+                            />
+                          );
+                        }
+                        return <input {...props} type={type} />;
+                      },
+                    }}
+                  >
+                    {content}
+                  </ReactMarkdown>
+                ) : (
+                  <div className="text-gray-400">（本文なし）</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t border-gray-200 p-4">
+          <div className="flex flex-wrap items-center justify-start gap-2">
+            <button
+              type="button"
               onClick={handleToggleEditing}
               className="inline-flex h-9 w-9 p-1 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-colors duration-200 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
               title={isEditing ? '表示モードへ' : '編集モードへ'}
@@ -627,107 +732,6 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                 <path d="M7 17h6" />
               </svg>
             </button>
-
-            <button
-              type="button"
-              onClick={requestClose}
-              className="text-gray-500 hover:text-gray-800 p-2 rounded-full hover:bg-gray-100 bg-white border border-gray-200 transition-colors duration-200"
-              aria-label="閉じる"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-          <div className={isEditing ? 'flex min-h-full flex-col gap-6 p-4' : 'space-y-6 p-4'}>
-            {isEditing ? (
-              <>
-                <div>
-                  <label className="block text-gray-700 font-medium mb-2">タイトル</label>
-                  <input
-                    ref={titleRef}
-                    type="text"
-                    value={title}
-                    placeholder="タイトル"
-                    className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                    onFocus={() => {
-                      isTitleFocusedRef.current = true;
-                    }}
-                    onBlur={() => {
-                      isTitleFocusedRef.current = false;
-                    }}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setDraftTitle(next);
-                      setTitleDirty(next !== noteTitle);
-                    }}
-                  />
-                </div>
-
-                <div className="flex flex-1 min-h-0 flex-col">
-                  <label className="block text-gray-700 font-medium mb-2">本文（Markdown対応）</label>
-                  <textarea
-                    ref={contentTextareaRef}
-                    value={content}
-                    placeholder="本文"
-                    className="w-full flex-1 min-h-0 border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
-                    onFocus={() => {
-                      isContentFocusedRef.current = true;
-                    }}
-                    onBlur={() => {
-                      isContentFocusedRef.current = false;
-                    }}
-                    onMouseDown={(event) => {
-                      if (event.button === 2) {
-                        handleContentMouseDown();
-                      }
-                    }}
-                    onMouseUp={(event) => {
-                      if (event.button === 2) {
-                        handleContentMouseDown();
-                      }
-                    }}
-                    onContextMenu={handleContentContextMenu}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setDraftContent(next);
-                      setContentDirty(next !== noteContent);
-                    }}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="note-markdown w-full px-1 text-sm text-gray-800">
-                {content.trim() ? (
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      a: renderMarkdownLink,
-                      input: ({ type, ...props }) => {
-                        if (type === 'checkbox') {
-                          return (
-                            <input
-                              {...props}
-                              type="checkbox"
-                              className="custom-checkbox mr-2 align-middle"
-                              disabled
-                            />
-                          );
-                        }
-                        return <input {...props} type={type} />;
-                      },
-                    }}
-                  >
-                    {content}
-                  </ReactMarkdown>
-                ) : (
-                  <div className="text-gray-400">（本文なし）</div>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </div>
