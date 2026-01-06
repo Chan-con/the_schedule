@@ -466,7 +466,14 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
       }}
     >
       <div className="note-modal-content flex h-[calc(100svh-2rem)] w-full max-w-[980px] flex-col overflow-hidden rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between gap-3 border-b border-gray-200 p-4">
+        <div
+          className="flex items-center justify-between gap-3 border-b border-gray-200 p-4"
+          onDoubleClick={(event) => {
+            // ヘッダーの「空いてる所」をダブルクリックした時だけタブ化
+            if (event.target !== event.currentTarget) return;
+            handleTabify();
+          }}
+        >
           <div className="min-w-0">
             <div
               className="text-sm font-semibold text-gray-800 truncate"
@@ -714,24 +721,6 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
               )}
             </button>
 
-            <button
-              type="button"
-              disabled={!note || note?.id == null}
-              onClick={handleTabify}
-              className={`inline-flex h-9 w-9 p-1 items-center justify-center rounded-full border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
-                !note || note?.id == null
-                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
-                  : 'bg-white border-gray-200 text-gray-600 hover:bg-indigo-50'
-              }`}
-              title="タブ化"
-              aria-label="タブ化"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M7 7h10" />
-                <path d="M7 12h10" />
-                <path d="M7 17h6" />
-              </svg>
-            </button>
           </div>
         </div>
       </div>
