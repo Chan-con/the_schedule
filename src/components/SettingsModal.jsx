@@ -10,6 +10,28 @@ import {
   deactivatePushSubscriptionForUser,
   upsertPushSubscriptionForUser,
 } from '../utils/supabasePushSubscriptions';
+import {
+  fetchQuestReminderSettingsForUser,
+  upsertQuestReminderSettingsForUser,
+} from '../utils/supabaseQuestReminderSettings';
+
+const timeMinutesToHHMM = (minutes) => {
+  const m = Number(minutes);
+  if (!Number.isFinite(m)) return '21:00';
+  const clamped = Math.max(0, Math.min(1439, Math.floor(m)));
+  const hh = String(Math.floor(clamped / 60)).padStart(2, '0');
+  const mm = String(clamped % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+};
+
+const hhmmToTimeMinutes = (hhmm) => {
+  const raw = String(hhmm || '').trim();
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(raw);
+  if (!match) return null;
+  const hh = Number(match[1]);
+  const mm = Number(match[2]);
+  return hh * 60 + mm;
+};
 
 const SettingsModal = ({ isOpen, onClose }) => {
   const auth = useAuth();
@@ -30,6 +52,14 @@ const SettingsModal = ({ isOpen, onClose }) => {
     supported: false,
     permission: typeof Notification !== 'undefined' ? Notification.permission : 'default',
     subscribed: false,
+    isBusy: false,
+    error: null,
+  });
+
+  const [questReminderStatus, setQuestReminderStatus] = useState({
+    loaded: false,
+    enabled: false,
+    timeHHMM: '21:00',
     isBusy: false,
     error: null,
   });
@@ -78,6 +108,44 @@ const SettingsModal = ({ isOpen, onClose }) => {
       cancelled = true;
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+
+    const refreshQuestReminderSettings = async () => {
+      if (!userId) {
+        if (!cancelled) {
+          setQuestReminderStatus((prev) => ({ ...prev, loaded: true, error: null }));
+        }
+        return;
+      }
+
+      try {
+        const row = await fetchQuestReminderSettingsForUser({ userId });
+        if (cancelled) return;
+        setQuestReminderStatus((prev) => ({
+          ...prev,
+          loaded: true,
+          enabled: !!row?.enabled,
+          timeHHMM: timeMinutesToHHMM(row?.reminder_time_minutes ?? 21 * 60),
+          error: null,
+        }));
+      } catch (error) {
+        if (cancelled) return;
+        setQuestReminderStatus((prev) => ({
+          ...prev,
+          loaded: true,
+          error: error?.message || 'クエスト通知設定の取得に失敗しました。',
+        }));
+      }
+    };
+
+    refreshQuestReminderSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, userId]);
 
   useEffect(() => {
     // ショートカット設定の読み込み
@@ -212,6 +280,43 @@ const SettingsModal = ({ isOpen, onClose }) => {
       }));
     } finally {
       setPushStatus((prev) => ({ ...prev, isBusy: false }));
+    }
+  };
+
+  const handleSaveQuestReminder = async () => {
+    if (questReminderStatus.isBusy) return;
+    setQuestReminderStatus((prev) => ({ ...prev, isBusy: true, error: null }));
+    try {
+      if (!userId) {
+        throw new Error('クエスト通知を保存するにはログインが必要です。');
+      }
+      if (!pushStatus.subscribed) {
+        throw new Error('クエスト通知はPush通知が有効な場合のみ届きます。先にPush通知を有効化してください。');
+      }
+
+      const timeMinutes = hhmmToTimeMinutes(questReminderStatus.timeHHMM);
+      if (timeMinutes == null) {
+        throw new Error('通知時刻は HH:MM 形式で入力してください。');
+      }
+
+      const saved = await upsertQuestReminderSettingsForUser({
+        userId,
+        enabled: questReminderStatus.enabled,
+        reminderTimeMinutes: timeMinutes,
+      });
+
+      setQuestReminderStatus((prev) => ({
+        ...prev,
+        enabled: !!saved?.enabled,
+        timeHHMM: timeMinutesToHHMM(saved?.reminder_time_minutes ?? timeMinutes),
+      }));
+    } catch (error) {
+      setQuestReminderStatus((prev) => ({
+        ...prev,
+        error: error?.message || 'クエスト通知設定の保存に失敗しました。',
+      }));
+    } finally {
+      setQuestReminderStatus((prev) => ({ ...prev, isBusy: false }));
     }
   };
 
@@ -418,6 +523,76 @@ const SettingsModal = ({ isOpen, onClose }) => {
                 <p className="text-xs text-gray-600">
                   iOS Safari は「ホーム画面に追加」したアプリから有効化してください。
                 </p>
+              </div>
+            )}
+          </div>
+
+          {/* クエストリマインド */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 mb-3">クエストリマインド（デイリー）</h3>
+
+            {!userId ? (
+              <p className="text-xs text-gray-600">ログインすると設定できます。</p>
+            ) : !pushStatus.supported ? (
+              <p className="text-xs text-gray-600">この端末/ブラウザはPush通知に対応していません。</p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-600">
+                  今日のデイリークエストが未完了のとき、指定時刻に「クエスト忘れてませんか？」を通知します。
+                </p>
+
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="accent-indigo-600"
+                    checked={questReminderStatus.enabled}
+                    onChange={(e) =>
+                      setQuestReminderStatus((prev) => ({
+                        ...prev,
+                        enabled: !!e.target.checked,
+                      }))
+                    }
+                    disabled={!questReminderStatus.loaded}
+                  />
+                  有効化
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-700">通知時刻</label>
+                  <input
+                    type="time"
+                    value={questReminderStatus.timeHHMM}
+                    onChange={(e) =>
+                      setQuestReminderStatus((prev) => ({
+                        ...prev,
+                        timeHHMM: e.target.value,
+                      }))
+                    }
+                    className="px-2 py-1 text-sm border border-gray-200 rounded-md"
+                    disabled={!questReminderStatus.loaded}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={handleSaveQuestReminder}
+                    disabled={questReminderStatus.isBusy || !questReminderStatus.loaded}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md border transition-all duration-200 ${
+                      questReminderStatus.isBusy || !questReminderStatus.loaded
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
+                    }`}
+                  >
+                    保存
+                  </button>
+                </div>
+
+                {!pushStatus.subscribed && (
+                  <p className="text-xs text-gray-600">※ クエスト通知を受けるには、上のPush通知を有効化してください。</p>
+                )}
+
+                {questReminderStatus.error && (
+                  <p className="text-xs text-red-600 font-medium">{questReminderStatus.error}</p>
+                )}
               </div>
             )}
           </div>

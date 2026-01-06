@@ -223,6 +223,31 @@ VITE_VAPID_PUBLIC_KEY=...
 	 	- Web Push を使う場合、端末ごとの購読情報（endpoint/鍵）を Supabase に保存します。
 	 	- 以下のテーブル例を追加してください。
 
+	 - **クエストリマインド設定（quest_reminder_settings）**
+	 	- 「クエスト忘れてませんか？」のようなリマインドは、ブラウザを閉じていても届けるために Workers 側（cron）からPush送信します。
+	 	- そのため、ユーザーごとのON/OFF・通知時刻をDBに保持します（ここでは `reminder_time_minutes` = 0..1439）。
+
+	 	```sql
+	 	create table public.quest_reminder_settings (
+	 	  user_id uuid primary key references auth.users(id) on delete cascade,
+	 	  enabled boolean not null default false,
+	 	  reminder_time_minutes integer not null default 1260 check (reminder_time_minutes >= 0 and reminder_time_minutes <= 1439),
+	 	  created_at timestamptz not null default now(),
+	 	  updated_at timestamptz not null default now()
+	 	);
+
+	 	alter table public.quest_reminder_settings enable row level security;
+
+	 	create policy "Read own quest reminder settings"
+	 	  on public.quest_reminder_settings for select
+	 	  using (auth.uid() = user_id);
+
+	 	create policy "Modify own quest reminder settings"
+	 	  on public.quest_reminder_settings for all
+	 	  using (auth.uid() = user_id)
+	 	  with check (auth.uid() = user_id);
+	 	```
+
 	 - **クエスト（デイリー/ウィークリー/マンスリー）**
 	 	- 習慣タスク（チェックで完了、期間更新で自動復活）を保存します。
 	 	- 並び替え（ドラッグ&ドロップ）を同期したい場合は `sort_order` を追加してください。

@@ -7,6 +7,10 @@ const DEFAULT_LATE_WINDOW_MS = 70_000; // 遅れて実行されたcronの揺れ�
 const DEFAULT_EARLY_WINDOW_MS = 5_000; // 早まりは極力許容しない（5秒以内）
 const DEFAULT_LOOKAHEAD_DAYS = 365;
 
+// クエストリマインドは push_send_log.loop_marker_id をセンチネルで流用し、重複送信を抑止する。
+// 既存の loop_marker は通常正のIDなので衝突しない。
+const QUEST_REMINDER_LOOP_MARKER_ID = -999;
+
 const json = (obj, init = {}) =>
   new Response(JSON.stringify(obj, null, 2), {
     headers: { "content-type": "application/json; charset=utf-8" },
@@ -179,6 +183,56 @@ const listLoopTimelineMarkersForUsers = async ({ env, userIds }) => {
   return await supabaseFetch({ env, path: query });
 };
 
+const listQuestReminderSettingsForUsers = async ({ env, userIds }) => {
+  const ids = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
+  if (ids.length === 0) return [];
+  const select = "user_id,enabled,reminder_time_minutes";
+  const inList = ids.map((id) => encodeURIComponent(String(id))).join(",");
+  const query =
+    `/rest/v1/quest_reminder_settings?select=${encodeURIComponent(select)}` +
+    `&user_id=in.(${inList})`;
+  return await supabaseFetch({ env, path: query });
+};
+
+const listDailyQuestTasksForUsersByDateStr = async ({ env, userIds, dateStr }) => {
+  const ids = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
+  const safeDate = String(dateStr || "").trim();
+  if (ids.length === 0 || !safeDate) return [];
+  const select = "user_id,date_str,completed";
+  const inList = ids.map((id) => encodeURIComponent(String(id))).join(",");
+  const query =
+    `/rest/v1/daily_quest_tasks?select=${encodeURIComponent(select)}` +
+    `&date_str=eq.${encodeURIComponent(safeDate)}` +
+    `&user_id=in.(${inList})`;
+  return await supabaseFetch({ env, path: query });
+};
+
+const toDateStrForOffset = (date, timezoneOffsetMinutes) => {
+  const shifted = new Date(date.getTime() + timezoneOffsetMinutes * 60_000);
+  const y = shifted.getUTCFullYear();
+  const m = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(shifted.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+const calculateQuestReminderFireAtUTC = ({ now, timezoneOffsetMinutes, reminderTimeMinutes }) => {
+  const dateStr = toDateStrForOffset(now, timezoneOffsetMinutes);
+  const ymd = parseYMD(dateStr);
+  if (!ymd) return null;
+
+  const base = makeLocalMidnightUTC(ymd, timezoneOffsetMinutes);
+  const minutes = Number(reminderTimeMinutes);
+  if (!Number.isFinite(minutes)) return null;
+
+  const hh = Math.floor(minutes / 60);
+  const mm = minutes % 60;
+  const fireAt = new Date(base);
+  fireAt.setUTCHours(fireAt.getUTCHours() + hh);
+  fireAt.setUTCMinutes(fireAt.getUTCMinutes() + mm);
+  fireAt.setUTCSeconds(0, 0);
+  return fireAt;
+};
+
 const markSubscriptionInactive = async ({ env, userId, endpoint }) => {
   await supabaseFetch({
     env,
@@ -260,6 +314,19 @@ const tryInsertLoopSendLog = async ({ env, row }) => {
   }
 };
 
+const tryInsertQuestSendLog = async ({ env, userId, endpoint, fireAtIso }) => {
+  // loop_marker_id + fire_at のuniqueを流用して重複送信を抑止
+  return await tryInsertLoopSendLog({
+    env,
+    row: {
+      user_id: userId,
+      endpoint,
+      loop_marker_id: QUEST_REMINDER_LOOP_MARKER_ID,
+      fire_at: fireAtIso,
+    },
+  });
+};
+
 const loadApplicationServerKeys = async (env) => {
   const publicKey = mustEnv(env, "VAPID_PUBLIC_KEY");
   const privateKey = mustEnv(env, "VAPID_PRIVATE_KEY_PKCS8");
@@ -307,6 +374,13 @@ const runCron = async (env) => {
     listLoopTimelineStatesForUsers({ env, userIds }),
     listLoopTimelineMarkersForUsers({ env, userIds }),
   ]);
+
+  const questReminderSettings = await listQuestReminderSettingsForUsers({ env, userIds });
+  const questReminderByUserId = new Map(
+    (Array.isArray(questReminderSettings) ? questReminderSettings : [])
+      .filter((r) => r?.user_id)
+      .map((r) => [String(r.user_id), r])
+  );
 
   const applicationServerKeys = await loadApplicationServerKeys(env);
 
@@ -465,6 +539,73 @@ const runCron = async (env) => {
 
             if (res.status === 404 || res.status === 410) {
               await markSubscriptionInactive({ env, userId, endpoint });
+            }
+          }
+        }
+      }
+    }
+
+    // クエストリマインド（デイリー）
+    const questSetting = questReminderByUserId.get(String(userId));
+    const questEnabled = !!questSetting?.enabled;
+    const reminderTimeMinutes = Number(questSetting?.reminder_time_minutes);
+    if (questEnabled && Number.isFinite(reminderTimeMinutes)) {
+      // 「毎分cron」前提で、今日の指定時刻だけ送る（遅延はlateWindowで吸収）
+      const fireAt = calculateQuestReminderFireAtUTC({
+        now,
+        timezoneOffsetMinutes,
+        reminderTimeMinutes,
+      });
+
+      if (fireAt) {
+        const diff = fireAt.getTime() - now.getTime();
+        if (!(diff < -lateWindowMs || diff > earlyWindowMs)) {
+          const fireAtIso = fireAt.toISOString();
+
+          const localDateStr = toDateStrForOffset(now, timezoneOffsetMinutes);
+          const tasks = await listDailyQuestTasksForUsersByDateStr({
+            env,
+            userIds: [userId],
+            dateStr: localDateStr,
+          });
+
+          const list = Array.isArray(tasks) ? tasks : [];
+          const total = list.length;
+          const remaining = list.filter((t) => !t?.completed).length;
+
+          // タスクが0件なら通知しない（「未完了」判定ができないため）
+          if (total > 0 && remaining > 0) {
+            // 重複送信を抑止（送る直前にログを取る）
+            const shouldSend = await tryInsertQuestSendLog({
+              env,
+              userId,
+              endpoint,
+              fireAtIso,
+            });
+
+            if (shouldSend) {
+              const baseUrl = String(env.PUBLIC_APP_URL || "").replace(/\/+$/, "");
+              const payload = JSON.stringify({
+                title: "クエスト忘れてませんか？",
+                body: `今日のデイリークエストが${remaining}件残っています（全${total}件）`,
+                url: `${baseUrl || ""}/#date=${encodeURIComponent(localDateStr)}`,
+              });
+
+              const res = await sendPush({
+                env,
+                applicationServerKeys,
+                target: {
+                  endpoint,
+                  keys: { p256dh, auth },
+                },
+                payload,
+                ttl: 60,
+                urgency: "normal",
+              });
+
+              if (res.status === 404 || res.status === 410) {
+                await markSubscriptionInactive({ env, userId, endpoint });
+              }
             }
           }
         }
