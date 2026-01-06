@@ -55,6 +55,7 @@ VITE_VAPID_PUBLIC_KEY=...
 			 all_day_order integer not null default 0,
 			 notifications jsonb not null default '[]'::jsonb,
 			 is_task boolean not null default false,
+				 is_deadline_task boolean not null default false,
 			 completed boolean not null default false,
 			 created_at timestamp with time zone default now(),
 			 updated_at timestamp with time zone default now()
