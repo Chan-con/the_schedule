@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
+import { isUuid } from './id';
 
 const nowPerf = () => (typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now());
 const buildDuration = (start) => Math.round(nowPerf() - start);
@@ -593,6 +594,17 @@ export const upsertSchedulesForUser = async (schedules, userId) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   if (!Array.isArray(schedules) || schedules.length === 0) {
     return [];
+  }
+
+  const invalidIds = schedules
+    .map((schedule) => schedule?.id)
+    .filter((id) => id != null)
+    .map((id) => String(id))
+    .filter((id) => !isUuid(id));
+
+  if (invalidIds.length > 0) {
+    const sample = invalidIds.slice(0, 3).join(', ');
+    throw new Error(`予定IDがUUIDではありません（例: ${sample}）。アプリの古いデータ、またはコピー/複数コピー時のID生成が原因の可能性があります。`);
   }
 
   const rows = schedules.map((schedule) => {

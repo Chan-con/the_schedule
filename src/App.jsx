@@ -45,6 +45,7 @@ import {
 import { clearDateHash, clearNoteHash, parseDateStrFromHash, parseNoteIdFromHash, setNoteHash } from './utils/noteShare';
 import { useHistory } from './hooks/useHistory';
 import { AuthContext } from './context/AuthContextBase';
+import { createTempId } from './utils/id';
 import {
   fetchSchedulesForUser,
   fetchActiveSchedulesForUser,
@@ -76,8 +77,6 @@ const normalizeSchedules = (schedules) => {
   if (!Array.isArray(schedules)) return [];
   return schedules.map(normalizeSchedule);
 };
-
-const createTempId = () => Date.now();
 
 const QUICK_MEMO_STORAGE_KEY = 'quickMemoPadContent';
 const NOTES_STORAGE_KEY = 'notes';

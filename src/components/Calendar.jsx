@@ -1,3 +1,4 @@
+import { createTempId } from '../utils/id';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { toDateStrLocal } from '../utils/date';
 import { isJapaneseHoliday, getJapaneseHolidayName } from '../utils/holidays';
@@ -761,7 +762,7 @@ const Calendar = ({
                 }
               }
 
-              const moveOrCopyTasks = tasksToMove.map((task, index) => {
+              const moveOrCopyTasks = tasksToMove.map((task) => {
                 const nextDate =
                   altTaskBulkMode === 'relative'
                     ? (addDaysToDateStr(task?.date, deltaDays) || targetDate)
@@ -770,7 +771,7 @@ const Calendar = ({
                 if (altTaskActionMode === 'copy') {
                   return {
                     ...task,
-                    id: Date.now() + index,
+                    id: createTempId(),
                     date: nextDate,
                     notificationSettings: null,
                   };
@@ -795,7 +796,7 @@ const Calendar = ({
               const newSchedule = {
                 ...draggedSchedule,
                 date: dragOverDate,
-                id: Date.now(), // 新しいIDでコピー
+                id: createTempId(), // 新しいIDでコピー（UUID）
                 notificationSettings: null // 通知設定をリセット（コピー時は通知設定も複製しない）
               };
               console.log('📋 Copying schedule to new date:', { 
