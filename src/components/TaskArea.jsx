@@ -305,7 +305,10 @@ const TaskArea = ({
             {deadlineTasks.length > 0 && (
               <div className="mt-1 flex items-center gap-2 text-xs text-amber-700">
                 <span className="flex-1 h-px bg-amber-200" />
-                <span className="tracking-wide font-semibold">納期タスク</span>
+                <span className="inline-flex items-center gap-1 tracking-wide font-semibold">
+                  <span>納期タスク</span>
+                  <span className="tabular-nums">{deadlineTasks.length}</span>
+                </span>
                 <span className="flex-1 h-px bg-amber-200" />
               </div>
             )}
@@ -319,7 +322,10 @@ const TaskArea = ({
             {normalTasks.length > 0 && (
               <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
                 <span className="flex-1 h-px bg-gray-200" />
-                <span className="tracking-wide font-semibold">タスク</span>
+                <span className="inline-flex items-center gap-1 tracking-wide font-semibold">
+                  <span>タスク</span>
+                  <span className="tabular-nums">{normalTasks.length}</span>
+                </span>
                 <span className="flex-1 h-px bg-gray-200" />
               </div>
             )}
