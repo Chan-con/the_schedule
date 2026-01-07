@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useCallback } from 'react';
 
 const IconSearch = (props) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
@@ -16,22 +16,7 @@ const IconEmpty = (props) => (
   </svg>
 );
 
-const formatLabel = (item) => {
-  const date = typeof item?.date === 'string' ? item.date : '';
-  const time = typeof item?.time === 'string' ? item.time : '';
-  const name = typeof item?.name === 'string' ? item.name : '';
-  const isTask = !!item?.isTask;
-  const completed = !!item?.completed;
-
-  const kind = isTask ? (completed ? 'タスク(完了)' : 'タスク') : '予定';
-  const head = [date, time].filter(Boolean).join(' ');
-  return {
-    title: name || '名称未設定',
-    meta: [head, kind].filter(Boolean).join(' / '),
-  };
-};
-
-export default function ScheduleSearchModal({
+function ScheduleSearchModal({
   isOpen,
   keyword,
   onKeywordChange,
@@ -64,6 +49,21 @@ export default function ScheduleSearchModal({
   }, [isOpen, onClose]);
 
   const list = useMemo(() => (Array.isArray(results) ? results : []), [results]);
+
+  const formatLabel = useCallback((item) => {
+    const date = typeof item?.date === 'string' ? item.date : '';
+    const time = typeof item?.time === 'string' ? item.time : '';
+    const name = typeof item?.name === 'string' ? item.name : '';
+    const isTask = !!item?.isTask;
+    const completed = !!item?.completed;
+
+    const kind = isTask ? (completed ? 'タスク(完了)' : 'タスク') : '予定';
+    const head = [date, time].filter(Boolean).join(' ');
+    return {
+      title: name || '名称未設定',
+      meta: [head, kind].filter(Boolean).join(' / '),
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -151,3 +151,5 @@ export default function ScheduleSearchModal({
     </div>
   );
 }
+
+export default ScheduleSearchModal;

@@ -118,6 +118,8 @@ const LoopTimelineArea = React.forwardRef(({
   const loopMinutes = durationMinutes > 0 ? (effectiveElapsedMinutes % durationMinutes) : 0;
   const progressRatio = durationMinutes > 0 ? loopMinutes / durationMinutes : 0;
 
+  const canWrite = canShare && typeof onSaveState === 'function';
+
   const safeMarkers = useMemo(() => (Array.isArray(markers) ? markers : []), [markers]);
 
   const [isEditingDurationOnLine, setIsEditingDurationOnLine] = useState(false);
@@ -388,8 +390,6 @@ const LoopTimelineArea = React.forwardRef(({
       window.removeEventListener('resize', onResize);
     };
   }, [scheduled, updateCountdownOverlayPos]);
-
-  const canWrite = canShare && typeof onSaveState === 'function';
 
   const handleStart = useCallback(async ({ forceImmediate = false } = {}) => {
     if (!canWrite) return;
