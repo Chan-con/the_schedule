@@ -136,7 +136,14 @@ const LoopTimelineArea = React.forwardRef(({
     const next = clampInt(durationInlineValue, { min: 1, max: 24 * 60, fallback: durationMinutes });
     setDurationMinutesInput(String(next));
     setIsEditingDurationOnLine(false);
-  }, [durationInlineValue, durationMinutes]);
+
+    if (!canWrite) return;
+    if (next === durationMinutes) return;
+    Promise.resolve(onSaveState({
+      duration_minutes: next,
+      start_delay_minutes: startMinute,
+    })).catch(() => {});
+  }, [canWrite, durationInlineValue, durationMinutes, onSaveState, startMinute]);
 
   const [isEditingStartMinuteOnBubble, setIsEditingStartMinuteOnBubble] = useState(false);
   const [startMinuteInlineValue, setStartMinuteInlineValue] = useState('');
@@ -154,7 +161,14 @@ const LoopTimelineArea = React.forwardRef(({
     const next = clampInt(startMinuteInlineValue, { min: 0, max: 59, fallback: startMinute });
     setDelayMinutesInput(String(next));
     setIsEditingStartMinuteOnBubble(false);
-  }, [startMinute, startMinuteInlineValue]);
+
+    if (!canWrite) return;
+    if (next === startMinute) return;
+    Promise.resolve(onSaveState({
+      duration_minutes: durationMinutes,
+      start_delay_minutes: next,
+    })).catch(() => {});
+  }, [canWrite, durationMinutes, onSaveState, startMinute, startMinuteInlineValue]);
 
   const lineContainerRef = useRef(null);
 
