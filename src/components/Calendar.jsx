@@ -1301,7 +1301,7 @@ const Calendar = ({
               }}
             >
               {/* 日付部分 - 固定の高さ */}
-              <div className="flex-shrink-0 mb-0.5 flex items-center justify-center gap-1">
+              <div className="flex-shrink-0 mb-0.5 flex items-center justify-center gap-1 leading-none">
                 {(() => {
                   const dow = date.getDay();
                   const holiday = isJapaneseHoliday(date);
@@ -1317,7 +1317,7 @@ const Calendar = ({
                   }
                   return (
                     <span
-                      className={`text-xs font-bold ${dateTextColorClass}`}
+                      className={`text-xs font-bold ${dateTextColorClass} leading-none`}
                       title={holiday ? getJapaneseHolidayName(date) : ''}
                     >
                       {date.getDate()}
@@ -1353,11 +1353,11 @@ const Calendar = ({
 
                   return (
                     <span
-                      className={isProvisional ? 'inline-flex opacity-60' : 'inline-flex'}
+                      className={isProvisional ? 'inline-flex items-center leading-none opacity-60' : 'inline-flex items-center leading-none'}
                       aria-label={ariaLabel}
                       title={title}
                     >
-                      <IconCrown className={`h-2.5 w-2.5 ${isProvisional ? 'text-amber-400' : 'text-amber-500'}`} />
+                      <IconCrown className={`block h-2.5 w-2.5 ${isProvisional ? 'text-amber-400' : 'text-amber-500'}`} />
                     </span>
                   );
                 })()}
@@ -1383,11 +1383,11 @@ const Calendar = ({
 
                   return (
                     <span
-                      className="inline-flex"
+                      className="inline-flex items-center leading-none"
                       aria-label={ariaLabel}
                       title={title}
                     >
-                      <IconNote className="h-[9px] w-[9px] text-blue-500" />
+                      <IconNote className="block h-[9px] w-[9px] translate-y-[.5px] text-blue-500" />
                     </span>
                   );
                 })()}
