@@ -163,6 +163,20 @@ const isUpdateIntent = (text) => {
   );
 };
 
+const isDeleteIntent = (text) => {
+  const t = normalizeText(text);
+  if (!t) return false;
+  return (
+    t.includes('削除') ||
+    t.includes('消し') ||
+    t.includes('消す') ||
+    t.includes('取り消') ||
+    t.includes('取消') ||
+    t.includes('キャンセル') ||
+    t.includes('なくな')
+  );
+};
+
 const buildTargetCandidates = ({ userText, schedules }) => {
   const text = normalizeText(userText);
   const list = Array.isArray(schedules) ? schedules : [];
@@ -181,16 +195,25 @@ const sanitizeActions = (raw) => {
     .map((a) => (a && typeof a === 'object' ? a : null))
     .filter(Boolean)
     .map((a) => {
-      const kind = a.kind === 'create' || a.kind === 'update' ? a.kind : null;
+      const kind = a.kind === 'create' || a.kind === 'update' || a.kind === 'delete' || a.kind === 'selectTarget' ? a.kind : null;
       if (!kind) return null;
       const payload = a.payload && typeof a.payload === 'object' ? a.payload : null;
       if (!payload) return null;
-      const sanitizedPayload = sanitizeSchedulePayload({ kind, payload });
-      if (!sanitizedPayload) return null;
+
+      let sanitizedPayload;
+      if (kind === 'create' || kind === 'update') {
+        sanitizedPayload = sanitizeSchedulePayload({ kind, payload });
+        if (!sanitizedPayload) return null;
+      } else {
+        const id = normalizeText(payload.id);
+        if (!id) return null;
+        sanitizedPayload = { id };
+      }
+
       return {
         id: normalizeText(a.id) || makeId(),
         kind,
-        title: normalizeText(a.title) || (kind === 'create' ? '作成' : '変更'),
+        title: normalizeText(a.title) || (kind === 'create' ? '作成' : kind === 'delete' ? '削除（取り消し）' : '変更'),
         summary: normalizeText(a.summary),
         payload: sanitizedPayload,
       };
@@ -576,6 +599,7 @@ function AiConciergeModal({
   onNavigateToDate,
   onSearchSchedules,
   onSaveSchedule,
+  onDeleteSchedule,
   modelName = 'gpt-5.2',
 }) {
   const inputRef = useRef(null);
@@ -593,7 +617,8 @@ function AiConciergeModal({
   const [pendingAction, setPendingAction] = useState(null); // action
   const [errorText, setErrorText] = useState('');
   const [selectedUpdateTargetId, setSelectedUpdateTargetId] = useState(null);
-  const [pendingUpdateText, setPendingUpdateText] = useState(null);
+  const [pendingTargetText, setPendingTargetText] = useState(null);
+  const [pendingTargetKind, setPendingTargetKind] = useState(null); // 'update' | 'delete'
 
   const list = useMemo(() => (Array.isArray(schedules) ? schedules : []), [schedules]);
   const selectedUpdateTarget = useMemo(() => {
@@ -633,9 +658,11 @@ function AiConciergeModal({
     });
   }, []);
 
-  const runAssistant = useCallback(async (userText) => {
+  const runAssistant = useCallback(async (userText, options = {}) => {
     const endpoint = normalizeText(import.meta.env?.VITE_AI_CONCIERGE_ENDPOINT);
     const apiKey = getSavedAiApiKey();
+    const targetOverride = options?.targetSchedule && typeof options.targetSchedule === 'object' ? options.targetSchedule : null;
+    const targetForCall = targetOverride || selectedUpdateTarget;
 
     // Remote (optional)
     if (endpoint) {
@@ -647,18 +674,18 @@ function AiConciergeModal({
         ],
         context: {
           selectedDate: safeSelectedDateStr,
-          ...(selectedUpdateTarget && selectedUpdateTarget?.id
+          ...(targetForCall && targetForCall?.id
             ? {
               targetSchedule: {
-                id: normalizeText(selectedUpdateTarget?.id),
-                date: normalizeText(selectedUpdateTarget?.date),
-                time: normalizeText(selectedUpdateTarget?.time),
-                name: normalizeText(selectedUpdateTarget?.name),
-                memo: normalizeText(selectedUpdateTarget?.memo),
-                allDay: !!selectedUpdateTarget?.allDay,
-                isTask: !!selectedUpdateTarget?.isTask,
-                completed: !!selectedUpdateTarget?.completed,
-                notifications: Array.isArray(selectedUpdateTarget?.notifications) ? selectedUpdateTarget.notifications : [],
+                id: normalizeText(targetForCall?.id),
+                date: normalizeText(targetForCall?.date),
+                time: normalizeText(targetForCall?.time),
+                name: normalizeText(targetForCall?.name),
+                memo: normalizeText(targetForCall?.memo),
+                allDay: !!targetForCall?.allDay,
+                isTask: !!targetForCall?.isTask,
+                completed: !!targetForCall?.completed,
+                notifications: Array.isArray(targetForCall?.notifications) ? targetForCall.notifications : [],
               },
             }
             : {}),
@@ -689,12 +716,12 @@ function AiConciergeModal({
         modelName,
         userText,
         selectedDateStr: safeSelectedDateStr,
-        targetSchedule: selectedUpdateTarget,
+        targetSchedule: targetForCall,
       });
     }
 
     // Local fallback
-    return await buildLocalAssistantResponse({ userText, schedules: list, selectedDate, targetSchedule: selectedUpdateTarget });
+    return await buildLocalAssistantResponse({ userText, schedules: list, selectedDate, targetSchedule: targetForCall });
   }, [list, messages, modelName, safeSelectedDateStr, selectedDate, selectedUpdateTarget]);
 
   const handleSend = useCallback(async () => {
@@ -709,6 +736,76 @@ function AiConciergeModal({
     appendMessage({ id: makeId(), role: 'user', text: userText, actions: [] });
 
     try {
+      // Delete/cancel flow: pick target first (avoid "IDが必要" という会話にならないようにする)
+      if (isDeleteIntent(userText) && !selectedUpdateTarget) {
+        const candidates = buildTargetCandidates({ userText, schedules: list });
+        if (candidates.length === 0) {
+          appendMessage({
+            id: makeId(),
+            role: 'assistant',
+            text: 'どの予定/タスクを削除（取り消し）しますか？タイトルを「」で囲って教えてください。例: 「ミーティング」を削除',
+            actions: [],
+          });
+          return;
+        }
+
+        if (candidates.length > 1) {
+          setPendingTargetText(userText);
+          setPendingTargetKind('delete');
+          appendMessage({
+            id: makeId(),
+            role: 'assistant',
+            text: 'どれを削除（取り消し）しますか？（まず1件だけ選んでください）',
+            actions: sanitizeActions(
+              candidates.map((s) => ({
+                id: makeId(),
+                kind: 'selectTarget',
+                title: '削除対象にする',
+                summary: formatScheduleLabel(s),
+                payload: { id: s?.id ?? null },
+              }))
+            ),
+          });
+          return;
+        }
+
+        const target = candidates[0];
+        setSelectedUpdateTargetId(target?.id ?? null);
+        appendMessage({
+          id: makeId(),
+          role: 'assistant',
+          text: '削除（取り消し）の提案を作りました。内容がOKなら「最終確認」→「実行」で反映します。',
+          actions: sanitizeActions([
+            {
+              id: makeId(),
+              kind: 'delete',
+              title: target?.isTask ? 'タスクを削除（取り消し）' : '予定を削除（取り消し）',
+              summary: formatScheduleLabel(target),
+              payload: { id: target?.id },
+            },
+          ]),
+        });
+        return;
+      }
+
+      if (isDeleteIntent(userText) && selectedUpdateTarget?.id) {
+        appendMessage({
+          id: makeId(),
+          role: 'assistant',
+          text: '削除（取り消し）の提案を作りました。内容がOKなら「最終確認」→「実行」で反映します。',
+          actions: sanitizeActions([
+            {
+              id: makeId(),
+              kind: 'delete',
+              title: selectedUpdateTarget?.isTask ? 'タスクを削除（取り消し）' : '予定を削除（取り消し）',
+              summary: formatScheduleLabel(selectedUpdateTarget),
+              payload: { id: selectedUpdateTarget?.id },
+            },
+          ]),
+        });
+        return;
+      }
+
       // Stable update flow: pick target first (avoid AI guessing ids)
       if (isUpdateIntent(userText) && !selectedUpdateTarget) {
         const candidates = buildTargetCandidates({ userText, schedules: list });
@@ -723,24 +820,35 @@ function AiConciergeModal({
         }
 
         if (candidates.length > 1) {
-          setPendingUpdateText(userText);
+          setPendingTargetText(userText);
+          setPendingTargetKind('update');
           appendMessage({
             id: makeId(),
             role: 'assistant',
             text: 'どれを変更しますか？（まず1件だけ選んでください）',
-            actions: candidates.map((s) => ({
-              id: makeId(),
-              kind: 'selectTarget',
-              title: '変更対象にする',
-              summary: formatScheduleLabel(s),
-              payload: { id: s?.id ?? null },
-            })),
+            actions: sanitizeActions(
+              candidates.map((s) => ({
+                id: makeId(),
+                kind: 'selectTarget',
+                title: '変更対象にする',
+                summary: formatScheduleLabel(s),
+                payload: { id: s?.id ?? null },
+              }))
+            ),
           });
           return;
         }
 
-        setSelectedUpdateTargetId(candidates[0]?.id ?? null);
-        setPendingUpdateText(userText);
+        const target = candidates[0];
+        setSelectedUpdateTargetId(target?.id ?? null);
+        const { text: replyText, actions } = await runAssistant(userText, { targetSchedule: target });
+        appendMessage({
+          id: makeId(),
+          role: 'assistant',
+          text: replyText,
+          actions: sanitizeActions(actions),
+        });
+        return;
       }
 
       // If user asks to jump to date like 2026-01-07
@@ -787,20 +895,41 @@ function AiConciergeModal({
     if (action.kind === 'selectTarget') {
       const id = action?.payload?.id ?? null;
       if (id != null) {
+        const picked = (Array.isArray(list) ? list : []).find((s) => String(s?.id ?? '') === String(id)) || null;
         setSelectedUpdateTargetId(String(id));
-        const text = normalizeText(pendingUpdateText);
+        const text = normalizeText(pendingTargetText);
+        const kind = normalizeText(pendingTargetKind);
         if (text) {
-          setPendingUpdateText(null);
+          setPendingTargetText(null);
+          setPendingTargetKind(null);
           setSending(true);
           Promise.resolve()
             .then(async () => {
-              const { text: replyText, actions } = await runAssistant(text);
-              appendMessage({
-                id: makeId(),
-                role: 'assistant',
-                text: replyText,
-                actions: sanitizeActions(actions),
-              });
+              if (kind === 'delete') {
+                const target = picked || { id: String(id) };
+                appendMessage({
+                  id: makeId(),
+                  role: 'assistant',
+                  text: '削除（取り消し）の提案を作りました。内容がOKなら「最終確認」→「実行」で反映します。',
+                  actions: sanitizeActions([
+                    {
+                      id: makeId(),
+                      kind: 'delete',
+                      title: target?.isTask ? 'タスクを削除（取り消し）' : '予定を削除（取り消し）',
+                      summary: picked ? formatScheduleLabel(picked) : '',
+                      payload: { id: String(id) },
+                    },
+                  ]),
+                });
+              } else {
+                const { text: replyText, actions } = await runAssistant(text, { targetSchedule: picked });
+                appendMessage({
+                  id: makeId(),
+                  role: 'assistant',
+                  text: replyText,
+                  actions: sanitizeActions(actions),
+                });
+              }
             })
             .catch((err) => {
               setErrorText(err?.message || 'AIの処理に失敗しました。');
@@ -834,8 +963,18 @@ function AiConciergeModal({
       return;
     }
 
+    if (action.kind === 'delete') {
+      const id = normalizeText(action?.payload?.id);
+      if (!id) {
+        setErrorText('提案内容が不正なため、最終確認に進めませんでした。');
+        return;
+      }
+      setPendingAction({ ...action, payload: { id } });
+      return;
+    }
+
     setPendingAction(action);
-  }, [appendMessage, pendingUpdateText, runAssistant, safeSelectedDateStr, selectedUpdateTarget]);
+  }, [appendMessage, list, pendingTargetKind, pendingTargetText, runAssistant, safeSelectedDateStr, selectedUpdateTarget]);
 
   const cancelPending = useCallback(() => {
     setPendingAction(null);
@@ -845,33 +984,44 @@ function AiConciergeModal({
     const action = pendingAction;
     if (!action) return;
 
-    if (action.kind !== 'create' && action.kind !== 'update') {
+    if (action.kind !== 'create' && action.kind !== 'update' && action.kind !== 'delete') {
       setPendingAction(null);
       return;
     }
 
-    if (!onSaveSchedule) {
+    if ((action.kind === 'create' || action.kind === 'update') && !onSaveSchedule) {
       setErrorText('保存ハンドラが未設定です。');
+      return;
+    }
+
+    if (action.kind === 'delete' && !onDeleteSchedule) {
+      setErrorText('削除ハンドラが未設定です。');
       return;
     }
 
     setErrorText('');
     setSending(true);
     try {
-      const sanitizedPayload = sanitizeSchedulePayload({
-        kind: action.kind,
-        payload: action.payload,
-        fallbackDateStr: safeSelectedDateStr,
-      });
-      if (!sanitizedPayload) {
-        throw new Error('実行内容が不正です。');
-      }
+      if (action.kind === 'delete') {
+        const id = normalizeText(action?.payload?.id);
+        if (!id) throw new Error('実行内容が不正です。');
+        await onDeleteSchedule(id);
+      } else {
+        const sanitizedPayload = sanitizeSchedulePayload({
+          kind: action.kind,
+          payload: action.payload,
+          fallbackDateStr: safeSelectedDateStr,
+        });
+        if (!sanitizedPayload) {
+          throw new Error('実行内容が不正です。');
+        }
 
-      await onSaveSchedule(sanitizedPayload);
+        await onSaveSchedule(sanitizedPayload);
+      }
       appendMessage({
         id: makeId(),
         role: 'assistant',
-        text: `実行しました: ${normalizeText(action?.title) || '更新'}\n- ${formatScheduleLabel(action.payload)}`,
+        text: `実行しました: ${normalizeText(action?.title) || '更新'}`,
         actions: [],
       });
       setPendingAction(null);
@@ -880,7 +1030,7 @@ function AiConciergeModal({
     } finally {
       setSending(false);
     }
-  }, [appendMessage, onSaveSchedule, pendingAction, safeSelectedDateStr]);
+  }, [appendMessage, onDeleteSchedule, onSaveSchedule, pendingAction, safeSelectedDateStr]);
 
   if (!isOpen) return null;
 

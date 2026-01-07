@@ -4801,6 +4801,7 @@ function App() {
         onNavigateToDate={setSelectedDate}
         onSearchSchedules={searchSchedulesForAi}
         onSaveSchedule={handleSave}
+        onDeleteSchedule={handleScheduleDelete}
       />
 
       <CornerFloatingMenu
