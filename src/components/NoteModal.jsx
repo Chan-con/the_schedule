@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { buildNoteShareUrl, parseNoteIdFromUrl, setNoteHash } from '../utils/noteShare';
@@ -20,8 +20,10 @@ const formatUpdatedDateTime = (value) => {
 
 const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleImportant, onCommitDraft, onTab, canShare = false }) => {
   const titleRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const contentTextareaRef = useRef(null);
   const lastRightClickCaretRef = useRef(null);
+  const pendingScrollRatioRef = useRef(0);
   const isTitleFocusedRef = useRef(false);
   const isContentFocusedRef = useRef(false);
   const { user } = useAuth();
@@ -99,8 +101,19 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
 
   const handleToggleEditing = useCallback(() => {
     setIsEditing((prev) => {
+      const getScrollRatio = (el) => {
+        if (!el) return 0;
+        const max = (el.scrollHeight ?? 0) - (el.clientHeight ?? 0);
+        if (max <= 0) return 0;
+        const top = typeof el.scrollTop === 'number' ? el.scrollTop : 0;
+        return Math.max(0, Math.min(1, top / max));
+      };
+
       // 編集→表示: このタイミングで保存
       if (prev) {
+        // 編集側(textarea)のスクロール位置を、表示側コンテナへ引き継ぐ
+        pendingScrollRatioRef.current = getScrollRatio(contentTextareaRef.current);
+
         persistDraftIfNeeded();
 
         // 新規（下書き）ノートは、表示へ戻した時点で作成しておく。
@@ -118,9 +131,51 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
         }
         return false;
       }
+
+      // 表示→編集: 表示側コンテナのスクロール位置を、編集側(textarea)へ引き継ぐ
+      pendingScrollRatioRef.current = getScrollRatio(scrollContainerRef.current);
       return true;
     });
   }, [draftContent, draftTitle, onCommitDraft, note, persistDraftIfNeeded]);
+
+  const handleBodyDoubleClick = useCallback((event) => {
+    // 本文エリア内での「リンク/ボタン/チェックボックス」操作は優先
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      handleToggleEditing();
+      return;
+    }
+
+    if (target.closest('a')) return;
+    if (target.closest('button')) return;
+    if (target.closest('input[type="checkbox"]')) return;
+
+    handleToggleEditing();
+  }, [handleToggleEditing]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+
+    const ratio = pendingScrollRatioRef.current;
+    const applyScrollRatio = (el, nextRatio) => {
+      if (!el) return;
+      const max = (el.scrollHeight ?? 0) - (el.clientHeight ?? 0);
+      if (max <= 0) {
+        el.scrollTop = 0;
+        return;
+      }
+      el.scrollTop = Math.max(0, Math.min(max, max * nextRatio));
+    };
+
+    // DOMが切り替わった直後に反映（ちらつき軽減のためLayoutEffect + rAF）
+    requestAnimationFrame(() => {
+      if (isEditing) {
+        applyScrollRatio(contentTextareaRef.current, ratio);
+      } else {
+        applyScrollRatio(scrollContainerRef.current, ratio);
+      }
+    });
+  }, [isEditing, isOpen]);
 
   const canShareThisNote = !!canShare && !!note && note?.id != null && !note?.__isDraft;
 
@@ -499,7 +554,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+        <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
           <div className={isEditing ? 'flex min-h-full flex-col gap-6 p-4' : 'space-y-6 p-4'}>
             {isEditing ? (
               <>
@@ -532,6 +587,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                     value={content}
                     placeholder="本文"
                     className="w-full flex-1 min-h-0 border border-gray-300 rounded-lg px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
+                    onDoubleClick={handleBodyDoubleClick}
                     onFocus={() => {
                       isContentFocusedRef.current = true;
                     }}
@@ -558,7 +614,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                 </div>
               </>
             ) : (
-              <div className="note-markdown w-full px-1 text-sm text-gray-800">
+              <div className="note-markdown w-full px-1 text-sm text-gray-800" onDoubleClick={handleBodyDoubleClick}>
                 {content.trim() ? (
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
