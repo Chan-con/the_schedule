@@ -1361,7 +1361,26 @@ function AiConciergeModal({
       <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl overflow-hidden">
         <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-gray-100 text-[11px] font-bold text-gray-700" aria-hidden="true">AI</span>
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-gray-100 text-gray-700" aria-hidden="true">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+                aria-hidden="true"
+              >
+                <path d="M12 3v2" />
+                <path d="M10 5h4" />
+                <rect x="5" y="7" width="14" height="12" rx="2" />
+                <path d="M9 16h6" />
+                <circle cx="9" cy="12" r="1" />
+                <circle cx="15" cy="12" r="1" />
+              </svg>
+            </span>
             AIコンシェルジュ
             <span className="ml-2 text-[11px] font-normal text-gray-500">model: {modelName}</span>
           </div>
