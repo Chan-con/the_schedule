@@ -399,6 +399,7 @@ const NoteArea = ({
         note={activeNote}
         onClose={handleClose}
         onUpdate={onUpdateNote}
+        onDeleteNote={onDeleteNote}
         onToggleArchive={onToggleArchiveNote}
         onToggleImportant={onToggleImportantNote}
         onCommitDraft={onCommitDraftNote}

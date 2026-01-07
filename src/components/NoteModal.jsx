@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { buildNoteShareUrl, parseNoteIdFromUrl, setNoteHash } from '../utils/noteShare';
 import { getCachedNoteTitle, getNoteTitleCached } from '../utils/noteTitleCache';
 import { useAuth } from '../context/useAuth';
+import ConfirmDialog from './ConfirmDialog';
 
 const formatUpdatedDateTime = (value) => {
   if (!value) return '';
@@ -18,7 +19,7 @@ const formatUpdatedDateTime = (value) => {
   });
 };
 
-const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleImportant, onCommitDraft, onTab, canShare = false }) => {
+const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleImportant, onDeleteNote, onCommitDraft, onTab, canShare = false }) => {
   const titleRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const contentTextareaRef = useRef(null);
@@ -44,6 +45,8 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
   const [contentDirty, setContentDirty] = useState(false);
   const [tagsDirty, setTagsDirty] = useState(false);
   const [activeTagIndex, setActiveTagIndex] = useState(null);
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const noteId = note?.id ?? null;
   const noteTitle = typeof note?.title === 'string' ? note.title : '';
@@ -175,11 +178,18 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
 
   const requestClose = useCallback(() => {
     if (isEditing) {
-      const ok = window.confirm('編集モードのまま閉じると、変更は保存されません。閉じますか？');
-      if (!ok) return;
+      setConfirmCloseOpen(true);
+      return;
     }
     if (onClose) onClose();
   }, [isEditing, onClose]);
+
+  const canDeleteNote = useMemo(() => {
+    if (!note) return false;
+    if (note?.id == null) return false;
+    if (note?.__isDraft) return false;
+    return typeof onDeleteNote === 'function';
+  }, [note, onDeleteNote]);
 
   const handleToggleEditing = useCallback(() => {
     setIsEditing((prev) => {
@@ -1094,9 +1104,67 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
               )}
             </button>
 
+            <button
+              type="button"
+              disabled={!canDeleteNote}
+              onClick={() => {
+                if (!canDeleteNote) return;
+                setConfirmDeleteOpen(true);
+              }}
+              className={`inline-flex h-9 w-9 p-1 items-center justify-center rounded-full border text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 focus-visible:ring-offset-white ${
+                !canDeleteNote
+                  ? 'cursor-not-allowed opacity-40 bg-white border-gray-200 text-gray-400'
+                  : 'bg-white border-gray-200 text-red-600 hover:bg-red-50'
+              }`}
+              title={canDeleteNote ? '削除' : '下書きは削除できません'}
+              aria-label={canDeleteNote ? '削除' : '下書きは削除できません'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 6h18" />
+                <path d="M8 6V4h8v2" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v6" />
+                <path d="M14 11v6" />
+              </svg>
+            </button>
+
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmCloseOpen}
+        title="確認"
+        message="編集モードのまま閉じると、変更は保存されません。閉じますか？"
+        confirmText="閉じる"
+        cancelText="キャンセル"
+        onCancel={() => setConfirmCloseOpen(false)}
+        onConfirm={() => {
+          setConfirmCloseOpen(false);
+          if (onClose) onClose();
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="削除しますか？"
+        message="このノートを削除します。元に戻せません。"
+        confirmText="削除"
+        cancelText="キャンセル"
+        variant="danger"
+        onCancel={() => setConfirmDeleteOpen(false)}
+        onConfirm={() => {
+          setConfirmDeleteOpen(false);
+          if (typeof onDeleteNote === 'function') {
+            try {
+              onDeleteNote(note);
+            } catch (error) {
+              console.error('[Note] Failed to delete note:', error);
+            }
+          }
+          if (onClose) onClose();
+        }}
+      />
     </div>
   );
 };
