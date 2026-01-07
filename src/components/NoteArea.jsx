@@ -10,6 +10,23 @@ const formatUpdatedDate = (value) => {
 
 const normalizeText = (value) => (typeof value === 'string' ? value : '');
 
+const normalizeTags = (value) => {
+  const list = Array.isArray(value) ? value : [];
+  const normalized = list
+    .map((v) => (typeof v === 'string' ? v : ''))
+    .map((v) => v.replace(/\s+/g, ' ').trim())
+    .filter((v) => v.length > 0);
+  const uniq = [];
+  const seen = new Set();
+  normalized.forEach((t) => {
+    const key = t.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    uniq.push(t);
+  });
+  return uniq;
+};
+
 const toLocalDateStr = (value) => {
   if (!value) return '';
   const dt = value instanceof Date ? value : new Date(value);
@@ -38,6 +55,8 @@ const NoteArea = ({
   onTabNote,
 }) => {
   const [query, setQuery] = useState('');
+  const [committedQuery, setCommittedQuery] = useState('');
+  const [isComposing, setIsComposing] = useState(false);
   const [internalActiveNoteId, setInternalActiveNoteId] = useState(null);
   const scrollContainerRef = useRef(null);
   const archivedSentinelRef = useRef(null);
@@ -96,15 +115,57 @@ const NoteArea = ({
 
 
   const filteredNotes = useMemo(() => {
-    const q = normalizeText(query).trim().toLowerCase();
-    if (!q) return sortedNotes;
+    const raw = normalizeText(committedQuery).trim();
+    if (!raw) return sortedNotes;
+
+    const tokens = raw.split(/\s+/).filter(Boolean);
+    const tagTokens = [];
+    const textTokens = [];
+    tokens.forEach((token) => {
+      const lower = token.toLowerCase();
+      if (lower.startsWith('tag:')) {
+        const tag = token.slice(4).trim();
+        if (tag) tagTokens.push(tag.toLowerCase());
+      } else {
+        textTokens.push(lower);
+      }
+    });
+    const q = textTokens.join(' ').trim();
 
     return sortedNotes.filter((note) => {
       const title = normalizeText(note?.title).toLowerCase();
       const content = normalizeText(note?.content).toLowerCase();
-      return title.includes(q) || content.includes(q);
+
+      if (q && !(title.includes(q) || content.includes(q))) {
+        return false;
+      }
+
+      if (tagTokens.length > 0) {
+        const tags = normalizeTags(note?.tags).map((t) => t.toLowerCase());
+        const ok = tagTokens.every((t) => tags.includes(t));
+        if (!ok) return false;
+      }
+
+      return true;
     });
-  }, [sortedNotes, query]);
+  }, [sortedNotes, committedQuery]);
+
+  const appendTagQuery = useCallback((tagValue) => {
+    const tag = normalizeText(tagValue).replace(/\s+/g, ' ').trim();
+    if (!tag) return;
+    const token = `tag:${tag}`;
+    setQuery((prev) => {
+      const current = normalizeText(prev);
+      const has = current
+        .split(/\s+/)
+        .some((t) => t.toLowerCase() === token.toLowerCase());
+      if (has) return current;
+      const spacer = current.trim() ? ' ' : '';
+      const next = `${current}${spacer}${token}`;
+      setCommittedQuery(next);
+      return next;
+    });
+  }, []);
 
   const { activeNotes, archivedNotes } = useMemo(() => {
     const active = [];
@@ -172,6 +233,7 @@ const NoteArea = ({
     if (!note) return null;
     const noteId = note?.id ?? null;
     const title = normalizeText(note?.title);
+    const tags = normalizeTags(note?.tags);
     const updatedLabel = formatUpdatedDate(note?.updated_at);
     const isArchived = !!note?.archived;
 
@@ -197,6 +259,35 @@ const NoteArea = ({
                   {title.trim() ? title : '無題のノート'}
                 </span>
               </div>
+
+              {tags.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1">
+                  {tags.map((t) => (
+                    <span
+                      key={`note-tag-${noteId ?? 'x'}-${t}`}
+                      role="button"
+                      tabIndex={0}
+                      className="inline-flex items-center rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600"
+                      title={`tag:${t}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        appendTagQuery(t);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          appendTagQuery(t);
+                        }
+                      }}
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {updatedLabel && (
                 <div className="flex items-center gap-1 text-xs text-gray-500">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -240,8 +331,19 @@ const NoteArea = ({
         <input
           type="text"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="ノートを検索（タイトル / 本文）"
+          onChange={(event) => {
+            const next = event.target.value;
+            setQuery(next);
+            if (!isComposing) {
+              setCommittedQuery(next);
+            }
+          }}
+          onCompositionStart={() => setIsComposing(true)}
+          onCompositionEnd={(event) => {
+            setIsComposing(false);
+            setCommittedQuery(event.target.value);
+          }}
+          placeholder="ノートを検索（タイトル / 本文 / tag:xxx）"
           className="w-full rounded-full border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-300"
         />
       </div>

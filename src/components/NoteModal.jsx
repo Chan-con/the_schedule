@@ -24,8 +24,13 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
   const contentTextareaRef = useRef(null);
   const lastRightClickCaretRef = useRef(null);
   const pendingScrollRatioRef = useRef(0);
+  const tagInputRefsRef = useRef({});
+  const tagSaveTimerRef = useRef(null);
+  const isTagComposingRef = useRef(false);
+  const pendingTagFocusIndexRef = useRef(null);
   const isTitleFocusedRef = useRef(false);
   const isContentFocusedRef = useRef(false);
+  const isTagsFocusedRef = useRef(false);
   const { user } = useAuth();
   const userId = user?.id || null;
   const [linkedNoteTitles, setLinkedNoteTitles] = useState(() => ({}));
@@ -34,12 +39,78 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
   const [isEditing, setIsEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState('');
   const [draftContent, setDraftContent] = useState('');
+  const [draftTags, setDraftTags] = useState(() => ([]));
   const [titleDirty, setTitleDirty] = useState(false);
   const [contentDirty, setContentDirty] = useState(false);
+  const [tagsDirty, setTagsDirty] = useState(false);
+  const [activeTagIndex, setActiveTagIndex] = useState(null);
 
   const noteId = note?.id ?? null;
   const noteTitle = typeof note?.title === 'string' ? note.title : '';
   const noteContent = typeof note?.content === 'string' ? note.content : '';
+  const noteTags = Array.isArray(note?.tags) ? note.tags : [];
+
+  const tagBankKey = useMemo(() => {
+    const id = userId ? String(userId) : 'local';
+    return `note_tag_bank:${id}`;
+  }, [userId]);
+
+  const loadTagBank = useCallback(() => {
+    try {
+      const raw = window.localStorage.getItem(tagBankKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((v) => typeof v === 'string' && v.trim())
+        : [];
+    } catch {
+      return [];
+    }
+  }, [tagBankKey]);
+
+  const normalizeTags = useCallback((values) => {
+    const list = Array.isArray(values) ? values : [];
+    const normalized = list
+      .map((v) => (typeof v === 'string' ? v : ''))
+      .map((v) => v.replace(/\s+/g, ' ').trim())
+      .filter((v) => v.length > 0);
+
+    const uniq = [];
+    const seen = new Set();
+    normalized.forEach((t) => {
+      const key = t.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      uniq.push(t);
+    });
+    return uniq;
+  }, []);
+
+  const schedulePersistTags = useCallback((nextTags) => {
+    if (!onUpdate) return;
+    if (!note || note?.id == null) return;
+
+    if (tagSaveTimerRef.current) {
+      clearTimeout(tagSaveTimerRef.current);
+    }
+
+    tagSaveTimerRef.current = setTimeout(() => {
+      try {
+        onUpdate(note.id, { tags: nextTags });
+        setTagsDirty(false);
+      } catch (error) {
+        console.error('[Note] Failed to persist tags:', error);
+      }
+    }, 250);
+  }, [note, onUpdate]);
+
+  useEffect(() => {
+    return () => {
+      if (tagSaveTimerRef.current) {
+        clearTimeout(tagSaveTimerRef.current);
+        tagSaveTimerRef.current = null;
+      }
+    };
+  }, [noteId, isOpen]);
 
   const persistDraftIfNeeded = useCallback(() => {
     if (!onUpdate) return;
@@ -48,6 +119,9 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
     const patch = {};
     if (draftTitle !== noteTitle) patch.title = draftTitle;
     if (draftContent !== noteContent) patch.content = draftContent;
+    const nextTags = normalizeTags(draftTags);
+    const prevTags = normalizeTags(noteTags);
+    if (JSON.stringify(nextTags) !== JSON.stringify(prevTags)) patch.tags = nextTags;
 
     if (Object.keys(patch).length === 0) return;
 
@@ -55,10 +129,11 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
       onUpdate(note.id, patch);
       setTitleDirty(false);
       setContentDirty(false);
+      setTagsDirty(false);
     } catch (error) {
       console.error('[Note] Failed to persist draft:', error);
     }
-  }, [draftContent, draftTitle, note, noteContent, noteTitle, onUpdate]);
+  }, [draftContent, draftTags, draftTitle, normalizeTags, note, noteContent, noteTags, noteTitle, onUpdate]);
 
   const handleTabify = useCallback(() => {
     if (!note || note?.id == null) return;
@@ -67,12 +142,19 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
     // ここでは表示モードへ戻すのと同等の保存処理を行う。
     try {
       if (isEditing) {
+        const cleanedTags = normalizeTags(draftTags);
+        if (JSON.stringify(cleanedTags) !== JSON.stringify(draftTags)) {
+          setDraftTags(cleanedTags);
+        }
+        schedulePersistTags(cleanedTags);
+
         persistDraftIfNeeded();
 
         if (onCommitDraft && note?.id != null && note?.__isDraft) {
           onCommitDraft(note.id, {
             title: draftTitle,
             content: draftContent,
+            tags: cleanedTags,
             date: note?.date,
           });
         }
@@ -89,7 +171,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
     if (typeof onClose === 'function') {
       onClose();
     }
-  }, [draftContent, draftTitle, isEditing, note, onClose, onCommitDraft, onTab, persistDraftIfNeeded]);
+  }, [draftContent, draftTags, draftTitle, isEditing, normalizeTags, note, onClose, onCommitDraft, onTab, persistDraftIfNeeded, schedulePersistTags]);
 
   const requestClose = useCallback(() => {
     if (isEditing) {
@@ -111,6 +193,12 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
 
       // 編集→表示: このタイミングで保存
       if (prev) {
+        const cleanedTags = normalizeTags(draftTags);
+        if (JSON.stringify(cleanedTags) !== JSON.stringify(draftTags)) {
+          setDraftTags(cleanedTags);
+        }
+        schedulePersistTags(cleanedTags);
+
         // 編集側(textarea)のスクロール位置を、表示側コンテナへ引き継ぐ
         pendingScrollRatioRef.current = getScrollRatio(contentTextareaRef.current);
 
@@ -123,6 +211,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
             onCommitDraft(note.id, {
               title: draftTitle,
               content: draftContent,
+              tags: cleanedTags,
               date: note?.date,
             });
           } catch (error) {
@@ -136,7 +225,7 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
       pendingScrollRatioRef.current = getScrollRatio(scrollContainerRef.current);
       return true;
     });
-  }, [draftContent, draftTitle, onCommitDraft, note, persistDraftIfNeeded]);
+  }, [draftContent, draftTags, draftTitle, normalizeTags, onCommitDraft, note, persistDraftIfNeeded, schedulePersistTags]);
 
   const handleBodyDoubleClick = useCallback((event) => {
     // 本文エリア内での「リンク/ボタン/チェックボックス」操作は優先
@@ -152,6 +241,102 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
 
     handleToggleEditing();
   }, [handleToggleEditing]);
+
+  const tags = Array.isArray(draftTags) ? draftTags : [];
+
+  const tagSuggestions = useMemo(() => {
+    if (activeTagIndex == null) return [];
+    const current = typeof tags[activeTagIndex] === 'string' ? tags[activeTagIndex] : '';
+    const q = current.trim().toLowerCase();
+    const bank = loadTagBank();
+    const filtered = q
+      ? bank.filter((t) => t.toLowerCase().includes(q))
+      : bank;
+    return filtered.slice(0, 10);
+  }, [activeTagIndex, loadTagBank, tags]);
+
+  const updateTagAt = useCallback((index, value) => {
+    // NOTE: 日本語IME変換中は確定前の文字列が頻繁にonChangeで飛んでくるため、
+    // 履歴保存/同期は「確定時」に寄せる。
+    const shouldPersist = !isTagComposingRef.current;
+
+    setDraftTags((prev) => {
+      const list = Array.isArray(prev) ? [...prev] : [];
+      if (index < 0 || index >= list.length) return list;
+      list[index] = value;
+
+      if (shouldPersist) {
+        const cleaned = normalizeTags(list);
+        schedulePersistTags(cleaned);
+      }
+
+      return list;
+    });
+
+    setTagsDirty(true);
+  }, [normalizeTags, schedulePersistTags]);
+
+  const handleAddTag = useCallback(() => {
+    setDraftTags((prev) => {
+      const list = Array.isArray(prev) ? [...prev] : [];
+      // タグ0件の時は空欄1つをベースとして保持
+      if (list.length === 0) {
+        list.push('');
+      }
+      list.push('');
+      pendingTagFocusIndexRef.current = list.length - 1;
+      return list;
+    });
+    setTagsDirty(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!isEditing) return;
+    // タグ0件の時は空欄タグを1つ用意（×で消せない）
+    if (Array.isArray(draftTags) && draftTags.length === 0) {
+      setDraftTags(['']);
+    }
+  }, [draftTags, isEditing, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!isEditing) return;
+    const idx = pendingTagFocusIndexRef.current;
+    if (typeof idx !== 'number') return;
+
+    pendingTagFocusIndexRef.current = null;
+    setTimeout(() => {
+      const el = tagInputRefsRef.current?.[String(idx)] || null;
+      el?.focus?.();
+    }, 0);
+  }, [draftTags, isEditing, isOpen]);
+
+  const handleRemoveTag = useCallback((index) => {
+    setDraftTags((prev) => {
+      const list = Array.isArray(prev) ? [...prev] : [];
+      if (index < 0 || index >= list.length) return list;
+      list.splice(index, 1);
+      // タグ0件状態でも入力UIを残す
+      if (list.length === 0) {
+        list.push('');
+      }
+
+      const cleaned = normalizeTags(list);
+      schedulePersistTags(cleaned);
+      return list;
+    });
+    setTagsDirty(true);
+    setActiveTagIndex((prev) => (prev === index ? null : prev));
+  }, [normalizeTags, schedulePersistTags]);
+
+  const handleSelectSuggestion = useCallback((value) => {
+    if (activeTagIndex == null) return;
+    // 候補選択は確定扱い
+    isTagComposingRef.current = false;
+    updateTagAt(activeTagIndex, value);
+    setActiveTagIndex(null);
+  }, [activeTagIndex, updateTagAt]);
 
   useLayoutEffect(() => {
     if (!isOpen) return;
@@ -239,9 +424,12 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
     // ノート切替/初回オープン時だけドラフトを初期化
     setDraftTitle(noteTitle);
     setDraftContent(noteContent);
+    setDraftTags(Array.isArray(noteTags) ? noteTags : []);
     setTitleDirty(false);
     setContentDirty(false);
-  }, [isOpen, noteContent, noteId, noteTitle]);
+    setTagsDirty(false);
+    setActiveTagIndex(null);
+  }, [isOpen, noteContent, noteId, noteTags, noteTitle]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -252,7 +440,17 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
     if (!contentDirty && !isContentFocusedRef.current && draftContent !== noteContent) {
       setDraftContent(noteContent);
     }
-  }, [contentDirty, draftContent, draftTitle, isOpen, noteContent, noteTitle, titleDirty]);
+    if (!tagsDirty && !isTagsFocusedRef.current) {
+      const nextTagsRaw = Array.isArray(noteTags) ? noteTags : [];
+      const nextNormalized = normalizeTags(nextTagsRaw);
+      const currentNormalized = normalizeTags(draftTags);
+      // UI都合で編集モードでは空欄タグ（['']）を持つ場合がある。
+      // DB側の空配列[]と等価として扱い、追従更新のループを防ぐ。
+      if (JSON.stringify(nextNormalized) !== JSON.stringify(currentNormalized)) {
+        setDraftTags(nextTagsRaw);
+      }
+    }
+  }, [contentDirty, draftContent, draftTags, draftTitle, isOpen, noteContent, noteTags, noteTitle, tagsDirty, titleDirty]);
 
   const title = draftTitle;
   const content = draftContent;
@@ -580,6 +778,106 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                   />
                 </div>
 
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <label className="block text-gray-700 font-medium">タグ（検索用）</label>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {tags.map((tag, idx) => {
+                      const raw = typeof tag === 'string' ? tag : '';
+                      const isOnlyPlaceholder = tags.length === 1 && raw.replace(/\s+/g, '').length === 0;
+                      const canRemove = !isOnlyPlaceholder;
+
+                      return (
+                        <div key={`tag-${idx}`} className="relative inline-flex items-center gap-1">
+                          <input
+                            ref={(el) => {
+                              if (el) tagInputRefsRef.current[String(idx)] = el;
+                            }}
+                            type="text"
+                            value={typeof tag === 'string' ? tag : ''}
+                            placeholder="タグ"
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                            className="h-8 w-40 rounded-full border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-indigo-300"
+                            onFocus={() => {
+                              isTagsFocusedRef.current = true;
+                              setActiveTagIndex(idx);
+                            }}
+                            onCompositionStart={() => {
+                              isTagComposingRef.current = true;
+                            }}
+                            onCompositionEnd={() => {
+                              // 変換確定: この時点の値で同期＆履歴登録
+                              isTagComposingRef.current = false;
+                              const cleaned = normalizeTags(tags);
+                              schedulePersistTags(cleaned);
+                            }}
+                            onBlur={() => {
+                              isTagsFocusedRef.current = false;
+                              if (!isTagComposingRef.current) {
+                                const cleaned = normalizeTags(tags);
+                                schedulePersistTags(cleaned);
+                              }
+                              setTimeout(() => setActiveTagIndex((prev) => (prev === idx ? null : prev)), 120);
+                            }}
+                            onChange={(e) => {
+                              updateTagAt(idx, e.target.value);
+                            }}
+                          />
+
+                          {canRemove && (
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition-colors duration-200 hover:bg-gray-50 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                              onClick={() => handleRemoveTag(idx)}
+                              aria-label="タグを削除"
+                              title="タグを削除"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M18 6L6 18" />
+                                <path d="M6 6l12 12" />
+                              </svg>
+                            </button>
+                          )}
+
+                          {activeTagIndex === idx && tagSuggestions.length > 0 && (
+                            <div className="absolute left-0 top-full z-10 mt-1 w-56 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+                              {tagSuggestions.map((t) => (
+                                <button
+                                  key={`tag-suggest-${t}`}
+                                  type="button"
+                                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                  onMouseDown={(ev) => ev.preventDefault()}
+                                  onClick={() => handleSelectSuggestion(t)}
+                                >
+                                  {t}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      onClick={handleAddTag}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-colors duration-200 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                      aria-label="タグを追加"
+                      title="タグを追加"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 5v14" />
+                        <path d="M5 12h14" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="flex flex-1 min-h-0 flex-col">
                   <label className="block text-gray-700 font-medium mb-2">本文（Markdown対応）</label>
                   <textarea
@@ -614,33 +912,52 @@ const NoteModal = ({ isOpen, note, onClose, onUpdate, onToggleArchive, onToggleI
                 </div>
               </>
             ) : (
-              <div className="note-markdown w-full px-1 text-sm text-gray-800" onDoubleClick={handleBodyDoubleClick}>
-                {content.trim() ? (
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      a: renderMarkdownLink,
-                      input: ({ type, ...props }) => {
-                        if (type === 'checkbox') {
-                          return (
-                            <input
-                              {...props}
-                              type="checkbox"
-                              className="custom-checkbox mr-2 align-middle"
-                              disabled
-                            />
-                          );
-                        }
-                        return <input {...props} type={type} />;
-                      },
-                    }}
-                  >
-                    {content}
-                  </ReactMarkdown>
-                ) : (
-                  <div className="text-gray-400">（本文なし）</div>
+              <>
+                {tags.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pb-1">
+                    {tags
+                      .map((t) => (typeof t === 'string' ? t.replace(/\s+/g, ' ').trim() : ''))
+                      .filter((t) => t)
+                      .map((t) => (
+                        <span
+                          key={`tag-view-${t}`}
+                          className="inline-flex items-center rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600"
+                          title={t}
+                        >
+                          {t}
+                        </span>
+                      ))}
+                  </div>
                 )}
-              </div>
+
+                <div className="note-markdown w-full px-1 text-sm text-gray-800" onDoubleClick={handleBodyDoubleClick}>
+                  {content.trim() ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: renderMarkdownLink,
+                        input: ({ type, ...props }) => {
+                          if (type === 'checkbox') {
+                            return (
+                              <input
+                                {...props}
+                                type="checkbox"
+                                className="custom-checkbox mr-2 align-middle"
+                                disabled
+                              />
+                            );
+                          }
+                          return <input {...props} type={type} />;
+                        },
+                      }}
+                    >
+                      {content}
+                    </ReactMarkdown>
+                  ) : (
+                    <div className="text-gray-400">（本文なし）</div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>

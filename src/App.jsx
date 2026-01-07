@@ -630,6 +630,36 @@ function App() {
   }, [notes]);
 
   useEffect(() => {
+    // タグサジェスト用: 実際にノートで使われているタグだけを蓄積
+    try {
+      const id = userId ? String(userId) : 'local';
+      const key = `note_tag_bank:${id}`;
+      const list = Array.isArray(notes) ? notes : [];
+      const seen = new Set();
+      const tags = [];
+      list.forEach((note) => {
+        const raw = Array.isArray(note?.tags) ? note.tags : [];
+        raw
+          .map((v) => (typeof v === 'string' ? v : ''))
+          .map((v) => v.replace(/\s+/g, ' ').trim())
+          .filter((v) => v)
+          .forEach((t) => {
+            const k = t.toLowerCase();
+            if (seen.has(k)) return;
+            seen.add(k);
+            tags.push(t);
+          });
+      });
+
+      // サイズ制限（念のため）
+      const limited = tags.slice(0, 200);
+      window.localStorage.setItem(key, JSON.stringify(limited));
+    } catch {
+      // ignore
+    }
+  }, [notes, userId]);
+
+  useEffect(() => {
     activeNoteIdRef.current = activeNoteId;
   }, [activeNoteId]);
 
@@ -3189,6 +3219,9 @@ function App() {
     const effectiveTitle = typeof safeOverrides.title === 'string' ? safeOverrides.title : currentNote.title;
     const effectiveContent = typeof safeOverrides.content === 'string' ? safeOverrides.content : currentNote.content;
     const effectiveDate = safeOverrides.date || currentNote.date;
+    const effectiveTags = Array.isArray(safeOverrides.tags)
+      ? safeOverrides.tags
+      : (Array.isArray(currentNote.tags) ? currentNote.tags : []);
 
     const titleTrimmed = typeof effectiveTitle === 'string' ? effectiveTitle.trim() : '';
     const contentTrimmed = typeof effectiveContent === 'string' ? effectiveContent.trim() : '';
@@ -3206,6 +3239,7 @@ function App() {
       date: effectiveDate || selectedDateStr,
       title: effectiveTitle ?? '',
       content: effectiveContent ?? '',
+      tags: effectiveTags,
     })
       .then(async (created) => {
         markRealtimeSelfWrite('notes', created?.id ?? null);

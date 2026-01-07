@@ -28,7 +28,7 @@ export const fetchNotesForUserByDate = async (userId, dateStr) => {
 
   const { data, error } = await supabase
     .from(TABLE_NAME)
-    .select('id, date, title, content, archived, important, created_at, updated_at')
+    .select('id, date, title, content, tags, archived, important, created_at, updated_at')
     .eq('user_id', userId)
     .eq('date', dateStr)
     .order('updated_at', { ascending: false });
@@ -51,7 +51,7 @@ export const fetchNotesForUser = async (userId) => {
 
   const { data, error } = await supabase
     .from(TABLE_NAME)
-    .select('id, date, title, content, archived, important, created_at, updated_at')
+    .select('id, date, title, content, tags, archived, important, created_at, updated_at')
     .eq('user_id', userId)
     .order('updated_at', { ascending: false });
 
@@ -73,7 +73,7 @@ export const fetchActiveNotesForUser = async (userId) => {
 
   const { data, error } = await supabase
     .from(TABLE_NAME)
-    .select('id, date, title, content, archived, important, created_at, updated_at')
+    .select('id, date, title, content, tags, archived, important, created_at, updated_at')
     .eq('user_id', userId)
     .eq('archived', false)
     .order('updated_at', { ascending: false })
@@ -103,7 +103,7 @@ export const fetchArchivedNotesPageForUser = async ({ userId, limit = 5, cursor 
 
   let query = supabase
     .from(TABLE_NAME)
-    .select('id, date, title, content, archived, important, created_at, updated_at')
+    .select('id, date, title, content, tags, archived, important, created_at, updated_at')
     .eq('user_id', userId)
     .eq('archived', true)
     .order('updated_at', { ascending: false })
@@ -141,7 +141,7 @@ export const fetchArchivedNotesPageForUser = async ({ userId, limit = 5, cursor 
   return { items, hasMore, nextCursor };
 };
 
-export const createNoteForUser = async ({ userId, date, title = '', content = '' }) => {
+export const createNoteForUser = async ({ userId, date, title = '', content = '', tags = [] }) => {
   if (!userId) throw new Error('ユーザーIDが指定されていません。');
   if (!date) throw new Error('日付が指定されていません。');
 
@@ -150,6 +150,7 @@ export const createNoteForUser = async ({ userId, date, title = '', content = ''
     date,
     title: title ?? '',
     content: content ?? '',
+    tags: Array.isArray(tags) ? tags : [],
     archived: false,
     important: false,
     updated_at: new Date().toISOString(),
@@ -161,7 +162,7 @@ export const createNoteForUser = async ({ userId, date, title = '', content = ''
   const { data, error } = await supabase
     .from(TABLE_NAME)
     .insert(payload)
-    .select('id, date, title, content, archived, important, created_at, updated_at')
+    .select('id, date, title, content, tags, archived, important, created_at, updated_at')
     .single();
 
   if (error) {
@@ -191,7 +192,7 @@ export const updateNoteForUser = async ({ userId, id, patch }) => {
     .update(payload)
     .eq('user_id', userId)
     .eq('id', id)
-    .select('id, date, title, content, archived, important, created_at, updated_at')
+    .select('id, date, title, content, tags, archived, important, created_at, updated_at')
     .single();
 
   if (error) {
@@ -233,7 +234,7 @@ export const fetchNoteForUserById = async ({ userId, id }) => {
 
   const { data, error } = await supabase
     .from(TABLE_NAME)
-    .select('id, date, title, content, archived, important, created_at, updated_at')
+    .select('id, date, title, content, tags, archived, important, created_at, updated_at')
     .eq('user_id', userId)
     .eq('id', id)
     .single();
