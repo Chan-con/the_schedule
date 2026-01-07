@@ -86,6 +86,20 @@ VITE_AI_CONCIERGE_ENDPOINT=...
 		- 代わりに Cloudflare Workers が APIキーを暗号化し、Supabase には暗号文（`openai_api_key_ciphertext`）のみ保存します。
 		- Supabase Dashboard の SQL Editor で [supabase/sql/ai_concierge_settings.sql](supabase/sql/ai_concierge_settings.sql) を実行してください。
 
+	 - **ノート: タグ（検索用）**
+		- ノートにタグ（`text[]`）を持たせ、`tag:xxx` で絞り込み検索できるようにするためのカラムです。
+		- Supabase Dashboard の SQL Editor で [supabase/sql/20260108_add_note_tags.sql](supabase/sql/20260108_add_note_tags.sql) を実行してください。
+
+		```sql
+		-- notes にタグ配列を追加
+		-- 既存のnotesテーブルが存在する前提です。
+		alter table public.notes
+		add column if not exists tags text[] not null default '{}';
+
+		-- 検索用途のインデックス（必要に応じて）
+		-- create index if not exists notes_tags_gin_idx on public.notes using gin (tags);
+		```
+
 	 - **（推奨）パフォーマンス用インデックス**
 		- データが年単位で増える想定の場合、以下のインデックスを追加するとクエリが安定します（特に「月表示の範囲ロード」「未完了タスク一覧」「完了タスクのページング」「ノートのアーカイブ一覧」）。
 		- Supabase Dashboard の SQL Editor で実行してください。
