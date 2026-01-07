@@ -79,8 +79,8 @@ const Calendar = ({
   isMobile = false,
   onToggleWideMode,
   onSearchClick,
+  onAiConciergeClick,
 }) => {
-  const [currentDate, setCurrentDate] = useState(new Date());
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [isAltPressed, setIsAltPressed] = useState(false);
   const [voltModifierKey, setVoltModifierKey] = useState('ctrlOrCmd'); // 'ctrlOrCmd' | 'alt'
@@ -92,6 +92,7 @@ const Calendar = ({
   const [isDragging, setIsDragging] = useState(false);
   const [isCustomDragging, setIsCustomDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [currentDate, setCurrentDate] = useState(() => (selectedDate instanceof Date ? new Date(selectedDate) : new Date()));
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [maxSchedulesPerCell, setMaxSchedulesPerCell] = useState(3); // 動的に調整される
   const [_scrollTrigger, setScrollTrigger] = useState(0); // スクロール時の再レンダリング用（未使用変数のLint回避）
@@ -1188,6 +1189,16 @@ const Calendar = ({
             title="予定/タスク検索"
           >
             <IconSearch className="h-4 w-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onAiConciergeClick?.()}
+            className="text-gray-600 hover:text-white p-2 rounded-full bg-gray-100 hover:bg-indigo-500 transition-colors duration-200 shadow-sm"
+            aria-label="AIコンシェルジュ"
+            title="AIコンシェルジュ"
+          >
+            <span className="text-[10px] font-bold leading-none">AI</span>
           </button>
         </div>
         

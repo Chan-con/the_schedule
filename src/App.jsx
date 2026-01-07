@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useRef, useContext, useMemo } 
 import { toDateStrLocal, fromDateStrLocal } from './utils/date';
 
 import Calendar from './components/Calendar';
+import AiConciergeModal from './components/AiConciergeModal';
 import Timeline from './components/Timeline';
 import CurrentDateTimeBar from './components/CurrentDateTimeBar';
 import ScheduleForm from './components/ScheduleForm';
@@ -599,6 +600,9 @@ function App() {
   const [scheduleSearchLoading, setScheduleSearchLoading] = useState(false);
   const scheduleSearchTimerRef = useRef(null);
 
+  // AIコンシェルジュモーダル
+  const [showAiConcierge, setShowAiConcierge] = useState(false);
+
   const ARCHIVED_NOTE_PAGE_SIZE = 5;
   const [archivedNotesCursor, setArchivedNotesCursor] = useState(null);
   const [archivedNotesHasMore, setArchivedNotesHasMore] = useState(false);
@@ -664,6 +668,33 @@ function App() {
   const closeScheduleSearch = useCallback(() => {
     setShowScheduleSearch(false);
   }, []);
+
+  const openAiConcierge = useCallback(() => {
+    setShowAiConcierge(true);
+  }, []);
+
+  const closeAiConcierge = useCallback(() => {
+    setShowAiConcierge(false);
+  }, []);
+
+  const searchSchedulesForAi = useCallback(async (keyword) => {
+    const q = typeof keyword === 'string' ? keyword.trim() : '';
+    if (!q) return [];
+
+    if (userId) {
+      const items = await searchSchedulesForUser({ userId, keyword: q, limit: 50 });
+      return Array.isArray(items) ? items : [];
+    }
+
+    const list = Array.isArray(schedulesRef.current) ? schedulesRef.current : [];
+    const needle = q.toLowerCase();
+    const filtered = list.filter((s) => {
+      const name = String(s?.name ?? '').toLowerCase();
+      const memo = String(s?.memo ?? '').toLowerCase();
+      return name.includes(needle) || memo.includes(needle);
+    });
+    return filtered.slice(0, 50);
+  }, [userId]);
 
   const runScheduleSearch = useCallback(async (keyword) => {
     const q = typeof keyword === 'string' ? keyword.trim() : '';
@@ -4521,6 +4552,7 @@ function App() {
                 dailyQuestTaskTitlesByDate={calendarDailyQuestTaskTitlesByDate}
                 onVisibleRangeChange={handleCalendarVisibleRangeChange}
                 onSearchClick={openScheduleSearch}
+                onAiConciergeClick={openAiConcierge}
               />
             </div>
             
@@ -4634,6 +4666,7 @@ function App() {
                     onVisibleRangeChange={handleCalendarVisibleRangeChange}
                     onToggleWideMode={toggleWideMode}
                     onSearchClick={openScheduleSearch}
+                    onAiConciergeClick={openAiConcierge}
                   />
                 </div>
                 
@@ -4757,6 +4790,17 @@ function App() {
         loading={scheduleSearchLoading}
         onClose={closeScheduleSearch}
         onSelect={handleSelectScheduleSearchResult}
+      />
+
+      <AiConciergeModal
+        isOpen={showAiConcierge}
+        onClose={closeAiConcierge}
+        selectedDate={selectedDate}
+        selectedDateStr={selectedDateStr}
+        schedules={schedules}
+        onNavigateToDate={setSelectedDate}
+        onSearchSchedules={searchSchedulesForAi}
+        onSaveSchedule={handleSave}
       />
 
       <CornerFloatingMenu

@@ -36,6 +36,10 @@ const hhmmToTimeMinutes = (hhmm) => {
 const SettingsModal = ({ isOpen, onClose }) => {
   const auth = useAuth();
   const userId = auth?.user?.id || null;
+
+  const AI_API_KEY_STORAGE_KEY = 'aiConciergeOpenAIApiKey';
+  const [aiApiKeyInput, setAiApiKeyInput] = useState('');
+  const [aiApiKeySaved, setAiApiKeySaved] = useState(false);
   const [voltModifierKey, setVoltModifierKey] = useState('ctrlOrCmd'); // 'ctrlOrCmd' | 'alt'
   const [shortcuts, setShortcuts] = useState({
     undo: 'Control+Z',
@@ -161,6 +165,16 @@ const SettingsModal = ({ isOpen, onClose }) => {
       setShortcuts(JSON.parse(savedShortcuts));
     }
 
+    // AI APIキーの状態（値は表示しない）
+    try {
+      const stored = localStorage.getItem(AI_API_KEY_STORAGE_KEY);
+      setAiApiKeySaved(!!(stored && String(stored).trim()));
+      setAiApiKeyInput('');
+    } catch {
+      setAiApiKeySaved(false);
+      setAiApiKeyInput('');
+    }
+
     // Voltモードの修飾キー設定の読み込み
     try {
       const storedVoltModifier = localStorage.getItem('voltModifierKey');
@@ -234,11 +248,35 @@ const SettingsModal = ({ isOpen, onClose }) => {
       // ignore
     }
 
+    // AI APIキー（入力がある時だけ更新）
+    try {
+      const nextKey = String(aiApiKeyInput || '').trim();
+      if (nextKey) {
+        localStorage.setItem(AI_API_KEY_STORAGE_KEY, nextKey);
+        setAiApiKeySaved(true);
+        setAiApiKeyInput('');
+        window.dispatchEvent(new CustomEvent('aiConciergeApiKeyChanged', { detail: { saved: true } }));
+      }
+    } catch {
+      // ignore
+    }
+
     if (isQuestReminderDirty) {
       const ok = await handleSaveQuestReminder();
       if (!ok) return;
     }
     onClose();
+  };
+
+  const handleClearAiApiKey = () => {
+    try {
+      localStorage.removeItem(AI_API_KEY_STORAGE_KEY);
+      setAiApiKeySaved(false);
+      setAiApiKeyInput('');
+      window.dispatchEvent(new CustomEvent('aiConciergeApiKeyChanged', { detail: { saved: false } }));
+    } catch {
+      // ignore
+    }
   };
 
   const handleEnablePush = async () => {
@@ -553,6 +591,41 @@ const SettingsModal = ({ isOpen, onClose }) => {
                 </p>
               </div>
             )}
+          </div>
+
+          {/* AIコンシェルジュ */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 mb-3">AIコンシェルジュ</h3>
+            <div className="space-y-2">
+              <p className="text-xs text-gray-600">
+                GPTのAPIキーをこのブラウザに保存します（ローカル保存）。共有端末では設定しないでください。
+              </p>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  value={aiApiKeyInput}
+                  onChange={(e) => setAiApiKeyInput(e.target.value)}
+                  placeholder={aiApiKeySaved ? 'APIキーは保存済み（再入力で更新）' : 'sk-...'}
+                  className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  onClick={handleClearAiApiKey}
+                  className="px-3 py-2 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-300 rounded-lg transition-all duration-200"
+                  disabled={!aiApiKeySaved}
+                  title="保存済みのAPIキーを削除"
+                >
+                  削除
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-600">
+                状態: {aiApiKeySaved ? '保存済み' : '未設定'}（保存は「保存」ボタンで反映）
+              </p>
+            </div>
           </div>
 
           {/* クエストリマインド */}
