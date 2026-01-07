@@ -14,6 +14,10 @@ import {
   fetchQuestReminderSettingsForUser,
   upsertQuestReminderSettingsForUser,
 } from '../utils/supabaseQuestReminderSettings';
+import {
+  clearAiConciergeApiKeyForUser,
+  upsertAiConciergeApiKeyForUser,
+} from '../utils/supabaseAiConciergeSettings';
 
 const timeMinutesToHHMM = (minutes) => {
   const m = Number(minutes);
@@ -253,6 +257,15 @@ const SettingsModal = ({ isOpen, onClose }) => {
       const nextKey = String(aiApiKeyInput || '').trim();
       if (nextKey) {
         localStorage.setItem(AI_API_KEY_STORAGE_KEY, nextKey);
+
+        if (userId) {
+          try {
+            await upsertAiConciergeApiKeyForUser({ userId, apiKey: nextKey });
+          } catch (error) {
+            console.warn('[AI Concierge] Failed to save API key to DB:', error);
+          }
+        }
+
         setAiApiKeySaved(true);
         setAiApiKeyInput('');
         window.dispatchEvent(new CustomEvent('aiConciergeApiKeyChanged', { detail: { saved: true } }));
@@ -268,9 +281,18 @@ const SettingsModal = ({ isOpen, onClose }) => {
     onClose();
   };
 
-  const handleClearAiApiKey = () => {
+  const handleClearAiApiKey = async () => {
     try {
       localStorage.removeItem(AI_API_KEY_STORAGE_KEY);
+
+      if (userId) {
+        try {
+          await clearAiConciergeApiKeyForUser({ userId });
+        } catch (error) {
+          console.warn('[AI Concierge] Failed to clear API key from DB:', error);
+        }
+      }
+
       setAiApiKeySaved(false);
       setAiApiKeyInput('');
       window.dispatchEvent(new CustomEvent('aiConciergeApiKeyChanged', { detail: { saved: false } }));
@@ -598,7 +620,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
             <h3 className="text-sm font-medium text-gray-700 mb-3">AIコンシェルジュ</h3>
             <div className="space-y-2">
               <p className="text-xs text-gray-600">
-                GPTのAPIキーをこのブラウザに保存します（ローカル保存）。共有端末では設定しないでください。
+                GPTのAPIキーを保存します。ログイン中はアカウントに保存して端末間で同期します。共有端末では設定しないでください。
               </p>
 
               <div className="flex items-center gap-2">

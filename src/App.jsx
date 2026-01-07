@@ -4,6 +4,7 @@ import { toDateStrLocal, fromDateStrLocal } from './utils/date';
 
 import Calendar from './components/Calendar';
 import AiConciergeModal from './components/AiConciergeModal';
+import { fetchAiConciergeApiKeyForUser } from './utils/supabaseAiConciergeSettings';
 import Timeline from './components/Timeline';
 import CurrentDateTimeBar from './components/CurrentDateTimeBar';
 import ScheduleForm from './components/ScheduleForm';
@@ -369,6 +370,64 @@ function App() {
 
   const auth = useContext(AuthContext);
   const userId = auth?.user?.id || null;
+
+  const AI_API_KEY_STORAGE_KEY = 'aiConciergeOpenAIApiKey';
+
+  // AIコンシェルジュのAPIキー（Supabase→localStorage）同期
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+
+    const dispatchKeyChanged = (saved) => {
+      try {
+        window.dispatchEvent(new CustomEvent('aiConciergeApiKeyChanged', { detail: { saved } }));
+      } catch {
+        // ignore
+      }
+    };
+
+    const syncFromDb = async () => {
+      // ログアウト時はローカルキーも消しておく（端末間での混乱防止）
+      if (!userId) {
+        try {
+          const current = String(window.localStorage.getItem(AI_API_KEY_STORAGE_KEY) || '').trim();
+          if (current) {
+            window.localStorage.removeItem(AI_API_KEY_STORAGE_KEY);
+            dispatchKeyChanged(false);
+          }
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
+      try {
+        const fromDb = await fetchAiConciergeApiKeyForUser({ userId });
+        if (cancelled) return;
+
+        const next = String(fromDb || '').trim();
+        const current = String(window.localStorage.getItem(AI_API_KEY_STORAGE_KEY) || '').trim();
+
+        if (next) {
+          if (current !== next) {
+            window.localStorage.setItem(AI_API_KEY_STORAGE_KEY, next);
+            dispatchKeyChanged(true);
+          }
+        } else if (current) {
+          window.localStorage.removeItem(AI_API_KEY_STORAGE_KEY);
+          dispatchKeyChanged(false);
+        }
+      } catch (error) {
+        // DBが未設定/未作成/通信不良でもアプリ全体は動くようにする
+        console.warn('[AI Concierge] Failed to sync API key from DB:', error);
+      }
+    };
+
+    syncFromDb();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
   const noteArchiveUserKey = useMemo(() => buildNoteArchiveUserKey(userId), [userId]);
   const noteArchiveFlagsRef = useRef({});
   const noteImportantFlagsRef = useRef({});
