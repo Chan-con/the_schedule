@@ -324,17 +324,22 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
     });
   }, [value]);
 
-  const commitState = useCallback((updater) => {
+  const commitState = useCallback((updater, options = {}) => {
+    const shouldImmediatePersist = !!options?.immediatePersist;
+
     setMemoState((prev) => {
       const nextState = typeof updater === 'function' ? updater(prev) : updater;
       if (onChange) {
         const serialized = serializeMemoTabsState(nextState);
         lastEmittedRef.current = serialized;
         onChange(serialized);
+        if (shouldImmediatePersist && typeof onImmediatePersist === 'function') {
+          onImmediatePersist(serialized);
+        }
       }
       return nextState;
     });
-  }, [onChange]);
+  }, [onChange, onImmediatePersist]);
 
   const openCreate = useCallback(() => {
     setModalMode('new');
@@ -378,7 +383,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
         tabs: remainingTabs,
         activeTabId: nextActive?.id || remainingTabs[0]?.id,
       };
-    });
+    }, { immediatePersist: true });
   }, [commitState]);
 
   const deleteMemoById = useCallback((tabId) => {
@@ -411,7 +416,7 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
         tabs: remainingTabs,
         activeTabId: nextActive?.id || remainingTabs[0]?.id,
       };
-    });
+    }, { immediatePersist: true });
   }, [commitState]);
 
   const saveModal = useCallback(() => {

@@ -983,6 +983,7 @@ function App() {
     const safeValue = typeof value === 'string' ? value : '';
     quickMemoSkipSyncRef.current = true;
     quickMemoLastSavedRef.current = safeValue;
+    quickMemoRef.current = safeValue;
     setQuickMemo(safeValue);
   }, []);
   const timelineRef = useRef(null);
@@ -3748,8 +3749,18 @@ function App() {
   };
 
   const handleQuickMemoChange = useCallback((value) => {
-    setQuickMemo(value);
-  }, [setQuickMemo]);
+    const safeValue = typeof value === 'string' ? value : '';
+    quickMemoRef.current = safeValue;
+    setQuickMemo(safeValue);
+
+    // ページリロード直前にuseEffectが走らず古い値が残るケースへの保険。
+    if (!isQuickMemoLoaded || typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(QUICK_MEMO_STORAGE_KEY, safeValue);
+    } catch {
+      // ignore
+    }
+  }, [isQuickMemoLoaded]);
 
   const handleQuickMemoImmediatePersist = useCallback((value) => {
     if (!userId) return;
