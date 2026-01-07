@@ -19,6 +19,7 @@ VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
 VITE_SUPABASE_REDIRECT_URL=http://localhost:5173/auth/callback
 VITE_VAPID_PUBLIC_KEY=...
+VITE_AI_CONCIERGE_ENDPOINT=...
 ```
 
 - `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`
@@ -29,6 +30,11 @@ VITE_VAPID_PUBLIC_KEY=...
 - `VITE_VAPID_PUBLIC_KEY`
 	- Web Push の購読（subscribe）に使う VAPID 公開鍵（Base64URL 形式）。
 	- iOS では「ホーム画面に追加」した Web アプリ（PWA）から許可/購読してください。
+
+- `VITE_AI_CONCIERGE_ENDPOINT`
+	- AIコンシェルジュ用のエンドポイント（Cloudflare Workers のURLなど）。
+	- 例: `https://the-schedule-push.<your-account>.workers.dev`
+	- アプリ側はこのベースURLに対して `/ai/chat` / `/ai/settings/api-key` などを呼びます。
 
 > ⚠️ `.env` ファイルは `.gitignore` で除外されています。漏洩しないよう注意してください。
 
@@ -74,6 +80,11 @@ VITE_VAPID_PUBLIC_KEY=...
 		 ```
 
 	 - 「更新日時」を自動で管理したい場合はトリガーで `updated_at` を更新するなど調整してください。
+
+	 - **AIコンシェルジュ設定（APIキーの暗号化保存）**
+		- AIコンシェルジュの APIキーは「端末のlocalStorageやDBに平文で残さない」方針です。
+		- 代わりに Cloudflare Workers が APIキーを暗号化し、Supabase には暗号文（`openai_api_key_ciphertext`）のみ保存します。
+		- Supabase Dashboard の SQL Editor で [supabase/sql/ai_concierge_settings.sql](supabase/sql/ai_concierge_settings.sql) を実行してください。
 
 	 - **（推奨）パフォーマンス用インデックス**
 		- データが年単位で増える想定の場合、以下のインデックスを追加するとクエリが安定します（特に「月表示の範囲ロード」「未完了タスク一覧」「完了タスクのページング」「ノートのアーカイブ一覧」）。
@@ -437,6 +448,7 @@ node scripts/generate-vapid-keys.cjs
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `VAPID_PUBLIC_KEY`
 - `VAPID_PRIVATE_KEY_PKCS8`
+- `AI_CONCIERGE_SETTINGS_KEY_B64`（32byteをbase64化したAES-GCM鍵。AI APIキー暗号化に使用）
 - `PUBLIC_APP_URL`（例: `https://the-schedule.pages.dev`）
 
 ### Workers のローカル実行 / デプロイ
