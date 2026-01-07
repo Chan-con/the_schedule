@@ -64,6 +64,8 @@ const SettingsModal = ({ isOpen, onClose }) => {
     error: null,
   });
 
+  const [questReminderInitial, setQuestReminderInitial] = useState(null);
+
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -117,6 +119,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
       if (!userId) {
         if (!cancelled) {
           setQuestReminderStatus((prev) => ({ ...prev, loaded: true, error: null }));
+          setQuestReminderInitial(null);
         }
         return;
       }
@@ -131,6 +134,10 @@ const SettingsModal = ({ isOpen, onClose }) => {
           timeHHMM: timeMinutesToHHMM(row?.reminder_time_minutes ?? 21 * 60),
           error: null,
         }));
+        setQuestReminderInitial({
+          enabled: !!row?.enabled,
+          timeHHMM: timeMinutesToHHMM(row?.reminder_time_minutes ?? 21 * 60),
+        });
       } catch (error) {
         if (cancelled) return;
         setQuestReminderStatus((prev) => ({
@@ -210,6 +217,13 @@ const SettingsModal = ({ isOpen, onClose }) => {
   }, [isOpen, editingShortcut, onClose]);
 
   const handleSave = async () => {
+    const isQuestReminderDirty =
+      !!userId &&
+      !!questReminderInitial &&
+      questReminderStatus.loaded &&
+      (questReminderStatus.enabled !== questReminderInitial.enabled ||
+        questReminderStatus.timeHHMM !== questReminderInitial.timeHHMM);
+
     localStorage.setItem('scheduleAppShortcuts', JSON.stringify(shortcuts));
     try {
       localStorage.setItem('voltModifierKey', voltModifierKey);
@@ -218,6 +232,11 @@ const SettingsModal = ({ isOpen, onClose }) => {
       );
     } catch {
       // ignore
+    }
+
+    if (isQuestReminderDirty) {
+      const ok = await handleSaveQuestReminder();
+      if (!ok) return;
     }
     onClose();
   };
@@ -310,11 +329,20 @@ const SettingsModal = ({ isOpen, onClose }) => {
         enabled: !!saved?.enabled,
         timeHHMM: timeMinutesToHHMM(saved?.reminder_time_minutes ?? timeMinutes),
       }));
+
+      setQuestReminderInitial({
+        enabled: !!saved?.enabled,
+        timeHHMM: timeMinutesToHHMM(saved?.reminder_time_minutes ?? timeMinutes),
+      });
+
+      return true;
     } catch (error) {
       setQuestReminderStatus((prev) => ({
         ...prev,
         error: error?.message || 'クエスト通知設定の保存に失敗しました。',
       }));
+
+      return false;
     } finally {
       setQuestReminderStatus((prev) => ({ ...prev, isBusy: false }));
     }
@@ -571,19 +599,6 @@ const SettingsModal = ({ isOpen, onClose }) => {
                     className="px-2 py-1 text-sm border border-gray-200 rounded-md"
                     disabled={!questReminderStatus.loaded}
                   />
-
-                  <button
-                    type="button"
-                    onClick={handleSaveQuestReminder}
-                    disabled={questReminderStatus.isBusy || !questReminderStatus.loaded}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-md border transition-all duration-200 ${
-                      questReminderStatus.isBusy || !questReminderStatus.loaded
-                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                        : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
-                    }`}
-                  >
-                    保存
-                  </button>
                 </div>
 
                 {!pushStatus.subscribed && (
