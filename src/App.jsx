@@ -560,11 +560,6 @@ function App() {
     onLogout: authLogout,
   }), [authLogin, authLogout, authUser, isAuthLoading, isAuthProcessing]);
 
-  const notificationEntries = useMemo(
-    () => (Array.isArray(schedules) ? schedules : []),
-    [schedules]
-  );
-  
   const [selectedDate, setSelectedDate] = useState(new Date());
   const selectedDateStr = useMemo(() => (selectedDate ? toDateStrLocal(selectedDate) : ''), [selectedDate]);
   const [editingSchedule, setEditingSchedule] = useState(null);

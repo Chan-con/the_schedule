@@ -1,6 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { fromDateStrLocal } from '../utils/date';
-import { setDateHash } from '../utils/noteShare';
 
 // Web Notifications API の権限をリクエスト
 const requestNotificationPermission = async () => {
@@ -21,11 +20,14 @@ const requestNotificationPermission = async () => {
   return false;
 };
 
+// 未使用（将来用）: workers（push）に一本化するため現状は呼ばない
+const _requestNotificationPermission = requestNotificationPermission;
+
 // 通知は workers（push）に一本化するため、クライアント側のローカル通知は送らない。
-const showWebNotification = () => {};
+const _showWebNotification = () => {};
 
 // 通知時間を計算する関数
-const calculateNotificationTime = (schedule, notification) => {
+const _calculateNotificationTime = (schedule, notification) => {
   const scheduleDate = fromDateStrLocal(schedule.date); // ローカル日の 00:00 基準
   
   if (schedule.allDay) {
@@ -67,7 +69,7 @@ const calculateNotificationTime = (schedule, notification) => {
 };
 
 // 通知テキストを生成する関数
-const generateNotificationText = (schedule, notification) => {
+const _generateNotificationText = (schedule, notification) => {
   const unitText = {
     minutes: '分前',
     hours: '時間前',
@@ -106,7 +108,7 @@ export const useNotifications = (schedules) => {
   }, []);
   
   // workers（push）一本化のため、ローカル通知はスケジュールしない。
-  const scheduleWebNotification = useCallback(async () => {}, []);
+  const _scheduleWebNotification = useCallback(async () => {}, []);
   
   // 全ての通知をスケジュール
   const scheduleAllNotifications = useCallback(async () => {

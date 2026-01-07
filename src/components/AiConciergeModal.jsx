@@ -122,7 +122,7 @@ const buildBulkHintFromText = ({ text, baseDateStr }) => {
   return hint;
 };
 
-const sanitizeBulkPayload = ({ payload, schedules }) => {
+const sanitizeBulkPayload = ({ payload }) => {
   const p = payload && typeof payload === 'object' ? payload : null;
   if (!p) return null;
 
@@ -146,7 +146,7 @@ const sanitizeBulkPayload = ({ payload, schedules }) => {
   return { operation, action, targetDate, ids, baseId: baseId || '' };
 };
 
-const clampBulkIds = ({ ids, schedules }) => {
+const _clampBulkIds = ({ ids, schedules }) => {
   const list = Array.isArray(schedules) ? schedules : [];
   const existing = new Set(list.map((s) => String(s?.id ?? '')).filter(Boolean));
   const filtered = (Array.isArray(ids) ? ids : [])
@@ -511,7 +511,7 @@ const shouldSuggestBulkAction = (text) => {
   if (!s) return false;
 
   const bulkish = /(まとめて|一括|複数|全部|全て|すべて|いっぺんに|一斉|まとめ|まとめ移動|一括移動|一括コピー|まとめて移動|まとめてコピー)/.test(s);
-  const relativeish = /(同じだけ|同じ分|同じ量|同じ日数|相対|ずら(す|して)?|スライド|\+\d+日|\-\d+日)/.test(s);
+  const relativeish = /(同じだけ|同じ分|同じ量|同じ日数|相対|ずら(す|して)?|スライド|\+\d+日|-\d+日)/.test(s);
   const moveish = /(移動|動かす|ずら(す|して)?|リスケ|延期|前倒し|後ろ倒し)/.test(s);
   const copyish = /(コピー|複製|増やす|複数作る|作り直す|複製して|コピーして)/.test(s);
   const countish = /(\d+)\s*(件|つ|個)/.test(s);
@@ -1080,7 +1080,7 @@ function AiConciergeModal({
     return buildAiTaskListContext({ schedules: list, taskSchedules, baseDateStr: safeSelectedDateStr });
   }, [list, safeSelectedDateStr, taskSchedules]);
 
-  const toAiScheduleRef = useCallback((raw) => {
+  const _toAiScheduleRef = useCallback((raw) => {
     if (!raw || typeof raw !== 'object') return null;
     const id = normalizeText(raw?.id);
     const date = normalizeText(raw?.date);
