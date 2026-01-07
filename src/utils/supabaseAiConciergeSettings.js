@@ -2,14 +2,18 @@ import { supabase } from '../lib/supabaseClient';
 
 const TABLE = 'ai_concierge_settings';
 
-export const fetchAiConciergeApiKeyForUser = async ({ userId }) => {
+// NOTE:
+// APIキーは平文で扱わない方針のため、このファイルではキーの読み書きは行いません。
+// 取得/保存は AIエンドポイント（worker）経由で行います。
+
+export const fetchAiConciergeApiKeyStatusForUser = async ({ userId }) => {
   if (!userId) {
     throw new Error('userId is required.');
   }
 
   const { data, error } = await supabase
     .from(TABLE)
-    .select('openai_api_key')
+    .select('openai_api_key_ciphertext')
     .eq('user_id', userId)
     .maybeSingle();
 
@@ -17,43 +21,6 @@ export const fetchAiConciergeApiKeyForUser = async ({ userId }) => {
     throw error;
   }
 
-  const value = typeof data?.openai_api_key === 'string' ? data.openai_api_key : '';
-  return value;
-};
-
-export const upsertAiConciergeApiKeyForUser = async ({ userId, apiKey }) => {
-  if (!userId) {
-    throw new Error('userId is required.');
-  }
-
-  const value = typeof apiKey === 'string' ? apiKey : '';
-
-  const { error } = await supabase
-    .from(TABLE)
-    .upsert(
-      {
-        user_id: userId,
-        openai_api_key: value,
-      },
-      { onConflict: 'user_id' }
-    );
-
-  if (error) {
-    throw error;
-  }
-};
-
-export const clearAiConciergeApiKeyForUser = async ({ userId }) => {
-  if (!userId) {
-    throw new Error('userId is required.');
-  }
-
-  const { error } = await supabase
-    .from(TABLE)
-    .delete()
-    .eq('user_id', userId);
-
-  if (error) {
-    throw error;
-  }
+  const saved = !!(typeof data?.openai_api_key_ciphertext === 'string' && data.openai_api_key_ciphertext.trim());
+  return { saved };
 };

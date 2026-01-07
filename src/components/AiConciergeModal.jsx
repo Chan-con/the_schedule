@@ -1,3 +1,4 @@
+import { supabase } from '../lib/supabaseClient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fromDateStrLocal, toDateStrLocal } from '../utils/date';
 
@@ -738,13 +739,19 @@ function AiConciergeModal({
   }, []);
 
   const runAssistant = useCallback(async (userText, options = {}) => {
-    const endpoint = normalizeText(import.meta.env?.VITE_AI_CONCIERGE_ENDPOINT);
+    const endpointBase = normalizeText(import.meta.env?.VITE_AI_CONCIERGE_ENDPOINT);
+    const endpoint = endpointBase
+      ? (endpointBase.endsWith('/ai/chat') ? endpointBase : `${endpointBase.replace(/\/+$/, '')}/ai/chat`)
+      : '';
     const apiKey = getSavedAiApiKey();
     const targetOverride = options?.targetSchedule && typeof options.targetSchedule === 'object' ? options.targetSchedule : null;
     const targetForCall = targetOverride || selectedUpdateTarget;
 
     // Remote (optional)
     if (endpoint) {
+      const session = await supabase.auth.getSession();
+      const accessToken = session?.data?.session?.access_token || '';
+
       const payload = {
         model: modelName,
         messages: [
@@ -790,7 +797,10 @@ function AiConciergeModal({
 
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify(payload),
       });
 

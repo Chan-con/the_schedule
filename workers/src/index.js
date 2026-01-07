@@ -17,6 +17,124 @@ const json = (obj, init = {}) =>
     ...init,
   });
 
+const jsonWithCors = (request, env, obj, init = {}) => {
+  const origin = request.headers.get("Origin") || "";
+  const allowOrigin = env?.PUBLIC_APP_URL
+    ? (origin === env.PUBLIC_APP_URL ? origin : env.PUBLIC_APP_URL)
+    : "*";
+
+  const headers = {
+    "content-type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Headers": "content-type, authorization",
+    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+    "Vary": "Origin",
+    ...(init?.headers || {}),
+  };
+
+  return new Response(JSON.stringify(obj, null, 2), {
+    ...init,
+    headers,
+  });
+};
+
+const bytesToBase64 = (bytes) => {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+};
+
+const base64ToBytes = (b64) => {
+  const raw = atob(String(b64 || ""));
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) {
+    bytes[i] = raw.charCodeAt(i);
+  }
+  return bytes;
+};
+
+const importAesGcmKey = async (b64) => {
+  const keyBytes = base64ToBytes(b64);
+  return await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    { name: "AES-GCM" },
+    false,
+    ["encrypt", "decrypt"]
+  );
+};
+
+const encryptApiKey = async ({ env, apiKey }) => {
+  const secretB64 = mustEnv(env, "AI_CONCIERGE_SETTINGS_KEY_B64");
+  const key = await importAesGcmKey(secretB64);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const pt = new TextEncoder().encode(String(apiKey || ""));
+  const ctBuf = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, pt);
+  const ct = new Uint8Array(ctBuf);
+  return JSON.stringify({ v: 1, iv: bytesToBase64(iv), ct: bytesToBase64(ct) });
+};
+
+const decryptApiKey = async ({ env, ciphertext }) => {
+  const secretB64 = mustEnv(env, "AI_CONCIERGE_SETTINGS_KEY_B64");
+  const key = await importAesGcmKey(secretB64);
+
+  const parsed = (() => {
+    try {
+      return JSON.parse(String(ciphertext || ""));
+    } catch {
+      return null;
+    }
+  })();
+  if (!parsed || parsed.v !== 1) throw new Error("Invalid ciphertext format");
+
+  const iv = base64ToBytes(parsed.iv);
+  const ct = base64ToBytes(parsed.ct);
+  const ptBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+  return new TextDecoder().decode(ptBuf);
+};
+
+const readJsonBody = async (request) => {
+  try {
+    const text = await request.text();
+    if (!text) return null;
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+
+const getBearerToken = (request) => {
+  const header = request.headers.get("Authorization") || request.headers.get("authorization") || "";
+  const match = /^Bearer\s+(.+)$/i.exec(header);
+  return match ? match[1] : "";
+};
+
+const fetchSupabaseAuthUser = async ({ env, accessToken }) => {
+  const url = new URL("/auth/v1/user", mustEnv(env, "SUPABASE_URL"));
+  const key = mustEnv(env, "SUPABASE_SERVICE_ROLE_KEY");
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Auth failed: ${res.status} ${text}`);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+
 const mustEnv = (env, key) => {
   const value = env[key];
   if (!value) throw new Error(`Missing env var: ${key}`);
@@ -114,7 +232,7 @@ const buildNotificationText = ({ schedule, notification }) => {
   };
 };
 
-const supabaseFetch = async ({ env, path, method = "GET", body }) => {
+const supabaseFetch = async ({ env, path, method = "GET", body, extraHeaders }) => {
   const url = new URL(path, mustEnv(env, "SUPABASE_URL"));
   const key = mustEnv(env, "SUPABASE_SERVICE_ROLE_KEY");
 
@@ -122,6 +240,7 @@ const supabaseFetch = async ({ env, path, method = "GET", body }) => {
     apikey: key,
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
+    ...(extraHeaders && typeof extraHeaders === "object" ? extraHeaders : {}),
   };
 
   const res = await fetch(url.toString(), {
@@ -141,6 +260,62 @@ const supabaseFetch = async ({ env, path, method = "GET", body }) => {
   } catch {
     return null;
   }
+};
+
+const getAiKeyCiphertext = async ({ env, userId }) => {
+  const select = "openai_api_key_ciphertext";
+  const query =
+    `/rest/v1/ai_concierge_settings?select=${encodeURIComponent(select)}` +
+    `&user_id=eq.${encodeURIComponent(String(userId))}` +
+    `&limit=1`;
+
+  const rows = await supabaseFetch({ env, path: query });
+  const row = Array.isArray(rows) ? rows[0] : null;
+  const ciphertext = typeof row?.openai_api_key_ciphertext === "string" ? row.openai_api_key_ciphertext : "";
+  return ciphertext;
+};
+
+const upsertAiKeyCiphertext = async ({ env, userId, ciphertext }) => {
+  const path = `/rest/v1/ai_concierge_settings?on_conflict=${encodeURIComponent("user_id")}`;
+  await supabaseFetch({
+    env,
+    method: "POST",
+    path,
+    body: { user_id: String(userId), openai_api_key_ciphertext: String(ciphertext || "") },
+    extraHeaders: {
+      Prefer: "resolution=merge-duplicates, return=minimal",
+    },
+  });
+};
+
+const deleteAiKeyRow = async ({ env, userId }) => {
+  const path = `/rest/v1/ai_concierge_settings?user_id=eq.${encodeURIComponent(String(userId))}`;
+  await supabaseFetch({ env, method: "DELETE", path });
+};
+
+const callOpenAiChatCompletions = async ({ apiKey, model, messages }) => {
+  const safeModel = typeof model === "string" && model.trim() ? model.trim() : "gpt-5.2";
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: safeModel,
+      messages,
+      temperature: 0.2,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data?.error?.message || `OpenAI API error: ${res.status}`;
+    throw new Error(msg);
+  }
+
+  const content = data?.choices?.[0]?.message?.content;
+  return typeof content === "string" ? content : "";
 };
 
 const listActiveSubscriptions = async ({ env }) => {
@@ -621,8 +796,142 @@ export default {
 
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // CORS preflight
+    if (request.method === "OPTIONS") {
+      return jsonWithCors(request, env, { ok: true }, { status: 204 });
+    }
+
+    // AI endpoints
+    if (url.pathname === "/ai/settings/status" && request.method === "GET") {
+      try {
+        const token = getBearerToken(request);
+        if (!token) return jsonWithCors(request, env, { ok: false, error: "Unauthorized" }, { status: 401 });
+
+        const user = await fetchSupabaseAuthUser({ env, accessToken: token });
+        const userId = user?.id || user?.user?.id;
+        if (!userId) return jsonWithCors(request, env, { ok: false, error: "Unauthorized" }, { status: 401 });
+
+        const ciphertext = await getAiKeyCiphertext({ env, userId });
+        return jsonWithCors(request, env, { ok: true, saved: !!(ciphertext && String(ciphertext).trim()) });
+      } catch (error) {
+        return jsonWithCors(request, env, { ok: false, error: error?.message || String(error) }, { status: 500 });
+      }
+    }
+
+    if (url.pathname === "/ai/settings/api-key" && request.method === "POST") {
+      try {
+        const token = getBearerToken(request);
+        if (!token) return jsonWithCors(request, env, { ok: false, error: "Unauthorized" }, { status: 401 });
+
+        const user = await fetchSupabaseAuthUser({ env, accessToken: token });
+        const userId = user?.id || user?.user?.id;
+        if (!userId) return jsonWithCors(request, env, { ok: false, error: "Unauthorized" }, { status: 401 });
+
+        const body = await readJsonBody(request);
+        const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : "";
+        if (!apiKey) {
+          return jsonWithCors(request, env, { ok: false, error: "apiKey is required" }, { status: 400 });
+        }
+
+        const ciphertext = await encryptApiKey({ env, apiKey });
+        await upsertAiKeyCiphertext({ env, userId, ciphertext });
+        return jsonWithCors(request, env, { ok: true, saved: true });
+      } catch (error) {
+        return jsonWithCors(request, env, { ok: false, error: error?.message || String(error) }, { status: 500 });
+      }
+    }
+
+    if (url.pathname === "/ai/settings/api-key" && request.method === "DELETE") {
+      try {
+        const token = getBearerToken(request);
+        if (!token) return jsonWithCors(request, env, { ok: false, error: "Unauthorized" }, { status: 401 });
+
+        const user = await fetchSupabaseAuthUser({ env, accessToken: token });
+        const userId = user?.id || user?.user?.id;
+        if (!userId) return jsonWithCors(request, env, { ok: false, error: "Unauthorized" }, { status: 401 });
+
+        await deleteAiKeyRow({ env, userId });
+        return jsonWithCors(request, env, { ok: true, saved: false });
+      } catch (error) {
+        return jsonWithCors(request, env, { ok: false, error: error?.message || String(error) }, { status: 500 });
+      }
+    }
+
+    if (url.pathname === "/ai/chat" && request.method === "POST") {
+      try {
+        const token = getBearerToken(request);
+        if (!token) return jsonWithCors(request, env, { ok: false, error: "Unauthorized" }, { status: 401 });
+
+        const user = await fetchSupabaseAuthUser({ env, accessToken: token });
+        const userId = user?.id || user?.user?.id;
+        if (!userId) return jsonWithCors(request, env, { ok: false, error: "Unauthorized" }, { status: 401 });
+
+        const ciphertext = await getAiKeyCiphertext({ env, userId });
+        if (!ciphertext) {
+          return jsonWithCors(
+            request,
+            env,
+            { ok: false, error: "AI APIキーが未設定です（設定→AIコンシェルジュで保存してください）" },
+            { status: 400 }
+          );
+        }
+
+        const apiKey = await decryptApiKey({ env, ciphertext });
+        const body = await readJsonBody(request);
+
+        const model = typeof body?.model === "string" ? body.model : "gpt-5.2";
+        const incoming = Array.isArray(body?.messages) ? body.messages : [];
+        const context = body?.context && typeof body.context === "object" ? body.context : {};
+        const selectedDate = typeof context?.selectedDate === "string" ? context.selectedDate : "";
+        const schemaText = context?.schema ? JSON.stringify(context.schema) : "";
+        const targetSchedule = context?.targetSchedule ? JSON.stringify(context.targetSchedule) : "";
+
+        const system = [
+          "あなたはカレンダーアプリのAIコンシェルジュです。",
+          "できること: 予定/タスクの閲覧・検索・作成・変更の提案。",
+          "重要: 破壊的操作（作成/変更/削除）の最終実行はユーザーが行うため、あなたは actions を提案するだけにしてください。",
+          "出力は必ずJSON: {text: string, actions: Array} のみ。",
+        ].join("\n");
+
+        const messages = [
+          { role: "system", content: system },
+          ...(selectedDate ? [{ role: "system", content: `selectedDate: ${selectedDate}` }] : []),
+          ...(schemaText ? [{ role: "system", content: `schema: ${schemaText}` }] : []),
+          ...(targetSchedule ? [{ role: "system", content: `targetSchedule: ${targetSchedule}` }] : []),
+          ...incoming
+            .filter((m) => m && typeof m === "object")
+            .map((m) => ({ role: m.role, content: String(m.content ?? "") })),
+        ];
+
+        const content = await callOpenAiChatCompletions({ apiKey, model, messages });
+        if (!content) {
+          return jsonWithCors(request, env, { ok: true, text: "（AIの応答が空でした）", actions: [] });
+        }
+
+        const parsed = (() => {
+          try {
+            return JSON.parse(content);
+          } catch {
+            return null;
+          }
+        })();
+
+        if (parsed && typeof parsed === "object") {
+          return jsonWithCors(request, env, {
+            ok: true,
+            text: typeof parsed.text === "string" ? parsed.text : content,
+            actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+          });
+        }
+
+        return jsonWithCors(request, env, { ok: true, text: content, actions: [] });
+      } catch (error) {
+        return jsonWithCors(request, env, { ok: false, error: error?.message || String(error) }, { status: 500 });
+      }
+    }
     if (url.pathname === "/__health") {
-      return json({ ok: true });
+      return jsonWithCors(request, env, { ok: true });
     }
 
     if (url.pathname === "/__cron" && request.method === "POST") {
@@ -634,6 +943,6 @@ export default {
       }
     }
 
-    return json({ ok: true, message: "the-schedule push worker" });
+    return jsonWithCors(request, env, { ok: true, message: "the-schedule push worker" });
   },
 };

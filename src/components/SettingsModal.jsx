@@ -14,10 +14,7 @@ import {
   fetchQuestReminderSettingsForUser,
   upsertQuestReminderSettingsForUser,
 } from '../utils/supabaseQuestReminderSettings';
-import {
-  clearAiConciergeApiKeyForUser,
-  upsertAiConciergeApiKeyForUser,
-} from '../utils/supabaseAiConciergeSettings';
+import { supabase } from '../lib/supabaseClient';
 
 const timeMinutesToHHMM = (minutes) => {
   const m = Number(minutes);
@@ -41,9 +38,9 @@ const SettingsModal = ({ isOpen, onClose }) => {
   const auth = useAuth();
   const userId = auth?.user?.id || null;
 
-  const AI_API_KEY_STORAGE_KEY = 'aiConciergeOpenAIApiKey';
   const [aiApiKeyInput, setAiApiKeyInput] = useState('');
   const [aiApiKeySaved, setAiApiKeySaved] = useState(false);
+  const [aiApiKeyError, setAiApiKeyError] = useState('');
   const [voltModifierKey, setVoltModifierKey] = useState('ctrlOrCmd'); // 'ctrlOrCmd' | 'alt'
   const [shortcuts, setShortcuts] = useState({
     undo: 'Control+Z',
@@ -169,15 +166,10 @@ const SettingsModal = ({ isOpen, onClose }) => {
       setShortcuts(JSON.parse(savedShortcuts));
     }
 
-    // AI APIキーの状態（値は表示しない）
-    try {
-      const stored = localStorage.getItem(AI_API_KEY_STORAGE_KEY);
-      setAiApiKeySaved(!!(stored && String(stored).trim()));
-      setAiApiKeyInput('');
-    } catch {
-      setAiApiKeySaved(false);
-      setAiApiKeyInput('');
-    }
+    // AI APIキーの状態（端末には保存しない方針のため、基本は「未設定」から開始）
+    setAiApiKeySaved(false);
+    setAiApiKeyInput('');
+    setAiApiKeyError('');
 
     // Voltモードの修飾キー設定の読み込み
     try {
@@ -234,6 +226,59 @@ const SettingsModal = ({ isOpen, onClose }) => {
     }
   }, [isOpen, editingShortcut, onClose]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+
+    const refreshAiKeyStatus = async () => {
+      const endpointBase = String(import.meta.env?.VITE_AI_CONCIERGE_ENDPOINT || '').trim();
+      if (!endpointBase || !userId) {
+        if (!cancelled) setAiApiKeySaved(false);
+        return;
+      }
+
+      const endpoint = endpointBase.endsWith('/ai/settings/status')
+        ? endpointBase
+        : `${endpointBase.replace(/\/+$/, '')}/ai/settings/status`;
+
+      try {
+        const session = await supabase.auth.getSession();
+        const token = session?.data?.session?.access_token || '';
+        if (!token) {
+          if (!cancelled) setAiApiKeySaved(false);
+          return;
+        }
+
+        const res = await fetch(endpoint, {
+          method: 'GET',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error || `AI settings error: ${res.status}`);
+        }
+
+        if (!cancelled) {
+          setAiApiKeySaved(!!data?.saved);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAiApiKeySaved(false);
+          setAiApiKeyError(error?.message || 'AI APIキーの状態取得に失敗しました。');
+        }
+      }
+    };
+
+    refreshAiKeyStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, userId]);
+
   const handleSave = async () => {
     const isQuestReminderDirty =
       !!userId &&
@@ -253,25 +298,52 @@ const SettingsModal = ({ isOpen, onClose }) => {
     }
 
     // AI APIキー（入力がある時だけ更新）
-    try {
-      const nextKey = String(aiApiKeyInput || '').trim();
-      if (nextKey) {
-        localStorage.setItem(AI_API_KEY_STORAGE_KEY, nextKey);
+    setAiApiKeyError('');
+    const nextKey = String(aiApiKeyInput || '').trim();
+    if (nextKey) {
+      const endpointBase = String(import.meta.env?.VITE_AI_CONCIERGE_ENDPOINT || '').trim();
+      if (!endpointBase) {
+        setAiApiKeyError('AIコンシェルジュのエンドポイントが未設定です（VITE_AI_CONCIERGE_ENDPOINT）。');
+        return;
+      }
+      if (!userId) {
+        setAiApiKeyError('APIキーを保存するにはログインが必要です。');
+        return;
+      }
 
-        if (userId) {
-          try {
-            await upsertAiConciergeApiKeyForUser({ userId, apiKey: nextKey });
-          } catch (error) {
-            console.warn('[AI Concierge] Failed to save API key to DB:', error);
-          }
+      const endpoint = endpointBase.endsWith('/ai/settings/api-key')
+        ? endpointBase
+        : `${endpointBase.replace(/\/+$/, '')}/ai/settings/api-key`;
+
+      try {
+        const session = await supabase.auth.getSession();
+        const token = session?.data?.session?.access_token || '';
+        if (!token) {
+          setAiApiKeyError('認証情報の取得に失敗しました（ログインし直してください）。');
+          return;
+        }
+
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ apiKey: nextKey }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error || `AI settings error: ${res.status}`);
         }
 
         setAiApiKeySaved(true);
         setAiApiKeyInput('');
         window.dispatchEvent(new CustomEvent('aiConciergeApiKeyChanged', { detail: { saved: true } }));
+      } catch (error) {
+        setAiApiKeyError(error?.message || 'AI APIキーの保存に失敗しました。');
+        return;
       }
-    } catch {
-      // ignore
     }
 
     if (isQuestReminderDirty) {
@@ -282,22 +354,47 @@ const SettingsModal = ({ isOpen, onClose }) => {
   };
 
   const handleClearAiApiKey = async () => {
-    try {
-      localStorage.removeItem(AI_API_KEY_STORAGE_KEY);
+    setAiApiKeyError('');
+    const endpointBase = String(import.meta.env?.VITE_AI_CONCIERGE_ENDPOINT || '').trim();
+    if (!endpointBase) {
+      setAiApiKeyError('AIコンシェルジュのエンドポイントが未設定です（VITE_AI_CONCIERGE_ENDPOINT）。');
+      return;
+    }
+    if (!userId) {
+      setAiApiKeyError('APIキーを削除するにはログインが必要です。');
+      return;
+    }
 
-      if (userId) {
-        try {
-          await clearAiConciergeApiKeyForUser({ userId });
-        } catch (error) {
-          console.warn('[AI Concierge] Failed to clear API key from DB:', error);
-        }
+    const endpoint = endpointBase.endsWith('/ai/settings/api-key')
+      ? endpointBase
+      : `${endpointBase.replace(/\/+$/, '')}/ai/settings/api-key`;
+
+    try {
+      const session = await supabase.auth.getSession();
+      const token = session?.data?.session?.access_token || '';
+      if (!token) {
+        setAiApiKeyError('認証情報の取得に失敗しました（ログインし直してください）。');
+        return;
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'DELETE',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || `AI settings error: ${res.status}`);
       }
 
       setAiApiKeySaved(false);
       setAiApiKeyInput('');
       window.dispatchEvent(new CustomEvent('aiConciergeApiKeyChanged', { detail: { saved: false } }));
-    } catch {
-      // ignore
+    } catch (error) {
+      setAiApiKeyError(error?.message || 'AI APIキーの削除に失敗しました。');
     }
   };
 
@@ -620,7 +717,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
             <h3 className="text-sm font-medium text-gray-700 mb-3">AIコンシェルジュ</h3>
             <div className="space-y-2">
               <p className="text-xs text-gray-600">
-                GPTのAPIキーを保存します。ログイン中はアカウントに保存して端末間で同期します。共有端末では設定しないでください。
+                GPTのAPIキーを暗号化して保存し、ログイン中は端末間で同期します（端末のブラウザには保存しません）。共有端末では設定しないでください。
               </p>
 
               <div className="flex items-center gap-2">
@@ -647,6 +744,10 @@ const SettingsModal = ({ isOpen, onClose }) => {
               <p className="text-xs text-gray-600">
                 状態: {aiApiKeySaved ? '保存済み' : '未設定'}（保存は「保存」ボタンで反映）
               </p>
+
+              {aiApiKeyError && (
+                <p className="text-xs text-red-600 font-medium">{aiApiKeyError}</p>
+              )}
             </div>
           </div>
 
