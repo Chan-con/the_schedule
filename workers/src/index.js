@@ -900,12 +900,15 @@ export default {
         const targetSchedule = context?.targetSchedule ? JSON.stringify(context.targetSchedule) : "";
         const taskList = context?.taskList ? JSON.stringify(context.taskList) : "";
         const search = context?.search ? JSON.stringify(context.search) : "";
+        const bulkHint = context?.bulkHint ? JSON.stringify(context.bulkHint) : "";
 
         const system = [
           "あなたはカレンダーアプリのAIコンシェルジュです。",
           "できること: 予定/タスクの閲覧・検索・作成・変更の提案。",
           "重要: 破壊的操作（作成/変更/削除）の最終実行はユーザーが行うため、あなたは actions を提案するだけにしてください。",
           "複数件の一括操作（Volt相当）: 複数件の移動/コピー/相対ずらしは kind: bulk を優先して1件で提案する（大量のcreate/updateを並べない）。曖昧なら対象/基準を質問する。bulk payload: {operation:aggregate|relative, action:move|copy, ids:string[], targetDate:YYYY-MM-DD, baseId?:string}",
+          "taskListの使い方: upcomingDeadlineTasks(納期/期限)を最優先、未完了/やり残しはupcomingTasks、直近/最近はrecentTasksも候補。bulkのidsはtaskList内のidから選ぶ。",
+          "baseIdの決め方(relative): ユーザーが基準を明示→それをbaseId。明示がなければ候補内で最も早い日付を基準にしてよいが、summaryに基準を明記。曖昧なら質問してactionsは空にする。",
           "出力は必ずJSON: {text: string, actions: Array} のみ。",
         ].join("\n");
 
@@ -915,6 +918,7 @@ export default {
           ...(schemaText ? [{ role: "system", content: `schema: ${schemaText}` }] : []),
           ...(taskList ? [{ role: "system", content: `taskList: ${taskList}` }] : []),
           ...(search ? [{ role: "system", content: `search: ${search}` }] : []),
+          ...(bulkHint ? [{ role: "system", content: `bulkHint: ${bulkHint}` }] : []),
           ...(targetSchedule ? [{ role: "system", content: `targetSchedule: ${targetSchedule}` }] : []),
           ...incoming
             .filter((m) => m && typeof m === "object")

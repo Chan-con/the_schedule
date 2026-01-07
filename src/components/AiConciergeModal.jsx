@@ -8,6 +8,8 @@ const makeId = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 const normalizeText = (v) => (typeof v === 'string' ? v.trim() : '');
 
 const MAX_NOTIFICATIONS = 3;
+const MAX_BULK_IDS = 30;
+const MAX_BULK_IDS_HARD = 60;
 
 const normalizeNotificationUnit = (rawUnit) => {
   const u = normalizeText(rawUnit).toLowerCase();
@@ -69,6 +71,57 @@ const addDaysToDateStr = (dateStr, deltaDays) => {
   return toDateStrLocal(next);
 };
 
+const getMonthRange = (baseDate, deltaMonths = 0) => {
+  const d = baseDate instanceof Date ? baseDate : new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth() + Number(deltaMonths || 0);
+  const start = new Date(y, m, 1, 12, 0, 0, 0);
+  const end = new Date(y, m + 1, 0, 12, 0, 0, 0);
+  return { from: toDateStrLocal(start), to: toDateStrLocal(end) };
+};
+
+const getWeekRangeMonday = (baseDate, deltaWeeks = 0) => {
+  const d = baseDate instanceof Date ? baseDate : new Date();
+  const base = new Date(d);
+  base.setHours(12, 0, 0, 0);
+  base.setDate(base.getDate() + Number(deltaWeeks || 0) * 7);
+
+  // JS: 0=Sun..6=Sat. Monday-start.
+  const day = base.getDay();
+  const diffToMon = (day + 6) % 7;
+  const start = new Date(base);
+  start.setDate(start.getDate() - diffToMon);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  return { from: toDateStrLocal(start), to: toDateStrLocal(end) };
+};
+
+const buildBulkHintFromText = ({ text, baseDateStr }) => {
+  const s = normalizeText(text);
+  const base = isValidDateStr(baseDateStr) ? fromDateStrLocal(baseDateStr) : new Date();
+
+  const hint = {
+    maxIdsSoft: MAX_BULK_IDS,
+    maxIdsHard: MAX_BULK_IDS_HARD,
+    baseDate: isValidDateStr(baseDateStr) ? baseDateStr : '',
+    requestedRange: null,
+  };
+
+  if (!s) return hint;
+
+  if (/(今週)/.test(s)) {
+    hint.requestedRange = { label: '今週', ...getWeekRangeMonday(base, 0) };
+  } else if (/(来週)/.test(s)) {
+    hint.requestedRange = { label: '来週', ...getWeekRangeMonday(base, 1) };
+  } else if (/(今月)/.test(s)) {
+    hint.requestedRange = { label: '今月', ...getMonthRange(base, 0) };
+  } else if (/(来月)/.test(s)) {
+    hint.requestedRange = { label: '来月', ...getMonthRange(base, 1) };
+  }
+
+  return hint;
+};
+
 const sanitizeBulkPayload = ({ payload, schedules }) => {
   const p = payload && typeof payload === 'object' ? payload : null;
   if (!p) return null;
@@ -81,19 +134,56 @@ const sanitizeBulkPayload = ({ payload, schedules }) => {
   if (!operation || !action || !isValidDateStr(targetDate)) return null;
 
   const idsRaw = Array.isArray(p.ids) ? p.ids : [];
-  const ids = idsRaw.map((v) => normalizeText(v)).filter(Boolean);
+  const ids = Array.from(new Set(idsRaw.map((v) => normalizeText(v)).filter(Boolean)));
   if (ids.length === 0) return null;
 
   const baseId = normalizeText(p.baseId);
-  if (operation === 'relative') {
-    if (!baseId) return null;
-    if (!ids.includes(baseId)) return null;
-    const base = (Array.isArray(schedules) ? schedules : []).find((s) => String(s?.id ?? '') === String(baseId));
-    const baseDate = normalizeText(base?.date);
-    if (!isValidDateStr(baseDate)) return null;
-  }
+
+  // relative の基準(baseId)は、ここでは必須にせず「推定候補」として扱う。
+  // 最終確認時/実行時に schedules と targetSchedule を使って補完・検証する。
+  if (operation === 'relative' && baseId && !ids.includes(baseId)) return null;
 
   return { operation, action, targetDate, ids, baseId: baseId || '' };
+};
+
+const clampBulkIds = ({ ids, schedules }) => {
+  const list = Array.isArray(schedules) ? schedules : [];
+  const existing = new Set(list.map((s) => String(s?.id ?? '')).filter(Boolean));
+  const filtered = (Array.isArray(ids) ? ids : [])
+    .map((v) => normalizeText(v))
+    .filter(Boolean)
+    .filter((id) => existing.has(String(id)));
+  const uniq = Array.from(new Set(filtered));
+  const soft = uniq.slice(0, MAX_BULK_IDS_HARD);
+  return soft;
+};
+
+const inferBulkBaseId = ({ bulk, schedules, targetSchedule }) => {
+  const op = normalizeText(bulk?.operation);
+  if (op !== 'relative') return '';
+
+  const ids = Array.isArray(bulk?.ids) ? bulk.ids : [];
+  if (ids.length === 0) return '';
+
+  const explicit = normalizeText(bulk?.baseId);
+  if (explicit && ids.includes(explicit)) return explicit;
+
+  const targetId = normalizeText(targetSchedule?.id);
+  if (targetId && ids.includes(targetId)) return targetId;
+
+  // 安全側: ids内のうち、dateが最も早いものを基準にする（曖昧さはsummaryで明示）
+  const list = Array.isArray(schedules) ? schedules : [];
+  const candidates = ids
+    .map((id) => list.find((s) => String(s?.id ?? '') === String(id)))
+    .filter(Boolean)
+    .map((s) => ({
+      id: normalizeText(s?.id),
+      date: normalizeText(s?.date),
+    }))
+    .filter((x) => x.id && isValidDateStr(x.date))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return candidates.length > 0 ? candidates[0].id : '';
 };
 
 const sanitizeSchedulePayload = ({ kind, payload, fallbackDateStr } = {}) => {
@@ -389,7 +479,14 @@ const buildAiConciergeSystemText = () => [
   '- 相対（relative）: 基準となる1件（ドラッグした想定の1件）の date 変化量（deltaDays）を推定し、他の対象にも同じ deltaDays を加える。',
   '- コピー（copy）: 元を残して複製を作る（create）。コピー時は通知を複製しない（notifications: [] を基本）。',
   '- 可能なら bulk を優先して1件にまとめる（大量の create/update を並べない）。',
+  `- 誤爆防止: ids は最大 ${MAX_BULK_IDS} 件を目安にする。${MAX_BULK_IDS}件を超えそうなら、期間/キーワード/件数の確認質問を優先する。`,
+  `- 誤爆防止: ids が ${MAX_BULK_IDS_HARD} 件を超える提案はしない（必ず絞り込み質問）。`,
   '- relative の基準は baseId に入れる。targetSchedule が渡されている場合、相対移動の基準にできる（baseId=targetSchedule.id）。',
+  '- baseId の決め方:',
+  '  - ユーザーが「この予定/このタスクを基準」「これを起点」等と言う→それを基準（targetScheduleがあればそれ）',
+  '  - 明示がない場合は、候補の中で最も早い日付のタスクを基準にしてよいが、summaryに「基準: ○○」を必ず書く',
+  '  - 基準が曖昧で誤解の恐れがある場合は actions を空にして質問する',
+  '    - 質問例: 「相対でずらす基準はどれにしますか？（例: 1) ◯◯ 2) △△ 3) □□）」',
   '- 対象が曖昧な場合は actions を空にして、対象（タイトル/期間/件数）と基準（どれを基準に相対移動するか）を質問する。',
   '',
   'bulk の例:',
@@ -398,6 +495,14 @@ const buildAiConciergeSystemText = () => [
   '',
   '補足:',
   '- system/context に taskList（タスク一覧）が渡される場合がある。直近の納期タスク等は taskList を優先して回答する。',
+  '  - taskList.baseDate: 選択中の日付（基準）',
+  '  - taskList.upcomingDeadlineTasks: 納期タスク（未完了、基準日以降、優先度高）',
+  '  - taskList.upcomingTasks: 未完了タスク（基準日以降）',
+  '  - taskList.recentTasks: 直近の未完了タスク（基準日より前）',
+  '  - ユーザーが「未完了」「やり残し」「残り」→ upcomingTasks を優先',
+  '  - ユーザーが「納期」「期限」「締切」→ upcomingDeadlineTasks を最優先',
+  '  - ユーザーが「直近」「最近」→ recentTasks も含めて候補にする',
+  '  - bulk の ids は、上記リスト内の id から選ぶ。対象が曖昧なら件数や期間を質問する。',
   '- system/context に search（検索結果）が渡される場合がある。候補の列挙/絞り込み/確認質問に活用する。',
 ].join('\n');
 
@@ -405,14 +510,16 @@ const shouldSuggestBulkAction = (text) => {
   const s = normalizeText(text);
   if (!s) return false;
 
-  const bulkish = /(まとめて|一括|複数|全部|全て|すべて|いっぺんに|一斉|まとめ|まとめ移動|一括移動|一括コピー)/.test(s);
-  const relativeish = /(同じだけ|同じ分|同じ量|同じ日数|相対|ずら(す|して)?|スライド)/.test(s);
+  const bulkish = /(まとめて|一括|複数|全部|全て|すべて|いっぺんに|一斉|まとめ|まとめ移動|一括移動|一括コピー|まとめて移動|まとめてコピー)/.test(s);
+  const relativeish = /(同じだけ|同じ分|同じ量|同じ日数|相対|ずら(す|して)?|スライド|\+\d+日|\-\d+日)/.test(s);
   const moveish = /(移動|動かす|ずら(す|して)?|リスケ|延期|前倒し|後ろ倒し)/.test(s);
-  const copyish = /(コピー|複製|増やす|複数作る|作り直す)/.test(s);
+  const copyish = /(コピー|複製|増やす|複数作る|作り直す|複製して|コピーして)/.test(s);
   const countish = /(\d+)\s*(件|つ|個)/.test(s);
+  const rangeish = /(今週|来週|今月|来月|今週分|来週分|今月分|来月分|今週の|来週の|今月の|来月の)/.test(s);
+  const pluralTargetish = /(タスク|予定).*(全部|まとめて|一括)/.test(s);
 
   // 「来週にずらして」「同じだけずらして」等はbulkの可能性が高い
-  return bulkish || countish || (relativeish && (moveish || copyish)) || (moveish && /(タスク|予定)/.test(s) && /(全部|まとめて)/.test(s));
+  return bulkish || countish || rangeish || pluralTargetish || (relativeish && (moveish || copyish)) || (moveish && /(タスク|予定)/.test(s) && /(全部|まとめて|一括)/.test(s));
 };
 
 const sanitizeActions = (raw) => {
@@ -604,6 +711,8 @@ const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate, 
   const selectedDateStr = toDateStrLocal(baseDate);
   const list = Array.isArray(schedules) ? schedules : [];
 
+  const bulkish = shouldSuggestBulkAction(text);
+
   const lower = text.toLowerCase();
   const wantsSearch = text.includes('検索') || text.includes('探') || lower.includes('search');
   const wantsCreate = text.includes('追加') || text.includes('作成') || text.includes('入れ') || text.includes('登録');
@@ -629,6 +738,76 @@ const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate, 
 
     const lines = filtered.map((s) => `- ${formatScheduleLabel(s)}`).join('\n');
     return { text: `見つかった候補です（最大20件）:\n${lines}`, actions: [] };
+  }
+
+  // Local bulk suggestion (no API key / no endpoint)
+  if (bulkish && !wantsCreate && !wantsSearch) {
+    const targetDate = parseDateStr({ text, baseDate }) || '';
+    const moveish = /(移動|動かす|ずら(す|して)?|リスケ|延期|前倒し|後ろ倒し)/.test(text);
+    const copyish = /(コピー|複製)/.test(text);
+    const action = copyish && !moveish ? 'copy' : 'move';
+    const operation = /(同じだけ|同じ分|同じ量|同じ日数|相対)/.test(text) ? 'relative' : 'aggregate';
+
+    if (!targetDate) {
+      return { text: '一括操作の移動先の日付が分かりません。例: 「未完了タスクをまとめて来週月曜に移動」', actions: [] };
+    }
+
+    const wantsTasks = /タスク/.test(text) || /(未完了|やり残し|残り)/.test(text);
+    let pool = wantsTasks
+      ? list.filter((s) => s?.isTask && !s?.completed)
+      : list;
+
+    const hint = buildBulkHintFromText({ text, baseDateStr: selectedDateStr });
+    const range = hint?.requestedRange;
+    if (range && isValidDateStr(range.from) && isValidDateStr(range.to)) {
+      pool = pool.filter((s) => {
+        const d = normalizeText(s?.date);
+        return isValidDateStr(d) && d >= range.from && d <= range.to;
+      });
+    }
+
+    const ids = pool
+      .map((s) => normalizeText(s?.id))
+      .filter(Boolean)
+      .slice(0, MAX_BULK_IDS_HARD);
+
+    if (ids.length === 0) {
+      return { text: '一括操作の対象が見つかりませんでした。対象（未完了タスク/期間/キーワード）をもう少し具体的に教えてください。', actions: [] };
+    }
+
+    if (ids.length > MAX_BULK_IDS) {
+      const rangeLabel = range?.label ? `（${range.label}）` : '';
+      return {
+        text: `対象が ${ids.length} 件あります${rangeLabel}。誤操作防止のため、まず ${MAX_BULK_IDS} 件以下に絞ってください（例: キーワード/件数/期間）。`,
+        actions: [],
+      };
+    }
+
+    const baseId = operation === 'relative'
+      ? (normalizeText(targetSchedule?.id) && ids.includes(normalizeText(targetSchedule?.id)) ? normalizeText(targetSchedule?.id) : ids[0])
+      : '';
+
+    const opLabel = operation === 'relative' ? '相対' : '集約';
+    const actLabel = action === 'copy' ? 'コピー' : '移動';
+
+    return {
+      text: '以下の内容で一括操作（Volt相当）の提案を作りました。内容がOKなら「最終確認」→「実行」で反映します。',
+      actions: [
+        {
+          id: makeId(),
+          kind: 'bulk',
+          title: `一括${actLabel}`,
+          summary: `${ids.length}件を${opLabel}で${actLabel} → ${targetDate}`,
+          payload: {
+            operation,
+            action,
+            ids,
+            targetDate,
+            ...(operation === 'relative' ? { baseId } : {}),
+          },
+        },
+      ],
+    };
   }
 
   if (wantsView && !wantsCreate && !wantsUpdate) {
@@ -982,6 +1161,7 @@ function AiConciergeModal({
     const targetForCall = targetOverride || selectedUpdateTarget;
     const searchContext = options?.searchContext && typeof options.searchContext === 'object' ? options.searchContext : null;
     const includeTaskList = !!options?.forceTaskList || shouldIncludeTaskList(userText) || shouldSuggestBulkAction(userText);
+    const bulkHint = buildBulkHintFromText({ text: userText, baseDateStr: safeSelectedDateStr });
 
     // Remote (optional)
     if (endpoint) {
@@ -998,6 +1178,7 @@ function AiConciergeModal({
           selectedDate: safeSelectedDateStr,
           ...(includeTaskList ? { taskList: taskListContext } : {}),
           ...(searchContext ? { search: searchContext } : {}),
+          ...(bulkHint ? { bulkHint } : {}),
           schema: {
             schedule: {
               date: 'YYYY-MM-DD',
@@ -1068,6 +1249,7 @@ function AiConciergeModal({
         targetSchedule: targetForCall,
         taskListContext: includeTaskList ? taskListContext : null,
         searchContext,
+        bulkHint,
       });
     }
 
@@ -1385,6 +1567,16 @@ function AiConciergeModal({
         return;
       }
 
+      const inferredBaseId = inferBulkBaseId({ bulk: sanitized, schedules: list, targetSchedule: selectedUpdateTarget });
+      if (sanitized.operation === 'relative' && !inferredBaseId) {
+        setErrorText('相対移動（relative）の基準（baseId）が特定できないため、最終確認に進めませんでした。');
+        return;
+      }
+
+      const normalizedBulk = sanitized.operation === 'relative'
+        ? { ...sanitized, baseId: inferredBaseId }
+        : sanitized;
+
       const picked = list
         .filter((s) => sanitized.ids.includes(String(s?.id ?? '')))
         .map((s) => normalizeText(s?.name))
@@ -1394,12 +1586,17 @@ function AiConciergeModal({
       const opLabel = sanitized.operation === 'relative' ? '相対' : '集約';
       const actLabel = sanitized.action === 'copy' ? 'コピー' : '移動';
 
+      const baseNote =
+        normalizedBulk.operation === 'relative'
+          ? `\n基準: ${normalizeText(list.find((s) => String(s?.id ?? '') === String(normalizedBulk.baseId))?.name) || normalizedBulk.baseId}`
+          : '';
+
       setPendingAction({
         ...action,
-        payload: sanitized,
+        payload: normalizedBulk,
         summary:
           normalizeText(action?.summary) ||
-          `${picked.length || sanitized.ids.length}件を${opLabel}で${actLabel} → ${sanitized.targetDate}${sample ? `\n対象: ${sample}${more}` : ''}`,
+          `${picked.length || normalizedBulk.ids.length}件を${opLabel}で${actLabel} → ${normalizedBulk.targetDate}${sample ? `\n対象: ${sample}${more}` : ''}${baseNote}`,
       });
       return;
     }
@@ -1448,10 +1645,18 @@ function AiConciergeModal({
           throw new Error('実行内容（bulk）が不正です。');
         }
 
-        const targetDate = sanitized.targetDate;
+        const inferredBaseId = inferBulkBaseId({ bulk: sanitized, schedules: list, targetSchedule: selectedUpdateTarget });
+        const normalizedBulk = sanitized.operation === 'relative'
+          ? { ...sanitized, baseId: inferredBaseId }
+          : sanitized;
+        if (normalizedBulk.operation === 'relative' && !normalizeText(normalizedBulk.baseId)) {
+          throw new Error('相対移動（relative）の基準（baseId）が不正です。');
+        }
+
+        const targetDate = normalizedBulk.targetDate;
         let deltaDays = 0;
-        if (sanitized.operation === 'relative') {
-          const base = list.find((s) => String(s?.id ?? '') === String(sanitized.baseId));
+        if (normalizedBulk.operation === 'relative') {
+          const base = list.find((s) => String(s?.id ?? '') === String(normalizedBulk.baseId));
           const baseDate = normalizeText(base?.date);
           const fromNoon = parseDateStrToNoonLocal(baseDate);
           const toNoon = parseDateStrToNoonLocal(targetDate);
@@ -1460,7 +1665,7 @@ function AiConciergeModal({
           deltaDays = Math.round((toNoon.getTime() - fromNoon.getTime()) / msPerDay);
         }
 
-        const updates = sanitized.ids.map((id) => {
+        const updates = normalizedBulk.ids.map((id) => {
           const found = list.find((s) => String(s?.id ?? '') === String(id));
           if (!found) {
             throw new Error(`対象が見つかりませんでした（id: ${id}）。`);
@@ -1468,11 +1673,11 @@ function AiConciergeModal({
 
           const baseDate = normalizeText(found?.date);
           const nextDate =
-            sanitized.operation === 'relative'
+            normalizedBulk.operation === 'relative'
               ? (addDaysToDateStr(baseDate, deltaDays) || targetDate)
               : targetDate;
 
-          if (sanitized.action === 'copy') {
+          if (normalizedBulk.action === 'copy') {
             const next = {
               ...found,
               id: createTempId(),
@@ -1492,9 +1697,9 @@ function AiConciergeModal({
         });
 
         const actionType =
-          sanitized.action === 'copy'
-            ? (sanitized.operation === 'relative' ? 'schedule_copy_multi_task_ai_relative' : 'schedule_copy_multi_task_ai_aggregate')
-            : (sanitized.operation === 'relative' ? 'schedule_move_multi_task_ai_relative' : 'schedule_move_multi_task_ai_aggregate');
+          normalizedBulk.action === 'copy'
+            ? (normalizedBulk.operation === 'relative' ? 'schedule_copy_multi_task_ai_relative' : 'schedule_copy_multi_task_ai_aggregate')
+            : (normalizedBulk.operation === 'relative' ? 'schedule_move_multi_task_ai_relative' : 'schedule_move_multi_task_ai_aggregate');
 
         await onScheduleUpdate(updates, actionType);
       } else {
@@ -1521,7 +1726,7 @@ function AiConciergeModal({
     } finally {
       setSending(false);
     }
-  }, [appendMessage, list, onDeleteSchedule, onSaveSchedule, onScheduleUpdate, pendingAction, safeSelectedDateStr]);
+  }, [appendMessage, list, onDeleteSchedule, onSaveSchedule, onScheduleUpdate, pendingAction, safeSelectedDateStr, selectedUpdateTarget]);
 
   if (!isOpen) return null;
 
