@@ -898,6 +898,8 @@ export default {
         const selectedDate = typeof context?.selectedDate === "string" ? context.selectedDate : "";
         const schemaText = context?.schema ? JSON.stringify(context.schema) : "";
         const targetSchedule = context?.targetSchedule ? JSON.stringify(context.targetSchedule) : "";
+        const taskList = context?.taskList ? JSON.stringify(context.taskList) : "";
+        const search = context?.search ? JSON.stringify(context.search) : "";
 
         const system = [
           "あなたはカレンダーアプリのAIコンシェルジュです。",
@@ -910,6 +912,8 @@ export default {
           { role: "system", content: system },
           ...(selectedDate ? [{ role: "system", content: `selectedDate: ${selectedDate}` }] : []),
           ...(schemaText ? [{ role: "system", content: `schema: ${schemaText}` }] : []),
+          ...(taskList ? [{ role: "system", content: `taskList: ${taskList}` }] : []),
+          ...(search ? [{ role: "system", content: `search: ${search}` }] : []),
           ...(targetSchedule ? [{ role: "system", content: `targetSchedule: ${targetSchedule}` }] : []),
           ...incoming
             .filter((m) => m && typeof m === "object")

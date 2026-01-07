@@ -4798,6 +4798,7 @@ function App() {
         selectedDate={selectedDate}
         selectedDateStr={selectedDateStr}
         schedules={schedules}
+        taskSchedules={taskSchedules}
         onNavigateToDate={setSelectedDate}
         onSearchSchedules={searchSchedulesForAi}
         onSaveSchedule={handleSave}

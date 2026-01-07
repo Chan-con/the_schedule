@@ -112,9 +112,11 @@ const sanitizeSchedulePayload = ({ kind, payload, fallbackDateStr } = {}) => {
   if (safeKind === 'create') {
     out.isTask = !!p.isTask;
     out.completed = !!p.completed;
+    out.isDeadlineTask = !!p.isDeadlineTask;
   } else {
     if (has('isTask')) out.isTask = !!p.isTask;
     if (has('completed')) out.completed = !!p.completed;
+    if (has('isDeadlineTask')) out.isDeadlineTask = !!p.isDeadlineTask;
   }
 
   // notifications
@@ -125,6 +127,66 @@ const sanitizeSchedulePayload = ({ kind, payload, fallbackDateStr } = {}) => {
   }
 
   return out;
+};
+
+const compareDateTime = (a, b) => {
+  const ad = normalizeText(a?.date);
+  const bd = normalizeText(b?.date);
+  const dc = ad.localeCompare(bd);
+  if (dc !== 0) return dc;
+  const at = normalizeText(a?.time);
+  const bt = normalizeText(b?.time);
+  return at.localeCompare(bt);
+};
+
+const buildAiTaskListContext = ({ schedules, taskSchedules, baseDateStr }) => {
+  const merged = [];
+
+  const pushAll = (items) => {
+    const list = Array.isArray(items) ? items : [];
+    for (const raw of list) {
+      if (!raw || typeof raw !== 'object') continue;
+      if (!raw?.isTask) continue;
+
+      const id = normalizeText(raw?.id);
+      const date = normalizeText(raw?.date);
+      if (!id || !isValidDateStr(date)) continue;
+
+      const timeRaw = normalizeText(raw?.time);
+      const time = isValidTimeStr(timeRaw) ? timeRaw : '';
+      const allDay = !!raw?.allDay || !time;
+
+      merged.push({
+        id,
+        date,
+        time,
+        allDay,
+        name: normalizeText(raw?.name),
+        completed: !!raw?.completed,
+        isDeadlineTask: !!raw?.isDeadlineTask,
+      });
+    }
+  };
+
+  pushAll(schedules);
+  pushAll(taskSchedules);
+
+  const uniq = new Map();
+  for (const t of merged) {
+    if (!uniq.has(t.id)) uniq.set(t.id, t);
+  }
+
+  const base = isValidDateStr(baseDateStr) ? baseDateStr : '';
+  const all = Array.from(uniq.values()).sort(compareDateTime);
+  const upcoming = base ? all.filter((t) => t.date >= base) : all;
+  const past = base ? all.filter((t) => t.date < base) : [];
+
+  return {
+    baseDate: base,
+    upcomingDeadlineTasks: upcoming.filter((t) => t.isDeadlineTask && !t.completed).slice(0, 50),
+    upcomingTasks: upcoming.filter((t) => !t.completed).slice(0, 80),
+    recentTasks: past.filter((t) => !t.completed).slice(-20),
+  };
 };
 
 const AI_API_KEY_STORAGE_KEY = 'aiConciergeOpenAIApiKey';
@@ -144,7 +206,8 @@ const formatScheduleLabel = (item) => {
   const name = normalizeText(item?.name) || '名称未設定';
   const isTask = !!item?.isTask;
   const completed = !!item?.completed;
-  const kind = isTask ? (completed ? 'タスク(完了)' : 'タスク') : '予定';
+  const isDeadlineTask = !!item?.isDeadlineTask;
+  const kind = isTask ? (completed ? 'タスク(完了)' : (isDeadlineTask ? '納期タスク' : 'タスク')) : '予定';
   const head = [date, time].filter(Boolean).join(' ');
   return `${name}（${[head, kind].filter(Boolean).join(' / ')}）`;
 };
@@ -262,6 +325,7 @@ const buildAiConciergeSystemText = () => [
   '  - 終日(allDay=true または time="") のとき unit は "days" のみにする',
   '- isTask: boolean（タスクかどうか）',
   '- completed: boolean（タスク完了）',
+  '- isDeadlineTask: boolean（納期タスク）',
   '',
   '出力ルール:',
   '- 出力は必ず JSON のみ',
@@ -273,6 +337,10 @@ const buildAiConciergeSystemText = () => [
   '- 情報が足りない場合は actions を空にして質問する（例: 日付/時刻/タイトルの確認）',
   '',
   '重要: ユーザーの最終決定が前提なので、断定できない場合は候補の確認質問を優先する。',
+  '',
+  '補足:',
+  '- system/context に taskList（タスク一覧）が渡される場合がある。直近の納期タスク等は taskList を優先して回答する。',
+  '- system/context に search（検索結果）が渡される場合がある。候補の列挙/絞り込み/確認質問に活用する。',
 ].join('\n');
 
 const sanitizeActions = (raw) => {
@@ -410,6 +478,49 @@ const extractQuotedTitle = (text) => {
   if (!s) return '';
   const m = /[「『](.+?)[」』]/.exec(s);
   return m ? normalizeText(m[1]) : '';
+};
+
+const extractSearchKeyword = (text) => {
+  const s = normalizeText(text);
+  if (!s) return '';
+
+  const quoted = extractQuotedTitle(s);
+  if (quoted) return quoted;
+
+  // rough heuristic: strip common helper phrases/particles
+  const cleaned = normalizeText(
+    s
+      .replace(/(予定|タスク|メモ|通知|納期|締切|期限)/g, ' ')
+      .replace(/(って|とは|ってさ|ってやつ|という|みたいな)/g, ' ')
+      .replace(/(いつ|どこ|なに|何|どれ|教えて|知りたい|確認|探して|探す|検索|見つけて|見つける|ある\?|ありますか|ある|ない)/g, ' ')
+      .replace(/(です|ます|だっけ|かな|ね|よ|を|の|が|は|に|へ|で|と|や|も|から|まで)/g, ' ')
+      .replace(/\s+/g, ' ')
+  );
+
+  // avoid dates/times as keywords
+  if (!cleaned) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) return '';
+  if (/^\d{1,2}[:：]\d{2}$/.test(cleaned)) return '';
+
+  // prefer first chunk (keep it short)
+  const first = normalizeText(cleaned.split(' ')[0] || '');
+  if (first.length < 2) return '';
+  if (first.length > 30) return first.slice(0, 30);
+  return first;
+};
+
+const shouldIncludeTaskList = (text) => {
+  const s = normalizeText(text);
+  if (!s) return false;
+
+  // "納期/期限/締切" 系や、未完了・直近などの質問はタスク一覧があると強い
+  const deadlineish = /(納期|期限|締切|〆切|デッドライン|支払期限|提出期限)/.test(s);
+  const statusish = /(未完了|未済|残り|残って|やり残し|完了(して)?(ない|未)|終わってない)/.test(s);
+  const listish = /(一覧|リスト|全部|全て|すべて|まとめて|直近|近い|近々)/.test(s);
+  const taskish = /タスク/.test(s);
+  const dueSoon = /(今日|明日|今週|今月)/.test(s) && (taskish || deadlineish || listish);
+
+  return deadlineish || statusish || (taskish && listish) || dueSoon;
 };
 
 const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate, targetSchedule }) => {
@@ -607,7 +718,7 @@ const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate, 
   return { text: `${hint}${extra}`, actions: [] };
 };
 
-const callOpenAiChatCompletions = async ({ apiKey, modelName, userText, selectedDateStr, targetSchedule }) => {
+const callOpenAiChatCompletions = async ({ apiKey, modelName, userText, selectedDateStr, targetSchedule, taskListContext, searchContext }) => {
   const system = [
     buildAiConciergeSystemText(),
     '',
@@ -633,6 +744,8 @@ const callOpenAiChatCompletions = async ({ apiKey, modelName, userText, selected
     messages: [
       { role: 'system', content: system },
       { role: 'system', content: `selectedDate: ${selectedDateStr || ''}` },
+      ...(taskListContext ? [{ role: 'system', content: `taskList: ${JSON.stringify(taskListContext)}` }] : []),
+      ...(searchContext ? [{ role: 'system', content: `search: ${JSON.stringify(searchContext)}` }] : []),
       ...(target ? [{ role: 'system', content: `targetSchedule: ${JSON.stringify(target)}` }] : []),
       { role: 'user', content: userText },
     ],
@@ -676,6 +789,7 @@ function AiConciergeModal({
   selectedDate,
   selectedDateStr,
   schedules,
+  taskSchedules,
   onNavigateToDate,
   onSearchSchedules,
   onSaveSchedule,
@@ -706,6 +820,50 @@ function AiConciergeModal({
     return (Array.isArray(list) ? list : []).find((s) => String(s?.id ?? '') === String(selectedUpdateTargetId)) || null;
   }, [list, selectedUpdateTargetId]);
   const safeSelectedDateStr = normalizeText(selectedDateStr) || (selectedDate instanceof Date ? toDateStrLocal(selectedDate) : '');
+
+  const taskListContext = useMemo(() => {
+    return buildAiTaskListContext({ schedules: list, taskSchedules, baseDateStr: safeSelectedDateStr });
+  }, [list, safeSelectedDateStr, taskSchedules]);
+
+  const toAiScheduleRef = useCallback((raw) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = normalizeText(raw?.id);
+    const date = normalizeText(raw?.date);
+    if (!id || !isValidDateStr(date)) return null;
+    const timeRaw = normalizeText(raw?.time);
+    const time = isValidTimeStr(timeRaw) ? timeRaw : '';
+    return {
+      id,
+      date,
+      time,
+      allDay: !!raw?.allDay || !time,
+      name: normalizeText(raw?.name),
+      memo: normalizeText(raw?.memo),
+      notifications: Array.isArray(raw?.notifications) ? raw.notifications : [],
+      isTask: !!raw?.isTask,
+      completed: !!raw?.completed,
+      isDeadlineTask: !!raw?.isDeadlineTask,
+    };
+  }, []);
+
+  const toAiSearchRef = useCallback((raw) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = normalizeText(raw?.id);
+    const date = normalizeText(raw?.date);
+    if (!id || !isValidDateStr(date)) return null;
+    const timeRaw = normalizeText(raw?.time);
+    const time = isValidTimeStr(timeRaw) ? timeRaw : '';
+    return {
+      id,
+      date,
+      time,
+      allDay: !!raw?.allDay || !time,
+      name: normalizeText(raw?.name),
+      isTask: !!raw?.isTask,
+      completed: !!raw?.completed,
+      isDeadlineTask: !!raw?.isDeadlineTask,
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -746,6 +904,8 @@ function AiConciergeModal({
     const apiKey = getSavedAiApiKey();
     const targetOverride = options?.targetSchedule && typeof options.targetSchedule === 'object' ? options.targetSchedule : null;
     const targetForCall = targetOverride || selectedUpdateTarget;
+    const searchContext = options?.searchContext && typeof options.searchContext === 'object' ? options.searchContext : null;
+    const includeTaskList = !!options?.forceTaskList || shouldIncludeTaskList(userText);
 
     // Remote (optional)
     if (endpoint) {
@@ -760,6 +920,8 @@ function AiConciergeModal({
         ],
         context: {
           selectedDate: safeSelectedDateStr,
+          ...(includeTaskList ? { taskList: taskListContext } : {}),
+          ...(searchContext ? { search: searchContext } : {}),
           schema: {
             schedule: {
               date: 'YYYY-MM-DD',
@@ -770,6 +932,7 @@ function AiConciergeModal({
               notifications: 'Array<{value:number,unit:minutes|hours|days}> (max 3)',
               isTask: 'boolean',
               completed: 'boolean',
+              isDeadlineTask: 'boolean',
             },
             actions: {
               create: 'payload: date,time,name,memo,notifications,allDay,isTask,completed',
@@ -788,6 +951,7 @@ function AiConciergeModal({
                 allDay: !!targetForCall?.allDay,
                 isTask: !!targetForCall?.isTask,
                 completed: !!targetForCall?.completed,
+                isDeadlineTask: !!targetForCall?.isDeadlineTask,
                 notifications: Array.isArray(targetForCall?.notifications) ? targetForCall.notifications : [],
               },
             }
@@ -823,12 +987,14 @@ function AiConciergeModal({
         userText,
         selectedDateStr: safeSelectedDateStr,
         targetSchedule: targetForCall,
+        taskListContext: includeTaskList ? taskListContext : null,
+        searchContext,
       });
     }
 
     // Local fallback
     return await buildLocalAssistantResponse({ userText, schedules: list, selectedDate, targetSchedule: targetForCall });
-  }, [list, messages, modelName, safeSelectedDateStr, selectedDate, selectedUpdateTarget]);
+  }, [list, messages, modelName, safeSelectedDateStr, selectedDate, selectedUpdateTarget, taskListContext]);
 
   const handleSend = useCallback(async () => {
     if (sending) return;
@@ -971,14 +1137,54 @@ function AiConciergeModal({
         const keyword = normalizeText(userText.replace(/(予定|タスク)?(を)?(検索|探(す|して|したい)?)/g, '').trim());
         if (keyword) {
           const results = await onSearchSchedules(keyword);
-          const lines = (Array.isArray(results) ? results : []).slice(0, 20).map((s) => `- ${formatScheduleLabel(s)}`).join('\n');
+          const refs = (Array.isArray(results) ? results : []).map(toAiSearchRef).filter(Boolean).slice(0, 20);
+
+          if (refs.length === 0) {
+            appendMessage({
+              id: makeId(),
+              role: 'assistant',
+              text: `「${keyword}」に一致する予定/タスクは見つかりませんでした。`,
+              actions: [],
+            });
+            return;
+          }
+
+          const { text: replyText, actions } = await runAssistant(userText, {
+            searchContext: { mode: 'explicit', keyword, results: refs },
+          });
           appendMessage({
             id: makeId(),
             role: 'assistant',
-            text: lines ? `見つかった候補です（最大20件）:\n${lines}` : `「${keyword}」に一致する予定/タスクは見つかりませんでした。`,
-            actions: [],
+            text: replyText,
+            actions: sanitizeActions(actions),
           });
           return;
+        }
+      }
+
+      // Auto search (no explicit "検索" required)
+      if (onSearchSchedules) {
+        const keyword = extractSearchKeyword(userText);
+        if (keyword) {
+          try {
+            const results = await onSearchSchedules(keyword);
+            const refs = (Array.isArray(results) ? results : []).map(toAiSearchRef).filter(Boolean).slice(0, 20);
+            if (refs.length > 0) {
+              const { text: replyText, actions } = await runAssistant(userText, {
+                searchContext: { mode: 'auto', keyword, results: refs },
+              });
+              appendMessage({
+                id: makeId(),
+                role: 'assistant',
+                text: replyText,
+                actions: sanitizeActions(actions),
+              });
+              return;
+            }
+          } catch (error) {
+            // ignore auto-search errors; fall back to normal assistant
+            console.warn('⚠️ Auto search failed:', error);
+          }
         }
       }
 
