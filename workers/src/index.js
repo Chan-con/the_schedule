@@ -17,18 +17,25 @@ const json = (obj, init = {}) =>
     ...init,
   });
 
-const jsonWithCors = (request, env, obj, init = {}) => {
+const buildCorsHeaders = (request) => {
   const origin = request.headers.get("Origin") || "";
-  const allowOrigin = env?.PUBLIC_APP_URL
-    ? (origin === env.PUBLIC_APP_URL ? origin : env.PUBLIC_APP_URL)
-    : "*";
+  // Reflect the request origin to avoid exact-match pitfalls (e.g. trailing slash).
+  // This endpoint relies on Authorization: Bearer <supabase access token>.
+  const allowOrigin = origin || "*";
 
-  const headers = {
-    "content-type": "application/json; charset=utf-8",
+  return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": "content-type, authorization",
     "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+    "Access-Control-Max-Age": "600",
     "Vary": "Origin",
+  };
+};
+
+const jsonWithCors = (request, env, obj, init = {}) => {
+  const headers = {
+    "content-type": "application/json; charset=utf-8",
+    ...buildCorsHeaders(request),
     ...(init?.headers || {}),
   };
 
@@ -799,7 +806,12 @@ export default {
 
     // CORS preflight
     if (request.method === "OPTIONS") {
-      return jsonWithCors(request, env, { ok: true }, { status: 204 });
+      return new Response(null, {
+        status: 204,
+        headers: {
+          ...buildCorsHeaders(request),
+        },
+      });
     }
 
     // AI endpoints

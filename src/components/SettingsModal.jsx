@@ -38,6 +38,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
   const auth = useAuth();
   const userId = auth?.user?.id || null;
 
+  const AI_API_KEY_MASK = '***************';
   const [aiApiKeyInput, setAiApiKeyInput] = useState('');
   const [aiApiKeySaved, setAiApiKeySaved] = useState(false);
   const [aiApiKeyError, setAiApiKeyError] = useState('');
@@ -263,12 +264,22 @@ const SettingsModal = ({ isOpen, onClose }) => {
         }
 
         if (!cancelled) {
-          setAiApiKeySaved(!!data?.saved);
+          const saved = !!data?.saved;
+          setAiApiKeySaved(saved);
+          setAiApiKeyError('');
+          setAiApiKeyInput((prev) => {
+            const cur = String(prev || '');
+            if (saved) {
+              return cur && cur !== AI_API_KEY_MASK ? cur : AI_API_KEY_MASK;
+            }
+            return '';
+          });
         }
       } catch (error) {
         if (!cancelled) {
           setAiApiKeySaved(false);
           setAiApiKeyError(error?.message || 'AI APIキーの状態取得に失敗しました。');
+          setAiApiKeyInput('');
         }
       }
     };
@@ -300,7 +311,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
     // AI APIキー（入力がある時だけ更新）
     setAiApiKeyError('');
     const nextKey = String(aiApiKeyInput || '').trim();
-    if (nextKey) {
+    if (nextKey && nextKey !== AI_API_KEY_MASK) {
       const endpointBase = String(import.meta.env?.VITE_AI_CONCIERGE_ENDPOINT || '').trim();
       if (!endpointBase) {
         setAiApiKeyError('AIコンシェルジュのエンドポイントが未設定です（VITE_AI_CONCIERGE_ENDPOINT）。');
@@ -338,7 +349,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
         }
 
         setAiApiKeySaved(true);
-        setAiApiKeyInput('');
+        setAiApiKeyInput(AI_API_KEY_MASK);
         window.dispatchEvent(new CustomEvent('aiConciergeApiKeyChanged', { detail: { saved: true } }));
       } catch (error) {
         setAiApiKeyError(error?.message || 'AI APIキーの保存に失敗しました。');
@@ -725,7 +736,12 @@ const SettingsModal = ({ isOpen, onClose }) => {
                   type="password"
                   value={aiApiKeyInput}
                   onChange={(e) => setAiApiKeyInput(e.target.value)}
-                  placeholder={aiApiKeySaved ? 'APIキーは保存済み（再入力で更新）' : 'sk-...'}
+                  onFocus={() => {
+                    if (aiApiKeyInput === AI_API_KEY_MASK) {
+                      setAiApiKeyInput('');
+                    }
+                  }}
+                  placeholder={aiApiKeySaved ? '（再入力で更新）' : 'sk-...'}
                   className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200"
                   autoComplete="off"
                   spellCheck={false}
