@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabaseClient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fromDateStrLocal, toDateStrLocal } from '../utils/date';
+import { createTempId } from '../utils/id';
 
 const makeId = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
@@ -51,6 +52,49 @@ const sanitizeNotificationsInput = ({ notifications, allDay, time }) => {
 
 const isValidDateStr = (s) => /^\d{4}-\d{2}-\d{2}$/.test(normalizeText(s));
 const isValidTimeStr = (s) => /^\d{2}:\d{2}$/.test(normalizeText(s));
+
+const parseDateStrToNoonLocal = (dateStr) => {
+  const parts = String(dateStr || '').split('-').map((v) => Number(v));
+  if (parts.length !== 3) return null;
+  const [y, m, d] = parts;
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0, 0);
+};
+
+const addDaysToDateStr = (dateStr, deltaDays) => {
+  const base = parseDateStrToNoonLocal(dateStr);
+  if (!base) return null;
+  const next = new Date(base);
+  next.setDate(next.getDate() + Number(deltaDays || 0));
+  return toDateStrLocal(next);
+};
+
+const sanitizeBulkPayload = ({ payload, schedules }) => {
+  const p = payload && typeof payload === 'object' ? payload : null;
+  if (!p) return null;
+
+  const operationRaw = normalizeText(p.operation);
+  const operation = operationRaw === 'aggregate' || operationRaw === 'relative' ? operationRaw : null;
+  const actionRaw = normalizeText(p.action);
+  const action = actionRaw === 'move' || actionRaw === 'copy' ? actionRaw : null;
+  const targetDate = normalizeText(p.targetDate);
+  if (!operation || !action || !isValidDateStr(targetDate)) return null;
+
+  const idsRaw = Array.isArray(p.ids) ? p.ids : [];
+  const ids = idsRaw.map((v) => normalizeText(v)).filter(Boolean);
+  if (ids.length === 0) return null;
+
+  const baseId = normalizeText(p.baseId);
+  if (operation === 'relative') {
+    if (!baseId) return null;
+    if (!ids.includes(baseId)) return null;
+    const base = (Array.isArray(schedules) ? schedules : []).find((s) => String(s?.id ?? '') === String(baseId));
+    const baseDate = normalizeText(base?.date);
+    if (!isValidDateStr(baseDate)) return null;
+  }
+
+  return { operation, action, targetDate, ids, baseId: baseId || '' };
+};
 
 const sanitizeSchedulePayload = ({ kind, payload, fallbackDateStr } = {}) => {
   const p = payload && typeof payload === 'object' ? payload : {};
@@ -330,13 +374,21 @@ const buildAiConciergeSystemText = () => [
   '出力ルール:',
   '- 出力は必ず JSON のみ',
   '- JSON形式: {"text": string, "actions": Array}',
-  '- actions の各要素: {"id": string, "kind": "create"|"update"|"delete", "title": string, "summary": string, "payload": object}',
+  '- actions の各要素: {"id": string, "kind": "create"|"update"|"delete"|"bulk", "title": string, "summary": string, "payload": object}',
   '- create payload: {date,time,name,memo,notifications,allDay,isTask,completed}',
   '- update payload: 上記 + 必ず id',
   '- delete payload: {id} のみ',
+  '- bulk payload: {operation:"aggregate"|"relative", action:"move"|"copy", ids:string[], targetDate:"YYYY-MM-DD", baseId?:string}',
   '- 情報が足りない場合は actions を空にして質問する（例: 日付/時刻/タイトルの確認）',
   '',
   '重要: ユーザーの最終決定が前提なので、断定できない場合は候補の確認質問を優先する。',
+  '',
+  '複数件の一括操作（Volt相当）:',
+  '- ユーザーが「Voltを使って」と明示しなくても、意図が複数件の集約/相対移動/コピーなら actions を複数件まとめて提案してよい。',
+  '- 集約（aggregate）: 対象の date をすべて同じ targetDate にそろえる（time は原則維持、終日は allDay=true/time="" を維持）。',
+  '- 相対（relative）: 基準となる1件（ドラッグした想定の1件）の date 変化量（deltaDays）を推定し、他の対象にも同じ deltaDays を加える。',
+  '- コピー（copy）: 元を残して複製を作る（create）。コピー時は通知を複製しない（notifications: [] を基本）。',
+  '- 対象が曖昧な場合は actions を空にして、対象（タイトル/期間/件数）と基準（どれを基準に相対移動するか）を質問する。',
   '',
   '補足:',
   '- system/context に taskList（タスク一覧）が渡される場合がある。直近の納期タスク等は taskList を優先して回答する。',
@@ -349,7 +401,7 @@ const sanitizeActions = (raw) => {
     .map((a) => (a && typeof a === 'object' ? a : null))
     .filter(Boolean)
     .map((a) => {
-      const kind = a.kind === 'create' || a.kind === 'update' || a.kind === 'delete' || a.kind === 'selectTarget' ? a.kind : null;
+      const kind = a.kind === 'create' || a.kind === 'update' || a.kind === 'delete' || a.kind === 'selectTarget' || a.kind === 'bulk' ? a.kind : null;
       if (!kind) return null;
       const payload = a.payload && typeof a.payload === 'object' ? a.payload : null;
       if (!payload) return null;
@@ -358,6 +410,9 @@ const sanitizeActions = (raw) => {
       if (kind === 'create' || kind === 'update') {
         sanitizedPayload = sanitizeSchedulePayload({ kind, payload });
         if (!sanitizedPayload) return null;
+      } else if (kind === 'bulk') {
+        // bulk は「提案」→「最終確認」時に schedules と合わせて検証する
+        sanitizedPayload = payload;
       } else {
         const id = normalizeText(payload.id);
         if (!id) return null;
@@ -516,7 +571,7 @@ const shouldIncludeTaskList = (text) => {
   // "納期/期限/締切" 系や、未完了・直近などの質問はタスク一覧があると強い
   const deadlineish = /(納期|期限|締切|〆切|デッドライン|支払期限|提出期限)/.test(s);
   const statusish = /(未完了|未済|残り|残って|やり残し|完了(して)?(ない|未)|終わってない)/.test(s);
-  const listish = /(一覧|リスト|全部|全て|すべて|まとめて|直近|近い|近々)/.test(s);
+  const listish = /(一覧|リスト|全部|全て|すべて|まとめて|一括|複数|まとめ|直近|近い|近々)/.test(s);
   const taskish = /タスク/.test(s);
   const dueSoon = /(今日|明日|今週|今月)/.test(s) && (taskish || deadlineish || listish);
 
@@ -794,6 +849,7 @@ function AiConciergeModal({
   onSearchSchedules,
   onSaveSchedule,
   onDeleteSchedule,
+  onScheduleUpdate,
   modelName = 'gpt-5.2',
 }) {
   const inputRef = useRef(null);
@@ -938,6 +994,9 @@ function AiConciergeModal({
               create: 'payload: date,time,name,memo,notifications,allDay,isTask,completed',
               update: 'payload: id + above',
               delete: 'payload: {id}',
+            },
+            bulkOperations: {
+              note: 'Volt相当: 複数件の集約(aggregate)/相対(relative)/コピー(copy)は、create/update を複数件並べて提案する。曖昧なら質問。コピー時は通知は複製しない（notifications: [] を基本）。',
             },
           },
           ...(targetForCall && targetForCall?.id
@@ -1285,6 +1344,32 @@ function AiConciergeModal({
       return;
     }
 
+    if (action.kind === 'bulk') {
+      const sanitized = sanitizeBulkPayload({ payload: action.payload, schedules: list });
+      if (!sanitized) {
+        setErrorText('提案内容（bulk）が不正なため、最終確認に進めませんでした。');
+        return;
+      }
+
+      const picked = list
+        .filter((s) => sanitized.ids.includes(String(s?.id ?? '')))
+        .map((s) => normalizeText(s?.name))
+        .filter(Boolean);
+      const sample = picked.slice(0, 3).join(' / ');
+      const more = picked.length > 3 ? ` 他${picked.length - 3}件` : '';
+      const opLabel = sanitized.operation === 'relative' ? '相対' : '集約';
+      const actLabel = sanitized.action === 'copy' ? 'コピー' : '移動';
+
+      setPendingAction({
+        ...action,
+        payload: sanitized,
+        summary:
+          normalizeText(action?.summary) ||
+          `${picked.length || sanitized.ids.length}件を${opLabel}で${actLabel} → ${sanitized.targetDate}${sample ? `\n対象: ${sample}${more}` : ''}`,
+      });
+      return;
+    }
+
     setPendingAction(action);
   }, [appendMessage, list, pendingTargetKind, pendingTargetText, runAssistant, safeSelectedDateStr, selectedUpdateTarget]);
 
@@ -1296,7 +1381,7 @@ function AiConciergeModal({
     const action = pendingAction;
     if (!action) return;
 
-    if (action.kind !== 'create' && action.kind !== 'update' && action.kind !== 'delete') {
+    if (action.kind !== 'create' && action.kind !== 'update' && action.kind !== 'delete' && action.kind !== 'bulk') {
       setPendingAction(null);
       return;
     }
@@ -1311,6 +1396,11 @@ function AiConciergeModal({
       return;
     }
 
+    if (action.kind === 'bulk' && !onScheduleUpdate) {
+      setErrorText('一括更新ハンドラが未設定です。');
+      return;
+    }
+
     setErrorText('');
     setSending(true);
     try {
@@ -1318,6 +1408,61 @@ function AiConciergeModal({
         const id = normalizeText(action?.payload?.id);
         if (!id) throw new Error('実行内容が不正です。');
         await onDeleteSchedule(id);
+      } else if (action.kind === 'bulk') {
+        const sanitized = sanitizeBulkPayload({ payload: action.payload, schedules: list });
+        if (!sanitized) {
+          throw new Error('実行内容（bulk）が不正です。');
+        }
+
+        const targetDate = sanitized.targetDate;
+        let deltaDays = 0;
+        if (sanitized.operation === 'relative') {
+          const base = list.find((s) => String(s?.id ?? '') === String(sanitized.baseId));
+          const baseDate = normalizeText(base?.date);
+          const fromNoon = parseDateStrToNoonLocal(baseDate);
+          const toNoon = parseDateStrToNoonLocal(targetDate);
+          if (!fromNoon || !toNoon) throw new Error('相対移動の基準日が不正です。');
+          const msPerDay = 24 * 60 * 60 * 1000;
+          deltaDays = Math.round((toNoon.getTime() - fromNoon.getTime()) / msPerDay);
+        }
+
+        const updates = sanitized.ids.map((id) => {
+          const found = list.find((s) => String(s?.id ?? '') === String(id));
+          if (!found) {
+            throw new Error(`対象が見つかりませんでした（id: ${id}）。`);
+          }
+
+          const baseDate = normalizeText(found?.date);
+          const nextDate =
+            sanitized.operation === 'relative'
+              ? (addDaysToDateStr(baseDate, deltaDays) || targetDate)
+              : targetDate;
+
+          if (sanitized.action === 'copy') {
+            const next = {
+              ...found,
+              id: createTempId(),
+              date: nextDate,
+              notificationSettings: null,
+            };
+            if (Array.isArray(found?.notifications)) {
+              next.notifications = [];
+            }
+            return next;
+          }
+
+          return {
+            ...found,
+            date: nextDate,
+          };
+        });
+
+        const actionType =
+          sanitized.action === 'copy'
+            ? (sanitized.operation === 'relative' ? 'schedule_copy_multi_task_ai_relative' : 'schedule_copy_multi_task_ai_aggregate')
+            : (sanitized.operation === 'relative' ? 'schedule_move_multi_task_ai_relative' : 'schedule_move_multi_task_ai_aggregate');
+
+        await onScheduleUpdate(updates, actionType);
       } else {
         const sanitizedPayload = sanitizeSchedulePayload({
           kind: action.kind,
@@ -1342,7 +1487,7 @@ function AiConciergeModal({
     } finally {
       setSending(false);
     }
-  }, [appendMessage, onDeleteSchedule, onSaveSchedule, pendingAction, safeSelectedDateStr]);
+  }, [appendMessage, list, onDeleteSchedule, onSaveSchedule, onScheduleUpdate, pendingAction, safeSelectedDateStr]);
 
   if (!isOpen) return null;
 

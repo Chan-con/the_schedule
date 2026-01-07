@@ -905,6 +905,7 @@ export default {
           "あなたはカレンダーアプリのAIコンシェルジュです。",
           "できること: 予定/タスクの閲覧・検索・作成・変更の提案。",
           "重要: 破壊的操作（作成/変更/削除）の最終実行はユーザーが行うため、あなたは actions を提案するだけにしてください。",
+          "複数件の一括操作（Volt相当）: ユーザーが明示しなくても、意図が複数件の集約/相対移動/コピーなら actions を複数件まとめて提案してよい。曖昧なら対象/基準を質問する。kind: bulk のpayloadは {operation:aggregate|relative, action:move|copy, ids:string[], targetDate:YYYY-MM-DD, baseId?:string}",
           "出力は必ずJSON: {text: string, actions: Array} のみ。",
         ].join("\n");
 

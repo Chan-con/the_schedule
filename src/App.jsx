@@ -4803,6 +4803,7 @@ function App() {
         onSearchSchedules={searchSchedulesForAi}
         onSaveSchedule={handleSave}
         onDeleteSchedule={handleScheduleDelete}
+        onScheduleUpdate={handleScheduleUpdate}
       />
 
       <CornerFloatingMenu
