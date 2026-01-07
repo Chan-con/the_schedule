@@ -384,16 +384,36 @@ const buildAiConciergeSystemText = () => [
   '重要: ユーザーの最終決定が前提なので、断定できない場合は候補の確認質問を優先する。',
   '',
   '複数件の一括操作（Volt相当）:',
-  '- ユーザーが「Voltを使って」と明示しなくても、意図が複数件の集約/相対移動/コピーなら actions を複数件まとめて提案してよい。',
+  '- ユーザーが「Voltを使って」と明示しなくても、意図が複数件の集約/相対移動/コピーなら actions を一括（kind: bulk）で提案してよい。',
   '- 集約（aggregate）: 対象の date をすべて同じ targetDate にそろえる（time は原則維持、終日は allDay=true/time="" を維持）。',
   '- 相対（relative）: 基準となる1件（ドラッグした想定の1件）の date 変化量（deltaDays）を推定し、他の対象にも同じ deltaDays を加える。',
   '- コピー（copy）: 元を残して複製を作る（create）。コピー時は通知を複製しない（notifications: [] を基本）。',
+  '- 可能なら bulk を優先して1件にまとめる（大量の create/update を並べない）。',
+  '- relative の基準は baseId に入れる。targetSchedule が渡されている場合、相対移動の基準にできる（baseId=targetSchedule.id）。',
   '- 対象が曖昧な場合は actions を空にして、対象（タイトル/期間/件数）と基準（どれを基準に相対移動するか）を質問する。',
+  '',
+  'bulk の例:',
+  '- 例（集約で移動）: {"id":"...","kind":"bulk","title":"一括移動","summary":"未完了タスクを来週月曜に集約して移動","payload":{"operation":"aggregate","action":"move","ids":["..."],"targetDate":"2026-01-12"}}',
+  '- 例（相対でコピー）: {"id":"...","kind":"bulk","title":"一括コピー","summary":"この3つを同じだけずらしてコピー","payload":{"operation":"relative","action":"copy","ids":["..."],"baseId":"...","targetDate":"2026-01-15"}}',
   '',
   '補足:',
   '- system/context に taskList（タスク一覧）が渡される場合がある。直近の納期タスク等は taskList を優先して回答する。',
   '- system/context に search（検索結果）が渡される場合がある。候補の列挙/絞り込み/確認質問に活用する。',
 ].join('\n');
+
+const shouldSuggestBulkAction = (text) => {
+  const s = normalizeText(text);
+  if (!s) return false;
+
+  const bulkish = /(まとめて|一括|複数|全部|全て|すべて|いっぺんに|一斉|まとめ|まとめ移動|一括移動|一括コピー)/.test(s);
+  const relativeish = /(同じだけ|同じ分|同じ量|同じ日数|相対|ずら(す|して)?|スライド)/.test(s);
+  const moveish = /(移動|動かす|ずら(す|して)?|リスケ|延期|前倒し|後ろ倒し)/.test(s);
+  const copyish = /(コピー|複製|増やす|複数作る|作り直す)/.test(s);
+  const countish = /(\d+)\s*(件|つ|個)/.test(s);
+
+  // 「来週にずらして」「同じだけずらして」等はbulkの可能性が高い
+  return bulkish || countish || (relativeish && (moveish || copyish)) || (moveish && /(タスク|予定)/.test(s) && /(全部|まとめて)/.test(s));
+};
 
 const sanitizeActions = (raw) => {
   const list = Array.isArray(raw) ? raw : [];
@@ -571,7 +591,7 @@ const shouldIncludeTaskList = (text) => {
   // "納期/期限/締切" 系や、未完了・直近などの質問はタスク一覧があると強い
   const deadlineish = /(納期|期限|締切|〆切|デッドライン|支払期限|提出期限)/.test(s);
   const statusish = /(未完了|未済|残り|残って|やり残し|完了(して)?(ない|未)|終わってない)/.test(s);
-  const listish = /(一覧|リスト|全部|全て|すべて|まとめて|一括|複数|まとめ|直近|近い|近々)/.test(s);
+  const listish = /(一覧|リスト|全部|全て|すべて|まとめて|一括|複数|まとめ|いっぺんに|一斉|直近|近い|近々)/.test(s);
   const taskish = /タスク/.test(s);
   const dueSoon = /(今日|明日|今週|今月)/.test(s) && (taskish || deadlineish || listish);
 
@@ -961,7 +981,7 @@ function AiConciergeModal({
     const targetOverride = options?.targetSchedule && typeof options.targetSchedule === 'object' ? options.targetSchedule : null;
     const targetForCall = targetOverride || selectedUpdateTarget;
     const searchContext = options?.searchContext && typeof options.searchContext === 'object' ? options.searchContext : null;
-    const includeTaskList = !!options?.forceTaskList || shouldIncludeTaskList(userText);
+    const includeTaskList = !!options?.forceTaskList || shouldIncludeTaskList(userText) || shouldSuggestBulkAction(userText);
 
     // Remote (optional)
     if (endpoint) {
@@ -1067,6 +1087,8 @@ function AiConciergeModal({
     appendMessage({ id: makeId(), role: 'user', text: userText, actions: [] });
 
     try {
+      const bulkish = shouldSuggestBulkAction(userText);
+
       // Delete/cancel flow: pick target first (avoid "IDが必要" という会話にならないようにする)
       if (isDeleteIntent(userText) && !selectedUpdateTarget) {
         const candidates = buildTargetCandidates({ userText, schedules: list, baseDate: selectedDate });
@@ -1138,7 +1160,8 @@ function AiConciergeModal({
       }
 
       // Stable update flow: pick target first (avoid AI guessing ids)
-      if (isUpdateIntent(userText) && !selectedUpdateTarget) {
+      // ただし bulk 意図が強い場合は、単一ターゲット選択を強制せず AI に一括提案させる
+      if (isUpdateIntent(userText) && !selectedUpdateTarget && !bulkish) {
         const candidates = buildTargetCandidates({ userText, schedules: list, baseDate: selectedDate });
         if (candidates.length === 0) {
           appendMessage({
@@ -1173,6 +1196,17 @@ function AiConciergeModal({
         const target = candidates[0];
         setSelectedUpdateTargetId(target?.id ?? null);
         const { text: replyText, actions } = await runAssistant(userText, { targetSchedule: target });
+        appendMessage({
+          id: makeId(),
+          role: 'assistant',
+          text: replyText,
+          actions: sanitizeActions(actions),
+        });
+        return;
+      }
+
+      if (bulkish) {
+        const { text: replyText, actions } = await runAssistant(userText, { forceTaskList: true });
         appendMessage({
           id: makeId(),
           role: 'assistant',
