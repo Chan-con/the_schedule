@@ -5,6 +5,127 @@ const makeId = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
 const normalizeText = (v) => (typeof v === 'string' ? v.trim() : '');
 
+const MAX_NOTIFICATIONS = 3;
+
+const normalizeNotificationUnit = (rawUnit) => {
+  const u = normalizeText(rawUnit).toLowerCase();
+  if (!u) return '';
+  if (u === 'minutes' || u === 'minute' || u === 'min' || u === 'mins') return 'minutes';
+  if (u === 'hours' || u === 'hour' || u === 'hr' || u === 'hrs') return 'hours';
+  if (u === 'days' || u === 'day') return 'days';
+  if (u === '分' || u.includes('分')) return 'minutes';
+  if (u === '時間' || u.includes('時間')) return 'hours';
+  if (u === '日' || u.includes('日')) return 'days';
+  return '';
+};
+
+const sanitizeNotificationsInput = ({ notifications, allDay, time }) => {
+  const list = Array.isArray(notifications) ? notifications : [];
+  const isAllDay = !!allDay || !normalizeText(time);
+  const sanitized = [];
+
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') continue;
+
+    const valueRaw = raw.value;
+    const unit = normalizeNotificationUnit(raw.unit);
+    if (!unit) continue;
+
+    const num = Number(valueRaw);
+    if (!Number.isFinite(num)) continue;
+    const value = Math.max(0, Math.min(3650, Math.trunc(num)));
+
+    if (isAllDay) {
+      // 終日は days のみ（ScheduleFormの補正方針に寄せる）
+      sanitized.push({ value: unit === 'days' ? value : 0, unit: 'days' });
+    } else {
+      sanitized.push({ value, unit });
+    }
+
+    if (sanitized.length >= MAX_NOTIFICATIONS) break;
+  }
+
+  return sanitized;
+};
+
+const isValidDateStr = (s) => /^\d{4}-\d{2}-\d{2}$/.test(normalizeText(s));
+const isValidTimeStr = (s) => /^\d{2}:\d{2}$/.test(normalizeText(s));
+
+const sanitizeSchedulePayload = ({ kind, payload, fallbackDateStr } = {}) => {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const safeKind = kind === 'create' || kind === 'update' ? kind : null;
+  if (!safeKind) return null;
+
+  const has = (key) => Object.prototype.hasOwnProperty.call(p, key);
+  const out = {};
+
+  if (safeKind === 'update') {
+    const id = normalizeText(p.id);
+    if (!id) return null;
+    out.id = id;
+  }
+
+  // date
+  if (safeKind === 'create') {
+    const d = normalizeText(p.date);
+    out.date = isValidDateStr(d) ? d : (isValidDateStr(fallbackDateStr) ? fallbackDateStr : '');
+  } else if (has('date')) {
+    const d = normalizeText(p.date);
+    if (isValidDateStr(d)) out.date = d;
+  }
+
+  // time / allDay
+  if (safeKind === 'create') {
+    const t = normalizeText(p.time);
+    out.time = isValidTimeStr(t) ? t : '';
+    const allDay = has('allDay') ? !!p.allDay : !out.time;
+    out.allDay = !!allDay;
+    if (out.allDay) out.time = '';
+  } else {
+    const maybeTime = has('time') ? normalizeText(p.time) : '';
+    const timeOk = maybeTime && isValidTimeStr(maybeTime);
+    if (has('time')) {
+      out.time = timeOk ? maybeTime : '';
+    }
+    if (has('allDay')) {
+      out.allDay = !!p.allDay;
+      if (out.allDay) out.time = '';
+    }
+  }
+
+  // name
+  if (safeKind === 'create') {
+    out.name = normalizeText(p.name);
+  } else if (has('name')) {
+    out.name = normalizeText(p.name);
+  }
+
+  // memo
+  if (safeKind === 'create') {
+    out.memo = typeof p.memo === 'string' ? p.memo : '';
+  } else if (has('memo')) {
+    out.memo = typeof p.memo === 'string' ? p.memo : '';
+  }
+
+  // flags
+  if (safeKind === 'create') {
+    out.isTask = !!p.isTask;
+    out.completed = !!p.completed;
+  } else {
+    if (has('isTask')) out.isTask = !!p.isTask;
+    if (has('completed')) out.completed = !!p.completed;
+  }
+
+  // notifications
+  if (safeKind === 'create' || has('notifications')) {
+    const allDay = has('allDay') ? !!p.allDay : (safeKind === 'create' ? !!out.allDay : false);
+    const time = has('time') ? normalizeText(p.time) : (safeKind === 'create' ? out.time : '');
+    out.notifications = sanitizeNotificationsInput({ notifications: p.notifications, allDay, time });
+  }
+
+  return out;
+};
+
 const AI_API_KEY_STORAGE_KEY = 'aiConciergeOpenAIApiKey';
 
 const getSavedAiApiKey = () => {
@@ -25,6 +146,89 @@ const formatScheduleLabel = (item) => {
   const kind = isTask ? (completed ? 'タスク(完了)' : 'タスク') : '予定';
   const head = [date, time].filter(Boolean).join(' ');
   return `${name}（${[head, kind].filter(Boolean).join(' / ')}）`;
+};
+
+const isUpdateIntent = (text) => {
+  const t = normalizeText(text);
+  if (!t) return false;
+  return (
+    t.includes('変更') ||
+    t.includes('編集') ||
+    t.includes('更新') ||
+    t.includes('リスケ') ||
+    t.includes('移動') ||
+    t.includes('ずら') ||
+    t.includes('メモ') ||
+    t.includes('通知')
+  );
+};
+
+const buildTargetCandidates = ({ userText, schedules }) => {
+  const text = normalizeText(userText);
+  const list = Array.isArray(schedules) ? schedules : [];
+  const quoted = extractQuotedTitle(text);
+  const keyword = quoted || normalizeText(text.replace(/(予定|タスク|を|の|日程|時間|変更|リスケ|移動|ずら(す|して)?)/g, ' '));
+  const needle = keyword.toLowerCase();
+  if (!needle) return [];
+  return list
+    .filter((s) => String(s?.name ?? '').toLowerCase().includes(needle))
+    .slice(0, 10);
+};
+
+const sanitizeActions = (raw) => {
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .map((a) => (a && typeof a === 'object' ? a : null))
+    .filter(Boolean)
+    .map((a) => {
+      const kind = a.kind === 'create' || a.kind === 'update' ? a.kind : null;
+      if (!kind) return null;
+      const payload = a.payload && typeof a.payload === 'object' ? a.payload : null;
+      if (!payload) return null;
+      const sanitizedPayload = sanitizeSchedulePayload({ kind, payload });
+      if (!sanitizedPayload) return null;
+      return {
+        id: normalizeText(a.id) || makeId(),
+        kind,
+        title: normalizeText(a.title) || (kind === 'create' ? '作成' : '変更'),
+        summary: normalizeText(a.summary),
+        payload: sanitizedPayload,
+      };
+    })
+    .filter(Boolean);
+};
+
+const extractMemoFromText = (text) => {
+  const s = normalizeText(text);
+  if (!s) return null;
+  const quoted = /メモ\s*[「『](.+?)[」』]/.exec(s);
+  if (quoted) return normalizeText(quoted[1]);
+  const colon = /メモ\s*[:：]\s*([^\n]+)$/.exec(s);
+  if (colon) return normalizeText(colon[1]);
+  return null;
+};
+
+const parseNotificationsFromText = (text) => {
+  const s = normalizeText(text);
+  if (!s) return [];
+
+  const out = [];
+
+  if (s.includes('開始時刻') && (s.includes('通知') || s.includes('リマインド'))) {
+    out.push({ value: 0, unit: 'minutes' });
+  }
+
+  const re = /(\d{1,4})\s*(分|時間|日)\s*前/g;
+  let m;
+  while ((m = re.exec(s)) != null) {
+    const value = Number(m[1]);
+    const unit = normalizeNotificationUnit(m[2]);
+    if (!Number.isFinite(value) || !unit) continue;
+    out.push({ value, unit });
+    if (out.length >= MAX_NOTIFICATIONS) break;
+  }
+
+  return out;
 };
 
 const parseTimeToHHMM = (text) => {
@@ -99,7 +303,7 @@ const extractQuotedTitle = (text) => {
   return m ? normalizeText(m[1]) : '';
 };
 
-const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate }) => {
+const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate, targetSchedule }) => {
   const text = normalizeText(userText);
   const baseDate = selectedDate instanceof Date ? selectedDate : new Date();
   const selectedDateStr = toDateStrLocal(baseDate);
@@ -150,6 +354,8 @@ const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate }
     const date = parseDateStr({ text, baseDate }) || selectedDateStr;
     const time = parseTimeToHHMM(text);
     const title = extractQuotedTitle(text) || '';
+    const memo = extractMemoFromText(text);
+    const notificationsRaw = parseNotificationsFromText(text);
 
     if (!title) {
       return {
@@ -162,10 +368,11 @@ const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate }
       date,
       time: time || '',
       name: title,
-      memo: '',
+      memo: memo ?? '',
       allDay: !time,
       isTask,
       completed: false,
+      notifications: sanitizeNotificationsInput({ notifications: notificationsRaw, allDay: !time, time: time || '' }),
     };
 
     return {
@@ -183,8 +390,50 @@ const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate }
   }
 
   if (wantsUpdate) {
+    if (targetSchedule?.id) {
+      const nextDate = parseDateStr({ text, baseDate });
+      const nextTime = parseTimeToHHMM(text);
+      const nextMemo = extractMemoFromText(text);
+      const notificationsRaw = parseNotificationsFromText(text);
+      const hasNotifUpdate = Array.isArray(notificationsRaw) && notificationsRaw.length > 0;
+
+      if (!nextDate && !nextTime && nextMemo == null && !hasNotifUpdate) {
+        return { text: '変更内容が分かりません。例: 「ミーティング」を明日15時に変更 / メモを「議題はA/B」に変更 / 10分前に通知', actions: [] };
+      }
+
+      const patch = {
+        id: targetSchedule.id,
+        date: nextDate || targetSchedule.date,
+        time: nextTime || targetSchedule.time || '',
+        name: targetSchedule.name,
+        memo: nextMemo != null ? nextMemo : (targetSchedule.memo || ''),
+        allDay: !(nextTime || targetSchedule.time),
+        isTask: !!targetSchedule.isTask,
+        completed: !!targetSchedule.completed,
+        notifications: hasNotifUpdate
+          ? sanitizeNotificationsInput({ notifications: notificationsRaw, allDay: !(nextTime || targetSchedule.time), time: nextTime || targetSchedule.time || '' })
+          : (Array.isArray(targetSchedule.notifications) ? targetSchedule.notifications : []),
+      };
+
+      return {
+        text: '以下の内容で変更提案を作りました。内容がOKなら「最終確認」→「実行」で反映します。',
+        actions: [
+          {
+            id: makeId(),
+            kind: 'update',
+            title: patch.isTask ? 'タスクを変更' : '予定を変更',
+            summary: `${formatScheduleLabel(targetSchedule)} → ${formatScheduleLabel(patch)}`,
+            payload: patch,
+          },
+        ],
+      };
+    }
+
     const nextDate = parseDateStr({ text, baseDate });
     const nextTime = parseTimeToHHMM(text);
+    const nextMemo = extractMemoFromText(text);
+    const notificationsRaw = parseNotificationsFromText(text);
+    const hasNotifUpdate = Array.isArray(notificationsRaw) && notificationsRaw.length > 0;
 
     const title = extractQuotedTitle(text);
     const keyword = title || normalizeText(text.replace(/(予定|タスク|を|の|日程|時間|変更|リスケ|移動|ずら(す|して)?)/g, ' '));
@@ -210,14 +459,17 @@ const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate }
       date: nextDate || target.date,
       time: nextTime || target.time || '',
       name: target.name,
-      memo: target.memo || '',
+      memo: nextMemo != null ? nextMemo : (target.memo || ''),
       allDay: !(nextTime || target.time),
       isTask: !!target.isTask,
       completed: !!target.completed,
+      notifications: hasNotifUpdate
+        ? sanitizeNotificationsInput({ notifications: notificationsRaw, allDay: !(nextTime || target.time), time: nextTime || target.time || '' })
+        : (Array.isArray(target.notifications) ? target.notifications : []),
     };
 
-    if (!nextDate && !nextTime) {
-      return { text: '変更後の日時が分かりません。例: 「ミーティング」を明日15時に変更', actions: [] };
+    if (!nextDate && !nextTime && nextMemo == null && !hasNotifUpdate) {
+      return { text: '変更内容が分かりません。例: 「ミーティング」を明日15時に変更 / メモを「議題はA/B」に変更 / 10分前に通知', actions: [] };
     }
 
     return {
@@ -246,7 +498,7 @@ const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate }
   return { text: `${hint}${extra}`, actions: [] };
 };
 
-const callOpenAiChatCompletions = async ({ apiKey, modelName, userText, selectedDateStr }) => {
+const callOpenAiChatCompletions = async ({ apiKey, modelName, userText, selectedDateStr, targetSchedule }) => {
   const system = [
     'あなたはスケジュール帳アプリのAIコンシェルジュです。',
     'ユーザーの要望を理解し、必要なら「提案」を作りますが、実行はしません（必ず最終確認が必要）。',
@@ -254,16 +506,31 @@ const callOpenAiChatCompletions = async ({ apiKey, modelName, userText, selected
     'JSON形式: {"text": string, "actions": Array }',
     'actions は提案がある時だけ。各要素は:',
     '{"id": string, "kind": "create"|"update", "title": string, "summary": string, "payload": object}',
-    'payload(create): {"date":"YYYY-MM-DD","time":"HH:MM"|"", "name":string,"memo":string,"allDay":boolean,"isTask":boolean,"completed":boolean}',
-    'payload(update): 上記に加えて必ず "id" を含める（既存予定/タスクのIDが必要）。',
+    'payload(create): {"date":"YYYY-MM-DD","time":"HH:MM"|"", "name":string,"memo":string,"notifications":Array<{value:number,unit:"minutes"|"hours"|"days"}>,"allDay":boolean,"isTask":boolean,"completed":boolean}',
+    'payload(update): 上記に加えて必ず "id" を含める（既存予定/タスクのIDが必要）。IDが不明なら update は提案しない。',
+    'notifications は最大3件。終日(allDay=true / time="")のとき unit は "days" のみにする。',
     'ユーザーが情報不足の場合は、実行提案を作らず質問して補完する。',
   ].join('\n');
+
+  const target = targetSchedule && typeof targetSchedule === 'object'
+    ? {
+      id: normalizeText(targetSchedule?.id),
+      date: normalizeText(targetSchedule?.date),
+      time: normalizeText(targetSchedule?.time),
+      name: normalizeText(targetSchedule?.name),
+      memo: normalizeText(targetSchedule?.memo),
+      allDay: !!targetSchedule?.allDay,
+      isTask: !!targetSchedule?.isTask,
+      completed: !!targetSchedule?.completed,
+    }
+    : null;
 
   const body = {
     model: modelName,
     messages: [
       { role: 'system', content: system },
       { role: 'system', content: `selectedDate: ${selectedDateStr || ''}` },
+      ...(target ? [{ role: 'system', content: `targetSchedule: ${JSON.stringify(target)}` }] : []),
       { role: 'user', content: userText },
     ],
     temperature: 0.2,
@@ -325,8 +592,14 @@ function AiConciergeModal({
   const [sending, setSending] = useState(false);
   const [pendingAction, setPendingAction] = useState(null); // action
   const [errorText, setErrorText] = useState('');
+  const [selectedUpdateTargetId, setSelectedUpdateTargetId] = useState(null);
+  const [pendingUpdateText, setPendingUpdateText] = useState(null);
 
   const list = useMemo(() => (Array.isArray(schedules) ? schedules : []), [schedules]);
+  const selectedUpdateTarget = useMemo(() => {
+    if (!selectedUpdateTargetId) return null;
+    return (Array.isArray(list) ? list : []).find((s) => String(s?.id ?? '') === String(selectedUpdateTargetId)) || null;
+  }, [list, selectedUpdateTargetId]);
   const safeSelectedDateStr = normalizeText(selectedDateStr) || (selectedDate instanceof Date ? toDateStrLocal(selectedDate) : '');
 
   useEffect(() => {
@@ -374,6 +647,21 @@ function AiConciergeModal({
         ],
         context: {
           selectedDate: safeSelectedDateStr,
+          ...(selectedUpdateTarget && selectedUpdateTarget?.id
+            ? {
+              targetSchedule: {
+                id: normalizeText(selectedUpdateTarget?.id),
+                date: normalizeText(selectedUpdateTarget?.date),
+                time: normalizeText(selectedUpdateTarget?.time),
+                name: normalizeText(selectedUpdateTarget?.name),
+                memo: normalizeText(selectedUpdateTarget?.memo),
+                allDay: !!selectedUpdateTarget?.allDay,
+                isTask: !!selectedUpdateTarget?.isTask,
+                completed: !!selectedUpdateTarget?.completed,
+                notifications: Array.isArray(selectedUpdateTarget?.notifications) ? selectedUpdateTarget.notifications : [],
+              },
+            }
+            : {}),
         },
       };
 
@@ -390,7 +678,7 @@ function AiConciergeModal({
 
       return {
         text: normalizeText(data?.text) || '（AIの応答が空でした）',
-        actions: Array.isArray(data?.actions) ? data.actions : [],
+        actions: sanitizeActions(data?.actions),
       };
     }
 
@@ -401,12 +689,13 @@ function AiConciergeModal({
         modelName,
         userText,
         selectedDateStr: safeSelectedDateStr,
+        targetSchedule: selectedUpdateTarget,
       });
     }
 
     // Local fallback
-    return await buildLocalAssistantResponse({ userText, schedules: list, selectedDate });
-  }, [list, messages, modelName, safeSelectedDateStr, selectedDate]);
+    return await buildLocalAssistantResponse({ userText, schedules: list, selectedDate, targetSchedule: selectedUpdateTarget });
+  }, [list, messages, modelName, safeSelectedDateStr, selectedDate, selectedUpdateTarget]);
 
   const handleSend = useCallback(async () => {
     if (sending) return;
@@ -420,6 +709,40 @@ function AiConciergeModal({
     appendMessage({ id: makeId(), role: 'user', text: userText, actions: [] });
 
     try {
+      // Stable update flow: pick target first (avoid AI guessing ids)
+      if (isUpdateIntent(userText) && !selectedUpdateTarget) {
+        const candidates = buildTargetCandidates({ userText, schedules: list });
+        if (candidates.length === 0) {
+          appendMessage({
+            id: makeId(),
+            role: 'assistant',
+            text: '変更対象が特定できませんでした。変更したい予定/タスク名を「」で囲って教えてください。例: 「ミーティング」を明日15時に変更',
+            actions: [],
+          });
+          return;
+        }
+
+        if (candidates.length > 1) {
+          setPendingUpdateText(userText);
+          appendMessage({
+            id: makeId(),
+            role: 'assistant',
+            text: 'どれを変更しますか？（まず1件だけ選んでください）',
+            actions: candidates.map((s) => ({
+              id: makeId(),
+              kind: 'selectTarget',
+              title: '変更対象にする',
+              summary: formatScheduleLabel(s),
+              payload: { id: s?.id ?? null },
+            })),
+          });
+          return;
+        }
+
+        setSelectedUpdateTargetId(candidates[0]?.id ?? null);
+        setPendingUpdateText(userText);
+      }
+
       // If user asks to jump to date like 2026-01-07
       const maybeDate = parseDateStr({ text: userText, baseDate: selectedDate });
       if (maybeDate && userText.includes('移動')) {
@@ -450,19 +773,69 @@ function AiConciergeModal({
         id: makeId(),
         role: 'assistant',
         text: replyText,
-        actions: Array.isArray(actions) ? actions : [],
+        actions: sanitizeActions(actions),
       });
     } catch (err) {
       setErrorText(err?.message || 'AIの処理に失敗しました。');
     } finally {
       setSending(false);
     }
-  }, [appendMessage, input, onNavigateToDate, onSearchSchedules, runAssistant, selectedDate, sending]);
+  }, [appendMessage, input, list, onNavigateToDate, onSearchSchedules, runAssistant, selectedDate, selectedUpdateTarget, sending]);
 
   const startReviewAction = useCallback((action) => {
     if (!action) return;
+    if (action.kind === 'selectTarget') {
+      const id = action?.payload?.id ?? null;
+      if (id != null) {
+        setSelectedUpdateTargetId(String(id));
+        const text = normalizeText(pendingUpdateText);
+        if (text) {
+          setPendingUpdateText(null);
+          setSending(true);
+          Promise.resolve()
+            .then(async () => {
+              const { text: replyText, actions } = await runAssistant(text);
+              appendMessage({
+                id: makeId(),
+                role: 'assistant',
+                text: replyText,
+                actions: sanitizeActions(actions),
+              });
+            })
+            .catch((err) => {
+              setErrorText(err?.message || 'AIの処理に失敗しました。');
+            })
+            .finally(() => {
+              setSending(false);
+            });
+        } else {
+          appendMessage({
+            id: makeId(),
+            role: 'assistant',
+            text: `変更対象を選びました: ${formatScheduleLabel(selectedUpdateTarget || { id })}\n続けて変更内容を入力してください。`,
+            actions: [],
+          });
+        }
+      }
+      return;
+    }
+
+    if (action.kind === 'create' || action.kind === 'update') {
+      const sanitizedPayload = sanitizeSchedulePayload({
+        kind: action.kind,
+        payload: action.payload,
+        fallbackDateStr: safeSelectedDateStr,
+      });
+      if (!sanitizedPayload) {
+        setErrorText('提案内容が不正なため、最終確認に進めませんでした。');
+        return;
+      }
+      setPendingAction({ ...action, payload: sanitizedPayload });
+      return;
+    }
+
     setPendingAction(action);
-  }, []);
+  }, [appendMessage, pendingUpdateText, runAssistant, safeSelectedDateStr, selectedUpdateTarget]);
 
   const cancelPending = useCallback(() => {
     setPendingAction(null);
@@ -485,7 +858,16 @@ function AiConciergeModal({
     setErrorText('');
     setSending(true);
     try {
-      await onSaveSchedule(action.payload);
+      const sanitizedPayload = sanitizeSchedulePayload({
+        kind: action.kind,
+        payload: action.payload,
+        fallbackDateStr: safeSelectedDateStr,
+      });
+      if (!sanitizedPayload) {
+        throw new Error('実行内容が不正です。');
+      }
+
+      await onSaveSchedule(sanitizedPayload);
       appendMessage({
         id: makeId(),
         role: 'assistant',
@@ -498,7 +880,7 @@ function AiConciergeModal({
     } finally {
       setSending(false);
     }
-  }, [appendMessage, onSaveSchedule, pendingAction]);
+  }, [appendMessage, onSaveSchedule, pendingAction, safeSelectedDateStr]);
 
   if (!isOpen) return null;
 
@@ -584,6 +966,16 @@ function AiConciergeModal({
                 <div className="mt-2 rounded-md border border-indigo-200 bg-white p-2">
                   <div className="text-xs font-semibold text-gray-800">{normalizeText(pendingAction?.title) || '操作'}</div>
                   <div className="mt-1 text-xs text-gray-700 whitespace-pre-wrap">{pendingAction?.summary || formatScheduleLabel(pendingAction?.payload)}</div>
+                  {(typeof pendingAction?.payload?.memo === 'string' && normalizeText(pendingAction?.payload?.memo)) && (
+                    <div className="mt-2 text-xs text-gray-700 whitespace-pre-wrap">
+                      メモ: {pendingAction.payload.memo}
+                    </div>
+                  )}
+                  {(Array.isArray(pendingAction?.payload?.notifications) && pendingAction.payload.notifications.length > 0) && (
+                    <div className="mt-1 text-xs text-gray-700">
+                      通知: {pendingAction.payload.notifications.map((n) => `${n.value}${n.unit === 'minutes' ? '分' : n.unit === 'hours' ? '時間' : '日'}前`).join(' / ')}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-3 flex items-center justify-end gap-2">
@@ -612,7 +1004,7 @@ function AiConciergeModal({
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="例: 「ミーティング」を明日15時に追加 / 「支払い」を検索"
+                  placeholder="例: 「ミーティング」を明日15時に追加（メモ: 事前資料確認 / 10分前に通知） / 「支払い」を検索"
                   className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
