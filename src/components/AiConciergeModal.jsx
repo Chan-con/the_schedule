@@ -177,17 +177,102 @@ const isDeleteIntent = (text) => {
   );
 };
 
-const buildTargetCandidates = ({ userText, schedules }) => {
+const parseTimeFilter = (text) => {
+  const s = normalizeText(text);
+  if (!s) return null;
+
+  // explicit HH:MM
+  {
+    const t = parseTimeToHHMM(s);
+    if (t && (s.includes(':') || s.includes('：') || /\d{1,2}\s*[:：]\s*\d{2}/.test(s))) {
+      return { mode: 'exact', value: t };
+    }
+  }
+
+  // hour-only like 10時
+  {
+    const m = /(\d{1,2})\s*時(?!\s*(\d{1,2})\s*分|\s*[:：]\s*\d{2})/.exec(s);
+    if (m) {
+      const hh = Math.max(0, Math.min(23, Number(m[1])));
+      return { mode: 'hour', value: String(hh).padStart(2, '0') };
+    }
+  }
+
+  // generic (falls back)
+  {
+    const t = parseTimeToHHMM(s);
+    if (t) return { mode: 'exact', value: t };
+  }
+
+  return null;
+};
+
+const buildTargetCandidates = ({ userText, schedules, baseDate }) => {
   const text = normalizeText(userText);
   const list = Array.isArray(schedules) ? schedules : [];
   const quoted = extractQuotedTitle(text);
-  const keyword = quoted || normalizeText(text.replace(/(予定|タスク|を|の|日程|時間|変更|リスケ|移動|ずら(す|して)?)/g, ' '));
+  const keyword = quoted || normalizeText(text.replace(/(予定|タスク|を|の|日程|時間|変更|編集|更新|リスケ|移動|ずら(す|して)?|削除|消(し|す)|取り消(し)?|取消|キャンセル|なくな(っ|り)?た|中止|延期|メモ|通知)/g, ' '));
   const needle = keyword.toLowerCase();
   if (!needle) return [];
-  return list
-    .filter((s) => String(s?.name ?? '').toLowerCase().includes(needle))
-    .slice(0, 10);
+
+  const base = baseDate instanceof Date ? baseDate : new Date();
+  const dateFilter = parseDateStr({ text, baseDate: base });
+  const timeFilter = parseTimeFilter(text);
+
+  const keywordMatches = list.filter((s) => String(s?.name ?? '').toLowerCase().includes(needle));
+
+  const applyDateTime = (items) => {
+    let filtered = Array.isArray(items) ? items : [];
+    if (dateFilter) {
+      filtered = filtered.filter((s) => normalizeText(s?.date) === dateFilter);
+    }
+    if (timeFilter?.mode === 'exact') {
+      filtered = filtered.filter((s) => normalizeText(s?.time) === timeFilter.value);
+    } else if (timeFilter?.mode === 'hour') {
+      filtered = filtered.filter((s) => normalizeText(s?.time).startsWith(`${timeFilter.value}:`));
+    }
+    return filtered;
+  };
+
+  const strict = applyDateTime(keywordMatches);
+  const picked = strict.length > 0 ? strict : keywordMatches;
+
+  return picked.slice(0, 10);
 };
+
+const buildAiConciergeSystemText = () => [
+  'あなたはスケジュール帳アプリのAIコンシェルジュです。',
+  'あなたは「提案」まで行い、実行はしません（UIで必ず最終確認→実行ボタンが必要）。',
+  '',
+  'できること:',
+  '- 閲覧: 今日/指定日の予定・タスクの一覧を出す（必要なら質問する）',
+  '- 検索: キーワードで候補を探す（必要なら条件を確認する）',
+  '- 作成: 予定/タスクを新規作成する提案を出す',
+  '- 変更: 既存の予定/タスクを編集する提案を出す（ただしIDが不明なら update は提案しない）',
+  '- 削除(取消): 既存の予定/タスクを削除する提案を出す（ただしIDが不明なら delete は提案しない）',
+  '',
+  'データ構造（payload）:',
+  '- date: "YYYY-MM-DD"',
+  '- time: "HH:MM" もしくは ""（終日）',
+  '- allDay: boolean（終日のとき true）',
+  '- name: タイトル',
+  '- memo: メモ（文字列）',
+  '- notifications: Array<{value:number, unit:"minutes"|"hours"|"days"}>（最大3件）',
+  '  - 終日(allDay=true または time="") のとき unit は "days" のみにする',
+  '- isTask: boolean（タスクかどうか）',
+  '- completed: boolean（タスク完了）',
+  '',
+  '出力ルール:',
+  '- 出力は必ず JSON のみ',
+  '- JSON形式: {"text": string, "actions": Array}',
+  '- actions の各要素: {"id": string, "kind": "create"|"update"|"delete", "title": string, "summary": string, "payload": object}',
+  '- create payload: {date,time,name,memo,notifications,allDay,isTask,completed}',
+  '- update payload: 上記 + 必ず id',
+  '- delete payload: {id} のみ',
+  '- 情報が足りない場合は actions を空にして質問する（例: 日付/時刻/タイトルの確認）',
+  '',
+  '重要: ユーザーの最終決定が前提なので、断定できない場合は候補の確認質問を優先する。',
+].join('\n');
 
 const sanitizeActions = (raw) => {
   const list = Array.isArray(raw) ? raw : [];
@@ -523,16 +608,10 @@ const buildLocalAssistantResponse = async ({ userText, schedules, selectedDate, 
 
 const callOpenAiChatCompletions = async ({ apiKey, modelName, userText, selectedDateStr, targetSchedule }) => {
   const system = [
-    'あなたはスケジュール帳アプリのAIコンシェルジュです。',
-    'ユーザーの要望を理解し、必要なら「提案」を作りますが、実行はしません（必ず最終確認が必要）。',
-    '出力は必ず JSON のみで返してください。',
-    'JSON形式: {"text": string, "actions": Array }',
-    'actions は提案がある時だけ。各要素は:',
-    '{"id": string, "kind": "create"|"update", "title": string, "summary": string, "payload": object}',
-    'payload(create): {"date":"YYYY-MM-DD","time":"HH:MM"|"", "name":string,"memo":string,"notifications":Array<{value:number,unit:"minutes"|"hours"|"days"}>,"allDay":boolean,"isTask":boolean,"completed":boolean}',
-    'payload(update): 上記に加えて必ず "id" を含める（既存予定/タスクのIDが必要）。IDが不明なら update は提案しない。',
-    'notifications は最大3件。終日(allDay=true / time="")のとき unit は "days" のみにする。',
-    'ユーザーが情報不足の場合は、実行提案を作らず質問して補完する。',
+    buildAiConciergeSystemText(),
+    '',
+    '追加の注意:',
+    '- delete/update は id が必要。id が不明なら actions は出さず、追加情報（タイトル/日付/時刻）を質問する。',
   ].join('\n');
 
   const target = targetSchedule && typeof targetSchedule === 'object'
@@ -674,6 +753,23 @@ function AiConciergeModal({
         ],
         context: {
           selectedDate: safeSelectedDateStr,
+          schema: {
+            schedule: {
+              date: 'YYYY-MM-DD',
+              time: 'HH:MM or ""',
+              allDay: 'boolean',
+              name: 'string',
+              memo: 'string',
+              notifications: 'Array<{value:number,unit:minutes|hours|days}> (max 3)',
+              isTask: 'boolean',
+              completed: 'boolean',
+            },
+            actions: {
+              create: 'payload: date,time,name,memo,notifications,allDay,isTask,completed',
+              update: 'payload: id + above',
+              delete: 'payload: {id}',
+            },
+          },
           ...(targetForCall && targetForCall?.id
             ? {
               targetSchedule: {
@@ -738,7 +834,7 @@ function AiConciergeModal({
     try {
       // Delete/cancel flow: pick target first (avoid "IDが必要" という会話にならないようにする)
       if (isDeleteIntent(userText) && !selectedUpdateTarget) {
-        const candidates = buildTargetCandidates({ userText, schedules: list });
+        const candidates = buildTargetCandidates({ userText, schedules: list, baseDate: selectedDate });
         if (candidates.length === 0) {
           appendMessage({
             id: makeId(),
@@ -808,7 +904,7 @@ function AiConciergeModal({
 
       // Stable update flow: pick target first (avoid AI guessing ids)
       if (isUpdateIntent(userText) && !selectedUpdateTarget) {
-        const candidates = buildTargetCandidates({ userText, schedules: list });
+        const candidates = buildTargetCandidates({ userText, schedules: list, baseDate: selectedDate });
         if (candidates.length === 0) {
           appendMessage({
             id: makeId(),
