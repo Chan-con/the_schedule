@@ -10,6 +10,11 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
 
   const safeMemo = typeof memo === 'string' ? memo : '';
 
+  const normalizedMemo = useMemo(() => {
+    // Windows の改行(\r\n)や単体(\r)を \n に正規化
+    return safeMemo.replace(/\r\n?/g, '\n');
+  }, [safeMemo]);
+
   const handleMouseEnter = () => {
     if (onHoverChange) {
       onHoverChange(true);
@@ -23,18 +28,18 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
   };
 
   // 改行で分割して各行を処理
-  const lines = safeMemo.split('\n');
+  const lines = normalizedMemo.split('\n');
 
   const sharedNoteIds = useMemo(() => {
     const ids = new Set();
     const urlPattern = /(https?:\/\/[^\s]+)/gi;
-    const matches = safeMemo.match(urlPattern) || [];
+    const matches = normalizedMemo.match(urlPattern) || [];
     matches.forEach((rawUrl) => {
       const id = parseNoteIdFromUrl(rawUrl);
       if (id != null) ids.add(String(id));
     });
     return Array.from(ids);
-  }, [safeMemo]);
+  }, [normalizedMemo]);
 
   useEffect(() => {
     if (!userId) return;
@@ -183,7 +188,7 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
   };
 
   return (
-    safeMemo ? (
+    normalizedMemo ? (
     <div 
       className={`${className} select-text`} 
       style={{ 
@@ -197,7 +202,7 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
       {lines.map((line, index) => (
         <React.Fragment key={`fragment-${index}`}>
           {renderLine(line, index)}
-          {index < lines.length - 1 && <br />}
+          {index < lines.length - 1 ? '\n' : null}
         </React.Fragment>
       ))}
     </div>
