@@ -263,6 +263,8 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
   const boardRef = useRef(null);
   const [columnCount, setColumnCount] = useState(1);
   const [columnWidth, setColumnWidth] = useState(QUICK_MEMO_COLUMN_PREFERRED_WIDTH);
+  const roRafIdRef = useRef(null);
+  const roLastComputedRef = useRef({ width: null, count: null, colWidth: null });
   const itemHeightsRef = useRef(new Map());
   const [heightVersion, setHeightVersion] = useState(0);
   const lastEmittedRef = useRef(null);
@@ -278,17 +280,36 @@ const QuickMemoBoard = React.forwardRef(({ value, onChange, onImmediatePersist, 
         1,
         Math.floor((width + QUICK_MEMO_COLUMN_GAP) / (QUICK_MEMO_COLUMN_PREFERRED_WIDTH + QUICK_MEMO_COLUMN_GAP))
       );
-      setColumnCount((prev) => (prev === count ? prev : count));
-
       const available = Math.max(0, width - QUICK_MEMO_COLUMN_GAP * Math.max(0, count - 1));
       const nextColWidth = Math.max(160, Math.floor(available / count));
-      setColumnWidth((prev) => (prev === nextColWidth ? prev : nextColWidth));
+
+      const last = roLastComputedRef.current;
+      if (last.width === width && last.count === count && last.colWidth === nextColWidth) {
+        return;
+      }
+      roLastComputedRef.current = { width, count, colWidth: nextColWidth };
+
+      // ResizeObserver -> setState のループを避けるため rAF でまとめて反映する。
+      if (roRafIdRef.current != null) {
+        cancelAnimationFrame(roRafIdRef.current);
+      }
+      roRafIdRef.current = requestAnimationFrame(() => {
+        roRafIdRef.current = null;
+        setColumnCount((prev) => (prev === count ? prev : count));
+        setColumnWidth((prev) => (prev === nextColWidth ? prev : nextColWidth));
+      });
     };
 
     update();
     const ro = new ResizeObserver(() => update());
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (roRafIdRef.current != null) {
+        cancelAnimationFrame(roRafIdRef.current);
+        roRafIdRef.current = null;
+      }
+    };
   }, []);
 
   const registerCardEl = useCallback((tabId, el) => {

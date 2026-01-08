@@ -303,6 +303,9 @@ const Calendar = ({
 
   // カレンダーのサイズ変更を監視して表示件数を調整
   useEffect(() => {
+    let rafId = null;
+    let lastComputed = null;
+
     const updateMaxSchedules = () => {
       if (!calendarRef.current) return;
       
@@ -321,7 +324,21 @@ const Calendar = ({
       const availableForSchedules = rowHeight - dateHeight - padding;
       const maxSchedules = Math.max(1, Math.floor((availableForSchedules - otherItemsHeight) / (scheduleHeight + scheduleSpacing)));
       
-  setMaxSchedulesPerCell(Math.min(maxSchedules, 5)); // 最大5件まで
+      const nextMax = Math.min(maxSchedules, 5); // 最大5件まで
+
+      // ResizeObserver -> setState の同期ループを避けるため、
+      // 値が変わるときだけ rAF でまとめて反映する。
+      if (lastComputed === nextMax) return;
+      lastComputed = nextMax;
+
+      if (rafId != null) {
+        cancelAnimationFrame(rafId);
+      }
+
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        setMaxSchedulesPerCell((prev) => (prev === nextMax ? prev : nextMax));
+      });
       
       console.log('📏 Calendar size updated:', {
         calendarHeight,
@@ -341,6 +358,10 @@ const Calendar = ({
     }
 
     return () => {
+      if (rafId != null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
       resizeObserver.disconnect();
     };
   }, []);

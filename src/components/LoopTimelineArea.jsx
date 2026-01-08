@@ -181,6 +181,8 @@ const LoopTimelineArea = React.forwardRef(({
   useEffect(() => {
     const el = scrollAreaRef.current;
     if (!el) return undefined;
+
+    let rafId = null;
     const update = () => {
       const h = Math.max(0, Math.floor(el.clientHeight || 0));
       const w = Math.max(0, Math.floor(el.clientWidth || 0));
@@ -189,10 +191,22 @@ const LoopTimelineArea = React.forwardRef(({
     };
     update();
     const ro = new ResizeObserver(() => {
-      window.requestAnimationFrame(update);
+      if (rafId != null) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        update();
+      });
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (rafId != null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    };
   }, []);
 
   const lineTopPadPx = 18;
