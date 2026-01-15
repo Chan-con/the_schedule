@@ -1,10 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import MemoWithLinks from './MemoWithLinks';
 import TaskArea from './TaskArea';
-import NoteArea from './NoteArea';
-import LoopTimelineArea from './LoopTimelineArea';
-import QuestArea from './QuestArea';
-import QuickMemoBoard from './QuickMemoBoard';
 
 const FlagIcon = ({ className = '' } = {}) => (
 	<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className} aria-hidden="true">
@@ -66,50 +62,18 @@ const getScheduleKey = (schedule, index, prefix) => {
 const Timeline = ({
 	schedules = [],
 	selectedDate,
-	selectedDateStr,
 	onEdit,
 	onAdd,
 	onAddTask,
-	onAddNote,
-	quickMemo,
-	onQuickMemoChange,
-	onQuickMemoImmediatePersist,
 	onClosePanel,
-	onUpdateNote,
-	onDeleteNote,
-	onToggleArchiveNote,
-	onToggleImportantNote,
-	canShareNotes = false,
-	activeNoteId,
-	onActiveNoteIdChange,
-	onRequestCloseNote,
 	onScheduleUpdate,
 	onToggleTask,
 	activeTab = 'timeline',
 	onTabChange,
 	tasks = [],
-	notes = [],
 	onLoadMoreCompletedTasks,
 	completedTasksHasMore = false,
 	completedTasksLoading = false,
-	onLoadMoreArchivedNotes,
-	archivedNotesHasMore = false,
-	archivedNotesLoading = false,
-	onTabNote,
-	onCommitDraftNote,
-	loopTimelineState,
-	loopTimelineMarkers,
-	onLoopTimelineSaveState,
-	onLoopTimelineAddMarker,
-	onLoopTimelineUpdateMarker,
-	onLoopTimelineDeleteMarker,
-	canShareLoopTimeline = false,
-	dailyQuestTasks = [],
-	onCreateQuestTask,
-	onToggleQuestTask,
-	onUpdateQuestTask,
-	onDeleteQuestTask,
-	onReorderQuestTasks,
 	onToggleWideMode,
 }) => {
 	const [draggedAllDayId, setDraggedAllDayId] = useState(null);
@@ -117,22 +81,13 @@ const Timeline = ({
 	const [draggedTimeInfo, setDraggedTimeInfo] = useState(null);
 	const [timeDragOverInfo, setTimeDragOverInfo] = useState(null);
 	const [isMemoHovering, setIsMemoHovering] = useState(false);
-	const loopTimelineAreaRef = useRef(null);
-	const questAreaRef = useRef(null);
-	const quickMemoBoardRef = useRef(null);
 	const cardRef = useRef(null);
 	const timelineRef = useRef(null);
 	const headerRef = useRef(null);
 
-	const currentTab = ['timeline', 'tasks', 'notes', 'quickMemo', 'loop', 'quest'].includes(activeTab) ? activeTab : 'timeline';
+	const currentTab = ['timeline', 'tasks'].includes(activeTab) ? activeTab : 'timeline';
 	const showTasks = currentTab === 'tasks';
-	const showNotes = currentTab === 'notes';
-	const showQuickMemo = currentTab === 'quickMemo';
-	const showLoopTimeline = currentTab === 'loop';
-	const showQuest = currentTab === 'quest';
-	const availableTasks = Array.isArray(tasks) ? tasks : [];
-	const availableNotes = Array.isArray(notes) ? notes : [];
-	const availableQuestTasks = useMemo(() => (Array.isArray(dailyQuestTasks) ? dailyQuestTasks : []), [dailyQuestTasks]);
+	const availableTasks = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
 
 	const taskIncompleteTotal = useMemo(() => {
 		return availableTasks.filter((t) => !t?.completed).length;
@@ -141,10 +96,6 @@ const Timeline = ({
 	const timelineIncompleteTaskTotal = useMemo(() => {
 		return (Array.isArray(schedules) ? schedules : []).filter((item) => item?.isTask && !item?.completed).length;
 	}, [schedules]);
-
-	const questIncompleteTotal = useMemo(() => {
-		return availableQuestTasks.filter((t) => !t?.completed).length;
-	}, [availableQuestTasks]);
 
 	const timelineEntries = useMemo(() => (Array.isArray(schedules) ? schedules : []), [schedules]);
 	const scheduleEntries = useMemo(
@@ -421,135 +372,13 @@ const Timeline = ({
 				</svg>
 			),
 		},
-		{
-			key: 'quest',
-			label: 'クエスト',
-			icon: (
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					className="h-5 w-5"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					strokeWidth="2"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-					aria-hidden="true"
-				>
-					<path d="M8 21h8" />
-					<path d="M12 17v4" />
-					<path d="M7 4h10v4a5 5 0 0 1-10 0V4z" />
-					<path d="M5 4H3v2a4 4 0 0 0 4 4" />
-					<path d="M19 4h2v2a4 4 0 0 1-4 4" />
-				</svg>
-			),
-		},
-		{
-			key: 'notes',
-			label: 'ノート',
-			icon: (
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					className="h-5 w-5"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					strokeWidth="2"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-					aria-hidden="true"
-				>
-					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-					<path d="M14 2v6h6" />
-					<path d="M16 13H8" />
-					<path d="M16 17H8" />
-					<path d="M10 9H8" />
-				</svg>
-			),
-		},
-		{
-			key: 'quickMemo',
-			label: 'クイックメモ',
-			icon: (
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					className="h-5 w-5"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					strokeWidth="2"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-					aria-hidden="true"
-				>
-					<path d="M4 4h12a2 2 0 0 1 2 2v12H6a2 2 0 0 1-2-2V4z" />
-					<path d="M18 8h2a2 2 0 0 1 2 2v10H8a2 2 0 0 1-2-2v-2" />
-					<path d="M7 7h8" />
-					<path d="M7 11h6" />
-					<path d="M7 15h5" />
-				</svg>
-			),
-		},
-		{
-			key: 'loop',
-			label: 'ループ',
-			icon: (
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					className="h-5 w-5"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					strokeWidth="2"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-					aria-hidden="true"
-				>
-					<path d="M10 2h4" />
-					<path d="M12 14l3-3" />
-					<circle cx="12" cy="14" r="8" />
-				</svg>
-			),
-		},
 	];
-	const isAddDisabled = showLoopTimeline
-		? !(canShareLoopTimeline && typeof onLoopTimelineAddMarker === 'function')
-		: showQuickMemo
-			? !(typeof onQuickMemoChange === 'function')
-		: showTasks
-			? !onAddTask
-			: showNotes
-				? !onAddNote
-				: showQuest
-					? false
-					: !onAdd;
+	const isAddDisabled = showTasks ? !onAddTask : !onAdd;
 
 	const handleAddClick = () => {
-		if (showLoopTimeline) {
-			loopTimelineAreaRef.current?.openCreate?.();
-			return;
-		}
-
-		if (showQuickMemo) {
-			quickMemoBoardRef.current?.openCreate?.();
-			return;
-		}
-
 		if (showTasks) {
 			if (onAddTask) {
 				onAddTask();
-			}
-			return;
-		}
-
-		if (showQuest) {
-			questAreaRef.current?.openCreate?.();
-			return;
-		}
-
-		if (showNotes) {
-			if (onAddNote) {
-				onAddNote();
 			}
 			return;
 		}
@@ -869,17 +698,14 @@ const Timeline = ({
 					<div className="inline-flex items-center rounded-full bg-slate-100 p-1">
 						{tabs.map((tab) => {
 							const isActive = currentTab === tab.key;
-							const showQuestBadge = tab.key === 'quest' && questIncompleteTotal > 0;
 							const showTaskBadge = tab.key === 'tasks' && taskIncompleteTotal > 0;
 							const showTimelineBadge = tab.key === 'timeline' && timelineIncompleteTaskTotal > 0;
-							const badgeCount = showQuestBadge
-								? questIncompleteTotal
-								: showTaskBadge
+							const badgeCount = showTaskBadge
 									? taskIncompleteTotal
 									: showTimelineBadge
 										? timelineIncompleteTaskTotal
 										: 0;
-							const showBadge = showQuestBadge || showTaskBadge || showTimelineBadge;
+							const showBadge = showTaskBadge || showTimelineBadge;
 							return (
 								<button
 									key={tab.key}
@@ -916,7 +742,7 @@ const Timeline = ({
 						}`}
 						onClick={handleAddClick}
 						disabled={isAddDisabled}
-						title={showTasks ? 'タスクを追加' : showNotes ? 'ノートを追加' : showQuickMemo ? 'クイックメモを追加' : showLoopTimeline ? '追加項目を追加' : showQuest ? 'クエストを追加' : '予定を追加'}
+						title={showTasks ? 'タスクを追加' : '予定を追加'}
 					>
 						<span className="text-lg font-semibold leading-none">＋</span>
 					</button>
@@ -943,53 +769,6 @@ const Timeline = ({
 						onLoadMoreCompleted={onLoadMoreCompletedTasks}
 						completedHasMore={completedTasksHasMore}
 						completedLoading={completedTasksLoading}
-					/>
-				) : showNotes ? (
-					<NoteArea
-						notes={availableNotes}
-						onUpdateNote={onUpdateNote}
-						onDeleteNote={onDeleteNote}
-						onToggleArchiveNote={onToggleArchiveNote}
-						onToggleImportantNote={onToggleImportantNote}
-						onCommitDraftNote={onCommitDraftNote}
-						onLoadMoreArchived={onLoadMoreArchivedNotes}
-						archivedHasMore={archivedNotesHasMore}
-						archivedLoading={archivedNotesLoading}
-						canShare={canShareNotes}
-						selectedDateStr={selectedDateStr}
-						activeNoteId={activeNoteId}
-						onActiveNoteIdChange={onActiveNoteIdChange}
-						onRequestClose={onRequestCloseNote}
-						onTabNote={onTabNote}
-					/>
-				) : showQuickMemo ? (
-					<QuickMemoBoard
-						ref={quickMemoBoardRef}
-						value={quickMemo}
-						onChange={onQuickMemoChange}
-						onImmediatePersist={onQuickMemoImmediatePersist}
-					/>
-				) : showQuest ? (
-					<QuestArea
-						ref={questAreaRef}
-						tasks={availableQuestTasks}
-						dateStr={selectedDateStr}
-						onCreateTask={onCreateQuestTask}
-						onToggleTask={onToggleQuestTask}
-						onUpdateTask={onUpdateQuestTask}
-						onDeleteTask={onDeleteQuestTask}
-						onReorderTasks={onReorderQuestTasks}
-					/>
-				) : showLoopTimeline ? (
-					<LoopTimelineArea
-						ref={loopTimelineAreaRef}
-						canShare={canShareLoopTimeline}
-						state={loopTimelineState}
-						markers={loopTimelineMarkers}
-						onSaveState={onLoopTimelineSaveState}
-						onAddMarker={onLoopTimelineAddMarker}
-						onUpdateMarker={onLoopTimelineUpdateMarker}
-						onDeleteMarker={onLoopTimelineDeleteMarker}
 					/>
 				) : (
 					<div

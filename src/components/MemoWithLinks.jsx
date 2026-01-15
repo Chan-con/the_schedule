@@ -1,13 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { parseNoteIdFromUrl, setNoteHash } from '../utils/noteShare';
-import { useAuth } from '../context/useAuth';
-import { getCachedNoteTitle, getNoteTitleCached } from '../utils/noteTitleCache';
+import React, { useMemo } from 'react';
 
 const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
-  const { user } = useAuth();
-  const userId = user?.id || null;
-  const [noteTitles, setNoteTitles] = useState(() => ({}));
-
   const safeMemo = typeof memo === 'string' ? memo : '';
 
   const normalizedMemo = useMemo(() => {
@@ -29,53 +22,6 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
 
   // 改行で分割して各行を処理
   const lines = normalizedMemo.split('\n');
-
-  const sharedNoteIds = useMemo(() => {
-    const ids = new Set();
-    const urlPattern = /(https?:\/\/[^\s]+)/gi;
-    const matches = normalizedMemo.match(urlPattern) || [];
-    matches.forEach((rawUrl) => {
-      const id = parseNoteIdFromUrl(rawUrl);
-      if (id != null) ids.add(String(id));
-    });
-    return Array.from(ids);
-  }, [normalizedMemo]);
-
-  useEffect(() => {
-    if (!userId) return;
-    if (sharedNoteIds.length === 0) return;
-
-    let cancelled = false;
-
-    const ensureTitles = async () => {
-      const updates = {};
-      const tasks = sharedNoteIds.map(async (id) => {
-        const cached = getCachedNoteTitle({ userId, id });
-        if (cached) {
-          updates[id] = cached;
-          return;
-        }
-        try {
-          const title = await getNoteTitleCached({ userId, id });
-          updates[id] = title;
-        } catch {
-          // ignore; fallback to URL display
-        }
-      });
-
-      await Promise.allSettled(tasks);
-      if (cancelled) return;
-
-      const keys = Object.keys(updates);
-      if (keys.length === 0) return;
-      setNoteTitles((prev) => ({ ...prev, ...updates }));
-    };
-
-    ensureTitles();
-    return () => {
-      cancelled = true;
-    };
-  }, [sharedNoteIds, userId]);
 
   const formatUrlForDisplay = (urlStr, maxLen = 30) => {
     try {
@@ -133,36 +79,14 @@ const MemoWithLinks = ({ memo, className = '', onHoverChange }) => {
           const isUrl = part.toLowerCase().startsWith('http://') || part.toLowerCase().startsWith('https://');
           
           if (isUrl) {
-            const sharedNoteId = parseNoteIdFromUrl(part);
-            const cachedTitle = sharedNoteId != null && userId
-              ? getCachedNoteTitle({ userId, id: sharedNoteId })
-              : null;
-            const display = sharedNoteId != null
-              ? (noteTitles[String(sharedNoteId)] || cachedTitle || '無題のノート')
-              : formatUrlForDisplay(part);
+            const display = formatUrlForDisplay(part);
             return (
               <a
                 key={`url-${lineIndex}-${partIndex}`}
                 className="text-blue-600 underline hover:text-blue-800 transition-colors font-medium select-text"
                 href={part}
-                target={sharedNoteId == null ? '_blank' : undefined}
-                rel={sharedNoteId == null ? 'noopener noreferrer' : undefined}
-                onClick={(e) => {
-                  // 共有ノートURLは「通常の左クリック」だけアプリ内で開く。
-                  // 右クリック/別タブ/コピーはブラウザ標準のリンク挙動に任せる。
-                  if (sharedNoteId == null) return;
-
-                  const isPlainLeftClick = e.button === 0
-                    && !e.metaKey
-                    && !e.ctrlKey
-                    && !e.shiftKey
-                    && !e.altKey;
-                  if (!isPlainLeftClick) return;
-
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setNoteHash(sharedNoteId);
-                }}
+                target="_blank"
+                rel="noopener noreferrer"
                 title={part}
                 style={{ 
                   color: '#2563eb', 

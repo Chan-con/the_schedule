@@ -7,10 +7,6 @@ const DEFAULT_LATE_WINDOW_MS = 70_000; // 遅れて実行されたcronの揺れ�
 const DEFAULT_EARLY_WINDOW_MS = 5_000; // 早まりは極力許容しない（5秒以内）
 const DEFAULT_LOOKAHEAD_DAYS = 365;
 
-// クエストリマインドは push_send_log.loop_marker_id をセンチネルで流用し、重複送信を抑止する。
-// 既存の loop_marker は通常正のIDなので衝突しない。
-const QUEST_REMINDER_LOOP_MARKER_ID = -999;
-
 const json = (obj, init = {}) =>
   new Response(JSON.stringify(obj, null, 2), {
     headers: { "content-type": "application/json; charset=utf-8" },
@@ -343,78 +339,6 @@ const listSchedulesInRange = async ({ env, startDate, endDate }) => {
   return await supabaseFetch({ env, path: query });
 };
 
-const listLoopTimelineStatesForUsers = async ({ env, userIds }) => {
-  const ids = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
-  if (ids.length === 0) return [];
-  const select = "user_id,duration_minutes,start_delay_minutes,start_at,status";
-  const inList = ids.map((id) => encodeURIComponent(String(id))).join(",");
-  const query =
-    `/rest/v1/loop_timeline_state?select=${encodeURIComponent(select)}` +
-    `&user_id=in.(${inList})`;
-  return await supabaseFetch({ env, path: query });
-};
-
-const listLoopTimelineMarkersForUsers = async ({ env, userIds }) => {
-  const ids = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
-  if (ids.length === 0) return [];
-  const select = "id,user_id,text,message,offset_minutes";
-  const inList = ids.map((id) => encodeURIComponent(String(id))).join(",");
-  const query =
-    `/rest/v1/loop_timeline_markers?select=${encodeURIComponent(select)}` +
-    `&user_id=in.(${inList})`;
-  return await supabaseFetch({ env, path: query });
-};
-
-const listQuestReminderSettingsForUsers = async ({ env, userIds }) => {
-  const ids = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
-  if (ids.length === 0) return [];
-  const select = "user_id,enabled,reminder_time_minutes";
-  const inList = ids.map((id) => encodeURIComponent(String(id))).join(",");
-  const query =
-    `/rest/v1/quest_reminder_settings?select=${encodeURIComponent(select)}` +
-    `&user_id=in.(${inList})`;
-  return await supabaseFetch({ env, path: query });
-};
-
-const listDailyQuestTasksForUsersByDateStr = async ({ env, userIds, dateStr }) => {
-  const ids = Array.isArray(userIds) ? userIds.filter(Boolean) : [];
-  const safeDate = String(dateStr || "").trim();
-  if (ids.length === 0 || !safeDate) return [];
-  const select = "user_id,date_str,completed";
-  const inList = ids.map((id) => encodeURIComponent(String(id))).join(",");
-  const query =
-    `/rest/v1/daily_quest_tasks?select=${encodeURIComponent(select)}` +
-    `&date_str=eq.${encodeURIComponent(safeDate)}` +
-    `&user_id=in.(${inList})`;
-  return await supabaseFetch({ env, path: query });
-};
-
-const toDateStrForOffset = (date, timezoneOffsetMinutes) => {
-  const shifted = new Date(date.getTime() + timezoneOffsetMinutes * 60_000);
-  const y = shifted.getUTCFullYear();
-  const m = String(shifted.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(shifted.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-};
-
-const calculateQuestReminderFireAtUTC = ({ now, timezoneOffsetMinutes, reminderTimeMinutes }) => {
-  const dateStr = toDateStrForOffset(now, timezoneOffsetMinutes);
-  const ymd = parseYMD(dateStr);
-  if (!ymd) return null;
-
-  const base = makeLocalMidnightUTC(ymd, timezoneOffsetMinutes);
-  const minutes = Number(reminderTimeMinutes);
-  if (!Number.isFinite(minutes)) return null;
-
-  const hh = Math.floor(minutes / 60);
-  const mm = minutes % 60;
-  const fireAt = new Date(base);
-  fireAt.setUTCHours(fireAt.getUTCHours() + hh);
-  fireAt.setUTCMinutes(fireAt.getUTCMinutes() + mm);
-  fireAt.setUTCSeconds(0, 0);
-  return fireAt;
-};
-
 const markSubscriptionInactive = async ({ env, userId, endpoint }) => {
   await supabaseFetch({
     env,
@@ -461,54 +385,6 @@ const tryInsertSendLog = async ({ env, row }) => {
   }
 };
 
-const tryInsertLoopSendLog = async ({ env, row }) => {
-  const path =
-    `/rest/v1/push_send_log?on_conflict=${encodeURIComponent(
-      "user_id,endpoint,loop_marker_id,fire_at"
-    )}`;
-
-  // ignore duplicates
-  const url = new URL(path, mustEnv(env, "SUPABASE_URL"));
-  const key = mustEnv(env, "SUPABASE_SERVICE_ROLE_KEY");
-
-  const res = await fetch(url.toString(), {
-    method: "POST",
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      Prefer: "resolution=ignore-duplicates,return=representation",
-    },
-    body: JSON.stringify(row),
-  });
-
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Supabase insert loop log failed: ${res.status} ${text}`);
-  }
-
-  if (!text) return false;
-  try {
-    const data = JSON.parse(text);
-    return Array.isArray(data) ? data.length > 0 : !!data;
-  } catch {
-    return false;
-  }
-};
-
-const tryInsertQuestSendLog = async ({ env, userId, endpoint, fireAtIso }) => {
-  // loop_marker_id + fire_at のuniqueを流用して重複送信を抑止
-  return await tryInsertLoopSendLog({
-    env,
-    row: {
-      user_id: userId,
-      endpoint,
-      loop_marker_id: QUEST_REMINDER_LOOP_MARKER_ID,
-      fire_at: fireAtIso,
-    },
-  });
-};
-
 const loadApplicationServerKeys = async (env) => {
   const publicKey = mustEnv(env, "VAPID_PUBLIC_KEY");
   const privateKey = mustEnv(env, "VAPID_PRIVATE_KEY_PKCS8");
@@ -547,37 +423,12 @@ const runCron = async (env) => {
 
   const subscriptions = await listActiveSubscriptions({ env });
   const subsList = Array.isArray(subscriptions) ? subscriptions : [];
-  const userIds = Array.from(
-    new Set(subsList.map((s) => s?.user_id).filter(Boolean).map((v) => String(v)))
-  );
 
-  const [schedules, loopStates, loopMarkers] = await Promise.all([
-    listSchedulesInRange({ env, startDate, endDate }),
-    listLoopTimelineStatesForUsers({ env, userIds }),
-    listLoopTimelineMarkersForUsers({ env, userIds }),
-  ]);
-
-  const questReminderSettings = await listQuestReminderSettingsForUsers({ env, userIds });
-  const questReminderByUserId = new Map(
-    (Array.isArray(questReminderSettings) ? questReminderSettings : [])
-      .filter((r) => r?.user_id)
-      .map((r) => [String(r.user_id), r])
-  );
+  const schedules = await listSchedulesInRange({ env, startDate, endDate });
 
   const applicationServerKeys = await loadApplicationServerKeys(env);
 
   const scheduleList = Array.isArray(schedules) ? schedules : [];
-  const loopStateList = Array.isArray(loopStates) ? loopStates : [];
-  const loopMarkerList = Array.isArray(loopMarkers) ? loopMarkers : [];
-
-  const loopStateByUserId = new Map(loopStateList.map((s) => [String(s?.user_id || ""), s]));
-  const loopMarkersByUserId = new Map();
-  for (const m of loopMarkerList) {
-    const uid = String(m?.user_id || "");
-    if (!uid) continue;
-    if (!loopMarkersByUserId.has(uid)) loopMarkersByUserId.set(uid, []);
-    loopMarkersByUserId.get(uid).push(m);
-  }
 
   // endpoint単位で評価（多端末送信対応）
   for (const sub of subsList) {
@@ -589,10 +440,6 @@ const runCron = async (env) => {
     const timezoneOffsetMinutes = Number.isFinite(tz) ? tz : 0;
 
     if (!userId || !endpoint || !p256dh || !auth) continue;
-
-    // 予定/タスク通知を最優先したいので、同一cron実行内で一度でも送ったendpointでは
-    // ループ通知を抑制する（同時刻にループが重なっても重要通知を邪魔しない）。
-    let sentImportantThisTick = false;
 
     const userSchedules = scheduleList.filter((s) => s?.user_id === userId);
     for (const schedule of userSchedules) {
@@ -641,155 +488,8 @@ const runCron = async (env) => {
           urgency: "high",
         });
 
-        sentImportantThisTick = true;
-
         if (res.status === 404 || res.status === 410) {
           await markSubscriptionInactive({ env, userId, endpoint });
-        }
-      }
-    }
-
-    // ループタイムライン通知（マーカー到達）
-    const loopState = loopStateByUserId.get(String(userId));
-    const status = String(loopState?.status || "").toLowerCase();
-    const isRunning = status === "running";
-    const isPaused = status === "paused" || status.startsWith("paused:");
-    const startAtRaw = loopState?.start_at;
-    const startAtMs = startAtRaw ? Date.parse(String(startAtRaw)) : NaN;
-    const durationMinutes = Number(loopState?.duration_minutes);
-
-    if (!sentImportantThisTick && isRunning && !isPaused && Number.isFinite(startAtMs) && Number.isFinite(durationMinutes) && durationMinutes > 0) {
-      const nowMs = now.getTime();
-      if (startAtMs <= nowMs) {
-        const durationMs = durationMinutes * 60_000;
-        const elapsedMs = Math.max(0, nowMs - startAtMs);
-        const currentCycle = Math.floor(elapsedMs / durationMs);
-
-        const markersForUser = loopMarkersByUserId.get(String(userId)) || [];
-        for (const marker of markersForUser) {
-          const markerId = marker?.id;
-          const text = String(marker?.text || "").trim();
-          const message = String(marker?.message || "").trim();
-          if (!text) continue;
-          if (markerId == null) continue;
-
-          const rawOffset = Number(marker?.offset_minutes);
-          const offsetMinutes = Number.isFinite(rawOffset)
-            ? Math.min(durationMinutes, Math.max(0, Math.floor(rawOffset)))
-            : 0;
-
-          const candidateCycles = [currentCycle, currentCycle + 1];
-          for (const cycle of candidateCycles) {
-            const fireAtMs = startAtMs + (cycle * durationMs) + (offsetMinutes * 60_000);
-            const diff = fireAtMs - nowMs;
-            if (diff < -lateWindowMs || diff > earlyWindowMs) continue;
-
-            const fireAtIso = new Date(fireAtMs).toISOString();
-            const shouldSend = await tryInsertLoopSendLog({
-              env,
-              row: {
-                user_id: userId,
-                endpoint,
-                loop_marker_id: markerId,
-                fire_at: fireAtIso,
-              },
-            });
-            if (!shouldSend) continue;
-
-            const loopBody = offsetMinutes === 0
-              ? `ループ開始（${durationMinutes}分周期）`
-              : `開始から${offsetMinutes}分（${durationMinutes}分周期）`;
-
-            const baseUrl = String(env.PUBLIC_APP_URL || "").replace(/\/+$/, "");
-            const payload = JSON.stringify({
-              title: text,
-              body: message || loopBody,
-              url: `${baseUrl || ""}/`,
-            });
-
-            const res = await sendPush({
-              env,
-              applicationServerKeys,
-              target: {
-                endpoint,
-                keys: { p256dh, auth },
-              },
-              payload,
-              ttl: 60,
-              urgency: "low",
-            });
-
-            if (res.status === 404 || res.status === 410) {
-              await markSubscriptionInactive({ env, userId, endpoint });
-            }
-          }
-        }
-      }
-    }
-
-    // クエストリマインド（デイリー）
-    const questSetting = questReminderByUserId.get(String(userId));
-    const questEnabled = !!questSetting?.enabled;
-    const reminderTimeMinutes = Number(questSetting?.reminder_time_minutes);
-    if (questEnabled && Number.isFinite(reminderTimeMinutes)) {
-      // 「毎分cron」前提で、今日の指定時刻だけ送る（遅延はlateWindowで吸収）
-      const fireAt = calculateQuestReminderFireAtUTC({
-        now,
-        timezoneOffsetMinutes,
-        reminderTimeMinutes,
-      });
-
-      if (fireAt) {
-        const diff = fireAt.getTime() - now.getTime();
-        if (!(diff < -lateWindowMs || diff > earlyWindowMs)) {
-          const fireAtIso = fireAt.toISOString();
-
-          const localDateStr = toDateStrForOffset(now, timezoneOffsetMinutes);
-          const tasks = await listDailyQuestTasksForUsersByDateStr({
-            env,
-            userIds: [userId],
-            dateStr: localDateStr,
-          });
-
-          const list = Array.isArray(tasks) ? tasks : [];
-          const total = list.length;
-          const remaining = list.filter((t) => !t?.completed).length;
-
-          // タスクが0件なら通知しない（「未完了」判定ができないため）
-          if (total > 0 && remaining > 0) {
-            // 重複送信を抑止（送る直前にログを取る）
-            const shouldSend = await tryInsertQuestSendLog({
-              env,
-              userId,
-              endpoint,
-              fireAtIso,
-            });
-
-            if (shouldSend) {
-              const baseUrl = String(env.PUBLIC_APP_URL || "").replace(/\/+$/, "");
-              const payload = JSON.stringify({
-                title: "クエスト忘れてませんか？",
-                body: `今日のデイリークエストが${remaining}件残っています（全${total}件）`,
-                url: `${baseUrl || ""}/#date=${encodeURIComponent(localDateStr)}`,
-              });
-
-              const res = await sendPush({
-                env,
-                applicationServerKeys,
-                target: {
-                  endpoint,
-                  keys: { p256dh, auth },
-                },
-                payload,
-                ttl: 60,
-                urgency: "normal",
-              });
-
-              if (res.status === 404 || res.status === 410) {
-                await markSubscriptionInactive({ env, userId, endpoint });
-              }
-            }
-          }
         }
       }
     }

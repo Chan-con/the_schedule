@@ -1475,7 +1475,7 @@ function AiConciergeModal({
     } finally {
       setSending(false);
     }
-  }, [appendMessage, input, list, onNavigateToDate, onSearchSchedules, runAssistant, selectedDate, selectedUpdateTarget, sending]);
+  }, [appendMessage, input, list, onNavigateToDate, onSearchSchedules, runAssistant, selectedDate, selectedUpdateTarget, sending, toAiSearchRef]);
 
   const startReviewAction = useCallback((action) => {
     if (!action) return;

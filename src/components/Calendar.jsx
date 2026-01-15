@@ -5,23 +5,6 @@ import { isJapaneseHoliday, getJapaneseHolidayName } from '../utils/holidays';
 
 const WHEEL_NAVIGATION_DELAY_MS = 150;
 
-const IconCrown = (props) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
-    <path d="M3 7l4 6 5-7 5 7 4-6" />
-    <path d="M5 21h14" />
-    <path d="M7 14h10l-1 7H8l-1-7z" />
-  </svg>
-);
-
-const IconNote = (props) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
-    <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
-    <path d="M14 2v5h5" />
-    <path d="M9 13h6" />
-    <path d="M9 17h6" />
-  </svg>
-);
-
 const IconFlag = (props) => (
   <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" {...props}>
     <path d="M4 2a1 1 0 0 1 1 1v14a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Z" />
@@ -71,10 +54,6 @@ const Calendar = ({
   onEdit,
   onToggleTask,
   onScheduleUpdate,
-  noteDates = [],
-  noteTitlesByDate = null,
-  dailyQuestCrowns = {},
-  dailyQuestTaskTitlesByDate = null,
   onVisibleRangeChange,
   isMobile = false,
   onToggleWideMode,
@@ -266,32 +245,6 @@ const Calendar = ({
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
-
-  const noteDateSet = useMemo(() => {
-    const list = Array.isArray(noteDates) ? noteDates : [];
-    return new Set(list.filter(Boolean));
-  }, [noteDates]);
-
-  const noteTitlesByDateSafe = useMemo(() => {
-    if (noteTitlesByDate && typeof noteTitlesByDate === 'object' && !Array.isArray(noteTitlesByDate)) {
-      return noteTitlesByDate;
-    }
-    return null;
-  }, [noteTitlesByDate]);
-
-  const dailyQuestCrownByDate = useMemo(() => {
-    if (dailyQuestCrowns && typeof dailyQuestCrowns === 'object' && !Array.isArray(dailyQuestCrowns)) {
-      return dailyQuestCrowns;
-    }
-    return {};
-  }, [dailyQuestCrowns]);
-
-  const dailyQuestTaskTitlesByDateSafe = useMemo(() => {
-    if (dailyQuestTaskTitlesByDate && typeof dailyQuestTaskTitlesByDate === 'object' && !Array.isArray(dailyQuestTaskTitlesByDate)) {
-      return dailyQuestTaskTitlesByDate;
-    }
-    return null;
-  }, [dailyQuestTaskTitlesByDate]);
 
   const toDateStr = useCallback((date) => {
     if (!date) return '';
@@ -1342,73 +1295,6 @@ const Calendar = ({
                       title={holiday ? getJapaneseHolidayName(date) : ''}
                     >
                       {date.getDate()}
-                    </span>
-                  );
-                })()}
-
-                {(() => {
-                  const crown = dailyQuestCrownByDate?.[dateStr] ?? null;
-                  if (!crown) return null;
-                  const status = String(crown?.status ?? '').trim();
-                  const totalCount = Number.isFinite(Number(crown?.totalCount)) ? Number(crown.totalCount) : null;
-                  const isProvisional = status === 'provisional';
-                  const isConfirmed = status === 'confirmed';
-                  if (!isProvisional && !isConfirmed) return null;
-
-                  const baseTitle = isConfirmed
-                    ? (totalCount != null ? `デイリー達成（総数: ${totalCount}）` : 'デイリー達成')
-                    : 'デイリー達成（暫定）';
-
-                  const taskTitlesRaw = dailyQuestTaskTitlesByDateSafe?.[dateStr];
-                  const taskTitles = Array.isArray(taskTitlesRaw)
-                    ? taskTitlesRaw.map((t) => String(t ?? '').trim()).filter(Boolean)
-                    : [];
-
-                  const title = taskTitles.length > 0
-                    ? `${baseTitle}\n${taskTitles.join('\n')}`
-                    : baseTitle;
-
-                  const ariaLabel = taskTitles.length > 0
-                    ? `${baseTitle}: ${taskTitles.join('、')}`
-                    : baseTitle;
-
-                  return (
-                    <span
-                      className={isProvisional ? 'inline-flex items-center leading-none opacity-60' : 'inline-flex items-center leading-none'}
-                      aria-label={ariaLabel}
-                      title={title}
-                    >
-                      <IconCrown className={`block h-2.5 w-2.5 ${isProvisional ? 'text-amber-400' : 'text-amber-500'}`} />
-                    </span>
-                  );
-                })()}
-
-                {(() => {
-                  const titlesRaw = noteTitlesByDateSafe?.[dateStr];
-                  const titles = Array.isArray(titlesRaw)
-                    ? titlesRaw.map((t) => String(t ?? '').trim()).filter(Boolean)
-                    : [];
-
-                  const shouldShow = noteTitlesByDateSafe
-                    ? titles.length > 0
-                    : noteDateSet.has(dateStr);
-                  if (!shouldShow) return null;
-
-                  const title = titles.length > 0
-                    ? `ノート: ${titles.length}件\n${titles.join('\n')}`
-                    : 'ノートあり';
-
-                  const ariaLabel = titles.length > 0
-                    ? `ノート: ${titles.length}件: ${titles.join('、')}`
-                    : 'ノートあり';
-
-                  return (
-                    <span
-                      className="inline-flex items-center leading-none"
-                      aria-label={ariaLabel}
-                      title={title}
-                    >
-                      <IconNote className="block h-[9px] w-[9px] translate-y-[.5px] text-blue-500" />
                     </span>
                   );
                 })()}
